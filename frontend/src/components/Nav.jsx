@@ -51,7 +51,7 @@ export default function Nav() {
           UFC<span className="text-white">DB</span>
         </Link>
 
-        <div className="hidden lg:flex items-center gap-0.5 flex-1">
+        <div className="hidden lg:flex items-center gap-1 flex-1">
           {links.map(l => (
             <Link key={l.to} to={l.to}
               className={`nav-link whitespace-nowrap text-xs ${active(l.to) ? 'nav-active' : ''}`}>

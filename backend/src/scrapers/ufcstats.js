@@ -9,8 +9,19 @@
 require('dotenv').config();
 const axios = require('axios');
 const cheerio = require('cheerio');
-const pLimit = require('p-limit');
 const slugify = require('slugify');
+
+function pLimit(concurrency) {
+  let active = 0;
+  const queue = [];
+  const next = () => {
+    if (active >= concurrency || queue.length === 0) return;
+    active++;
+    const { fn, resolve, reject } = queue.shift();
+    fn().then(resolve, reject).finally(() => { active--; next(); });
+  };
+  return (fn) => new Promise((resolve, reject) => { queue.push({ fn, resolve, reject }); next(); });
+}
 const supabase = require('../db/client');
 
 const DELAY = parseInt(process.env.SCRAPE_DELAY_MS || '1500');
