@@ -61,3 +61,9 @@ export const countryFlag = (nat) => ({
   'Georgian':'🇬🇪','Mexican':'🇲🇽','Chinese':'🇨🇳','Polish':'🇵🇱',
   'Dutch':'🇳🇱','Cameroonian':'🇨🇲','New Zealander':'🇳🇿','Dagestani':'🇷🇺',
 })[nat] || '🌍';
+
+export const formatOdds       = fmtOdds;
+export const formatRecord     = fmtRecord;
+export const heightFromInches = fmtHeight;
+export const getCountryFlag   = countryFlag;
+export const oddsToImplied    = impliedProb;
