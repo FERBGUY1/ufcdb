@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body { background:#0A0A0A; color:#F0EDE6; font-family:'DM Sans',sans-serif; }
+  ::selection { background:rgba(200,168,75,0.3); }
+  ::-webkit-scrollbar { width:6px; }
+  ::-webkit-scrollbar-track { background:#111; }
+  ::-webkit-scrollbar-thumb { background:#333; border-radius:3px; }
+}
+
+@layer components {
+  .font-display { font-family:'Bebas Neue',sans-serif; }
+  .btn-gold { @apply bg-gold text-dark-DEFAULT font-display tracking-widest px-6 py-2.5 rounded-lg hover:bg-gold-light transition-colors duration-200 text-sm; }
+  .btn-outline { @apply bg-transparent border border-white/10 text-white/60 text-sm px-4 py-2 rounded-lg hover:text-white hover:border-white/20 transition-colors; }
+  .btn-red { @apply bg-loss text-white font-display tracking-widest px-6 py-2.5 rounded-lg hover:bg-red-700 transition-colors text-sm; }
+  .card { @apply bg-dark-3 border border-white/[0.06] rounded-xl; }
+  .card-hover { @apply card hover:border-gold-dim/50 hover:-translate-y-0.5 transition-all duration-200 cursor-pointer; }
+  .section-title { @apply font-display text-2xl tracking-[0.2em] text-white mb-5 flex items-center gap-4 after:content-[''] after:flex-1 after:h-px after:bg-white/[0.06]; }
+  .tag { @apply bg-dark-4 border border-white/[0.06] text-white/50 text-xs px-2.5 py-1 rounded-md; }
+  .input-dark { @apply bg-dark-3 border border-white/10 text-white placeholder-white/30 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-gold-dim/50 transition-colors w-full; }
+  .nav-link { @apply text-white/50 text-sm font-medium px-3 py-1.5 rounded-lg hover:text-white hover:bg-dark-4 transition-all; }
+  .nav-active { @apply text-white bg-dark-4; }
+  .result-win { @apply text-win font-semibold text-xs; }
+  .result-loss { @apply text-loss font-semibold text-xs; }
+  .stat-bar-track { @apply h-1 bg-dark-5 rounded-full overflow-hidden; }
+  .stat-bar-fill { @apply h-full rounded-full transition-all duration-700; }
+  .odds-fav { @apply text-gold text-xs font-medium; }
+  .odds-dog { @apply text-red-400 text-xs font-medium; }
+  .page-header { @apply font-display text-4xl md:text-5xl tracking-[0.15em] mb-2; }
+  .page-sub { @apply text-white/40 text-sm mb-6; }
+}

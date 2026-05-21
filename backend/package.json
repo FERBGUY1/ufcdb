@@ -1,0 +1,37 @@
+{
+  "name": "ufcdb-backend",
+  "version": "2.0.0",
+  "private": true,
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "db:migrate": "node src/db/migrate.js",
+    "db:seed": "node src/db/seed.js",
+    "scrape:ufcstats": "node src/scrapers/ufcstats.js",
+    "scrape:sherdog": "node src/scrapers/sherdog.js",
+    "scrape:tapology": "node src/scrapers/tapology.js",
+    "scrape:odds": "node src/scrapers/odds.js",
+    "compute:ratings": "node src/ml/computeRatings.js",
+    "compute:styles": "node src/ml/computeStyles.js",
+    "compute:cardio": "node src/ml/computeCardio.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.20.0",
+    "@supabase/supabase-js": "^2.39.0",
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0",
+    "morgan": "^1.10.0",
+    "node-cron": "^3.0.3",
+    "p-limit": "^5.0.0",
+    "slugify": "^1.6.6"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
