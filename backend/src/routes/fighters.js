@@ -123,14 +123,17 @@ router.get('/:slug', async (req, res, next) => {
         odds ( bookmaker, fighter1_odds, fighter2_odds, line_type, recorded_at )
       `)
       .or(`fighter1_id.eq.${fighter.id},fighter2_id.eq.${fighter.id}`)
-      .limit(100);
+      .order('events(date)', { ascending: false })
+      .limit(200);
 
-    // Sort by event date descending — PostgREST ordering by a referenced table
-    // column is unreliable when multiple FK joins are present in the same query
+    // The DB ordering by events(date) is authoritative. This JS sort is a
+    // belt-and-suspenders fallback for fights with no linked event (null date).
     const sortedFights = (fights || []).sort((a, b) => {
-      const da = a.events?.date || '';
-      const db = b.events?.date || '';
-      return db.localeCompare(da);
+      const da = a.events?.date ?? '';
+      const db = b.events?.date ?? '';
+      if (db > da) return 1;
+      if (db < da) return -1;
+      return 0;
     });
 
     // Get current rankings

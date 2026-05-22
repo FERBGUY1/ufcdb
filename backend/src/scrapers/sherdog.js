@@ -30,10 +30,17 @@ async function searchSherdog(firstName, lastName) {
     rows.each((_, row) => {
       if (link) return;
       const a = $(row).find('a[href*="/fighter/"]').first();
-      const nameText = a.text().trim();
-      if (nameText.toLowerCase().includes(lastName.toLowerCase())) {
-        link = a.attr('href');
-      }
+      const nameText = a.text().trim().toLowerCase();
+      const first = firstName.toLowerCase();
+      const last  = lastName.toLowerCase();
+      // Both first AND last name must appear as whole words — prevents e.g.
+      // "Aaron Canarte" matching a search for "Tom Aaron"
+      const words      = nameText.split(/\s+/);
+      const firstWords = first.split(/\s+/);
+      const lastWords  = last.split(/\s+/);
+      const hasFirst = firstWords.every(fw => words.includes(fw));
+      const hasLast  = lastWords.every(lw => words.includes(lw));
+      if (hasFirst && hasLast) link = a.attr('href');
     });
     return link ? `https://www.sherdog.com${link}` : null;
   } catch (e) {
@@ -79,7 +86,7 @@ async function scrapeFighterProfile(url) {
     const birthplace = $('span[itemprop="birthPlace"]').text().trim() ||
                        details['birth place'] || details['birthplace'] || details['hometown'] || null;
 
-    const association = $('span[itemprop="memberOf"] span[itemprop="name"]').text().trim() ||
+    const association = $('span[itemprop="memberOf"] span[itemprop="name"]').first().text().trim() ||
                         $('a.association-link').text().trim() ||
                         details['association'] || details['gym'] || null;
 
@@ -88,21 +95,50 @@ async function scrapeFighterProfile(url) {
     const weight = $('span.fighter_weight strong').text().trim() || null;
     const height = $('span.fighter_height strong').text().trim() || null;
 
-    // Pro debut
+    // Pro debut — scan the professional fight history table
     const fights = [];
-    $('table.fight_history tr:not(.table_head)').each((_, row) => {
+    // Sherdog fight tables have a section title preceding them; the first table
+    // with class "fight_history" is the professional record
+    $('section.fight_history table tr:not(.table_head)').each((_, row) => {
       const cells = $(row).find('td');
-      if (cells.length < 4) return;
+      if (cells.length < 3) return;
       const dateStr = $(cells[2]).text().trim();
       if (dateStr && dateStr !== 'N/A') fights.push(dateStr);
     });
+    // Fallback to any fight_history table
+    if (!fights.length) {
+      $('table.fight_history tr:not(.table_head)').each((_, row) => {
+        const cells = $(row).find('td');
+        if (cells.length < 4) return;
+        const dateStr = $(cells[2]).text().trim();
+        if (dateStr && dateStr !== 'N/A') fights.push(dateStr);
+      });
+    }
     const proDebutDate = fights.length ? fights[fights.length - 1] : null;
 
+    // Amateur record — count rows in the amateur fight history section
+    let amateurWins = 0;
+    let amateurLosses = 0;
+    // Sherdog amateur section is identified by a heading with "Amateur Fights"
+    $('section.fight_history').each((_, section) => {
+      const heading = $(section).find('h2, h3').text().toLowerCase();
+      if (!heading.includes('amateur')) return;
+      $(section).find('table tr:not(.table_head)').each((_, row) => {
+        const cells = $(row).find('td');
+        if (cells.length < 2) return;
+        const res = $(cells[0]).find('span').first().text().trim().toLowerCase();
+        if (res === 'win')  amateurWins++;
+        else if (res === 'loss') amateurLosses++;
+      });
+    });
+
     return {
-      nationality:   nationality || null,
-      hometown:      birthplace  || null,
-      gym_name:      association || null,
-      head_coach:    headCoach   || null,
+      nationality:    nationality || null,
+      hometown:       birthplace  || null,
+      gym_name:       association || null,
+      head_coach:     headCoach   || null,
+      amateur_wins:   amateurWins  || null,
+      amateur_losses: amateurLosses || null,
       pro_debut_date: proDebutDate ? (() => {
         try { return new Date(proDebutDate).toISOString().split('T')[0]; } catch { return null; }
       })() : null,
@@ -127,7 +163,7 @@ async function main() {
   while (true) {
     const { data: fighters, error } = await supabase
       .from('fighters')
-      .select('id, first_name, last_name, nationality, gym_name')
+      .select('id, first_name, last_name, nationality, gym_name, hometown, head_coach')
       .is('nationality', null)
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
       .order('last_name');
@@ -157,11 +193,13 @@ async function main() {
 
       // Only update fields that Sherdog has that we're missing
       const patch = {};
-      if (profile.nationality  && !f.nationality)  patch.nationality  = profile.nationality;
-      if (profile.hometown     && !f.hometown)      patch.hometown     = profile.hometown;
-      if (profile.gym_name     && !f.gym_name)      patch.gym_name     = profile.gym_name;
-      if (profile.head_coach   && !f.head_coach)    patch.head_coach   = profile.head_coach;
-      if (profile.pro_debut_date)                   patch.pro_debut_date = profile.pro_debut_date;
+      if (profile.nationality   && !f.nationality)   patch.nationality   = profile.nationality;
+      if (profile.hometown      && !f.hometown)       patch.hometown      = profile.hometown;
+      if (profile.gym_name      && !f.gym_name)       patch.gym_name      = profile.gym_name;
+      if (profile.head_coach    && !f.head_coach)     patch.head_coach    = profile.head_coach;
+      if (profile.amateur_wins  != null)              patch.amateur_wins  = profile.amateur_wins;
+      if (profile.amateur_losses != null)             patch.amateur_losses = profile.amateur_losses;
+      if (profile.pro_debut_date)                    patch.pro_debut_date = profile.pro_debut_date;
 
       if (Object.keys(patch).length === 0) { failed++; continue; }
 

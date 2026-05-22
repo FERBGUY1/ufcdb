@@ -29,6 +29,9 @@ export default function FighterPage() {
   const { fighter: f, fights, rankings } = data;
   const record = formatRecord(f.wins, f.losses, f.draws, f.no_contests);
   const upcomingFight = fights?.find(fight => fight.result === 'upcoming');
+  const dbBoutCount = fights?.filter(fight => fight.result !== 'upcoming').length ?? 0;
+  const recordTotal = (f.wins || 0) + (f.losses || 0) + (f.draws || 0) + (f.no_contests || 0);
+  const boutCount = Math.max(dbBoutCount, recordTotal);
 
   return (
     <main>
@@ -70,10 +73,15 @@ export default function FighterPage() {
 
             {/* Record */}
             <div className="flex gap-5 mt-4 items-end">
-              <RecordStat num={f.wins}   label="Wins"   color="text-win" />
-              <RecordStat num={f.losses} label="Losses" color="text-loss" />
-              <RecordStat num={f.draws}  label="Draws"  color="text-white/30" />
-              {f.no_contests > 0 && <RecordStat num={f.no_contests} label="NC" color="text-white/30" />}
+              <div>
+                <div className="flex gap-5 items-end">
+                  <RecordStat num={f.wins}   label="Wins"   color="text-win" />
+                  <RecordStat num={f.losses} label="Losses" color="text-loss" />
+                  <RecordStat num={f.draws}  label="Draws"  color="text-white/30" />
+                  {f.no_contests > 0 && <RecordStat num={f.no_contests} label="NC" color="text-white/30" />}
+                </div>
+                <div className="text-[9px] tracking-[0.2em] text-white/20 uppercase mt-1">UFC Record</div>
+              </div>
               {(f.amateur_wins > 0 || f.amateur_losses > 0) && (
                 <div className="pl-4 border-l border-white/10">
                   <div className="font-display text-2xl tracking-wider text-white/30">
@@ -165,7 +173,12 @@ export default function FighterPage() {
             <section className="card overflow-hidden">
               <div className="p-5 border-b border-white/[0.06]">
                 <h2 className="font-display text-base tracking-[0.2em] text-gold uppercase">Fight History</h2>
-                <p className="text-xs text-white/30 mt-0.5">{fights?.filter(f => f.result !== 'upcoming').length} professional bouts</p>
+                <p className="text-xs text-white/30 mt-0.5">
+                  {boutCount > 0 ? `${boutCount} professional UFC bout${boutCount !== 1 ? 's' : ''}` : 'No bouts recorded'}
+                  {dbBoutCount < recordTotal && dbBoutCount > 0 && (
+                    <span className="ml-2 text-white/20">({dbBoutCount} on record)</span>
+                  )}
+                </p>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
