@@ -123,8 +123,15 @@ router.get('/:slug', async (req, res, next) => {
         odds ( bookmaker, fighter1_odds, fighter2_odds, line_type, recorded_at )
       `)
       .or(`fighter1_id.eq.${fighter.id},fighter2_id.eq.${fighter.id}`)
-      .order('date', { referencedTable: 'events', ascending: false })
-      .limit(50);
+      .limit(100);
+
+    // Sort by event date descending — PostgREST ordering by a referenced table
+    // column is unreliable when multiple FK joins are present in the same query
+    const sortedFights = (fights || []).sort((a, b) => {
+      const da = a.events?.date || '';
+      const db = b.events?.date || '';
+      return db.localeCompare(da);
+    });
 
     // Get current rankings
     const { data: rankings } = await supabase
@@ -136,7 +143,7 @@ router.get('/:slug', async (req, res, next) => {
 
     res.json({
       fighter,
-      fights: fights || [],
+      fights: sortedFights,
       rankings: rankings || [],
     });
   } catch (err) {
