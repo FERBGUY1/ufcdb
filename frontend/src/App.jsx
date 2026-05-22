@@ -27,6 +27,7 @@ export default function App() {
           <Route path="/styles"           element={<StylesPage />} />
           <Route path="/compare"          element={<ComparePage />} />
           <Route path="/rankings"         element={<RankingsPage />} />
+          <Route path="/fights/:id"       element={<FightPage />} />
           <Route path="*"                 element={<NotFoundPage />} />
         </Routes>
       </div>

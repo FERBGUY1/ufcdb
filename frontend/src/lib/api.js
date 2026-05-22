@@ -14,6 +14,7 @@ export const updateFighter  = (slug,data) => api.patch(`/fighters/${slug}`,data)
 // ── EVENTS ───────────────────────────────────────────────
 export const getEvents = (p={}) => api.get('/events',{params:p}).then(r=>r.data);
 export const getEvent  = (slug) => api.get(`/events/${slug}`).then(r=>r.data);
+export const getFight  = (id)   => api.get(`/fights/${id}`).then(r=>r.data);
 
 // ── SEARCH ───────────────────────────────────────────────
 export const search = (q,limit=8) => api.get('/search',{params:{q,limit}}).then(r=>r.data);

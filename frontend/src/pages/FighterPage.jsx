@@ -313,19 +313,22 @@ function InfoRow({ label, value, link }) {
 }
 
 function FightRow({ fight, fighterId }) {
+  const navigate = useNavigate();
   const isF1 = fight.fighter1?.id === fighterId;
   const opponent = isF1 ? fight.fighter2 : fight.fighter1;
   const myOdds = fight.odds?.find(o => o.line_type === 'current') || fight.odds?.[0];
   const myOddsVal = myOdds ? (isF1 ? myOdds.fighter1_odds : myOdds.fighter2_odds) : null;
 
+  // winner_id is not populated — derive win/loss from fighter position + result
+  // 'win' means fighter1 won; so if this fighter is fighter1 and result='win' → WIN
+  const isWin = fight.result === 'win' && isF1;
   const resultLabel = fight.result === 'win'
-    ? (fight.winner?.id === fighterId ? 'WIN' : 'LOSS')
+    ? (isF1 ? 'WIN' : 'LOSS')
+    : fight.result === 'no_contest' ? 'NC'
     : fight.result?.toUpperCase() || '--';
 
-  const isWin = fight.winner?.id === fighterId;
-
   return (
-    <tr className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+    <tr className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors cursor-pointer" onClick={()=>navigate(`/fights/${fight.id}`)} title="View fight details">
       <td className="px-4 py-3">
         {opponent ? (
           <Link to={`/fighters/${opponent.slug}`} className="font-medium hover:text-gold transition-colors">

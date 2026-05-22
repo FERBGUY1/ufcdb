@@ -139,7 +139,7 @@ async function computeStyleMatchups() {
   const { data: fights } = await supabase
     .from('fights')
     .select(`
-      id, result, method, winner_id, time, round, time_format,
+      id, result, method, time, round,
       fighter1_style_at_fight, fighter2_style_at_fight,
       fighter1:fighters!fighter1_id (id, first_name, last_name),
       fighter2:fighters!fighter2_id (id, first_name, last_name),
@@ -176,15 +176,17 @@ async function computeStyleMatchups() {
     const m = matchupMap[key];
     m.total++;
 
-    const f1Won = fight.winner_id === fight.fighter1?.id;
-    const f2Won = fight.winner_id === fight.fighter2?.id;
+    // result==win means fighter1 won (data schema: f1 is always winner in decisive fights)
+    const f1Won = fight.result === 'win';
+    const f2Won = false;
 
     if (f1Won) { f1IsFirst ? m.s1_wins++ : m.s2_wins++; }
     else if (f2Won) { f1IsFirst ? m.s2_wins++ : m.s1_wins++; }
     else m.draws++;
 
-    if (fight.method === 'KO' || fight.method === 'TKO') m.ko_wins++;
-    else if (fight.method === 'SUB') m.sub_wins++;
+    const meth = (fight.method || '').toUpperCase();
+    if (meth.includes('KO') || meth.includes('TKO')) m.ko_wins++;
+    else if (meth.includes('SUB')) m.sub_wins++;
     else m.dec_wins++;
 
     // Fight time in seconds
@@ -198,9 +200,7 @@ async function computeStyleMatchups() {
       m.notable.push({
         fighter1: `${fight.fighter1?.first_name} ${fight.fighter1?.last_name}`,
         fighter2: `${fight.fighter2?.first_name} ${fight.fighter2?.last_name}`,
-        winner: fight.winner_id === fight.fighter1?.id
-          ? `${fight.fighter1?.first_name} ${fight.fighter1?.last_name}`
-          : `${fight.fighter2?.first_name} ${fight.fighter2?.last_name}`,
+        winner: fight.result === 'win' ? `${fight.fighter1?.first_name} ${fight.fighter1?.last_name}` : null,
         method: fight.method,
         event: fight.events?.name,
         date: fight.events?.date,

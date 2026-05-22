@@ -5,7 +5,7 @@ const supabase = require('../db/client');
 
 router.get('/', async (req, res, next) => {
   try {
-    const { page = 1, limit: lim = 20, upcoming, year } = req.query;
+    const { page = 1, limit: lim = 20, upcoming, year, search } = req.query;
     const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.min(50, parseInt(lim));
     const offset = (pageNum - 1) * limitNum;
@@ -24,6 +24,9 @@ router.get('/', async (req, res, next) => {
       query = query.gte('date', `${year}-01-01`).lt('date', `${parseInt(year)+1}-01-01`);
     }
 
+    if (search) {
+      query = query.ilike('name', );
+    }
     query = query.order('date', { ascending: upcoming === 'true' }).range(offset, offset + limitNum - 1);
 
     const { data, error, count } = await query;

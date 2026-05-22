@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 const cron    = require('node-cron');
 
 const fightersRouter    = require('./routes/fighters');
+const fightsRouter      = require('./routes/fights');
 const eventsRouter      = require('./routes/events');
 const oddsRouter        = require('./routes/odds');
 const searchRouter      = require('./routes/search');
@@ -34,6 +35,7 @@ const predictLimiter = rateLimit({ windowMs: 60*1000, max: 10 });
 app.use('/api/predict', predictLimiter);
 
 app.use('/api/fighters', fightersRouter);
+app.use('/api/fights',    fightsRouter);
 app.use('/api/events',   eventsRouter);
 app.use('/api/odds',     oddsRouter);
 app.use('/api/search',   searchRouter);

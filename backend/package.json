@@ -9,12 +9,16 @@
     "db:migrate": "node src/db/migrate.js",
     "db:seed": "node src/db/seed.js",
     "scrape:ufcstats": "node src/scrapers/ufcstats.js",
+    "scrape:events": "node src/scrapers/events.js",
+    "scrape:refresh-stats": "node src/scrapers/refresh-stats.js",
     "scrape:sherdog": "node src/scrapers/sherdog.js",
     "scrape:tapology": "node src/scrapers/tapology.js",
     "scrape:odds": "node src/scrapers/odds.js",
     "compute:ratings": "node src/ml/computeRatings.js",
     "compute:styles": "node src/ml/computeStyles.js",
-    "compute:cardio": "node src/ml/computeCardio.js"
+    "compute:cardio": "node src/ml/computeCardio.js",
+    "scrape:fix-fights": "node src/scrapers/fix-fight-data.js",
+    "scrape:assign-styles": "node src/scrapers/assign-styles.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.20.0",

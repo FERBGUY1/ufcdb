@@ -36,7 +36,9 @@ router.get('/', async (req, res, next) => {
 
     // Filters
     if (weight_class) {
-      query = query.eq('weight_classes.slug', weight_class);
+      // Look up weight class ID by slug for reliable filtering
+      const { data: wc } = await supabase.from('weight_classes').select('id').eq('slug', weight_class).single();
+      if (wc) query = query.eq('primary_weight_class_id', wc.id);
     }
     if (status !== 'all') {
       query = query.eq('status', status);
@@ -45,9 +47,20 @@ router.get('/', async (req, res, next) => {
       query = query.eq('is_champion', true);
     }
     if (search) {
-      query = query.or(
-        `first_name.ilike.%${search}%,last_name.ilike.%${search}%,nickname.ilike.%${search}%`
-      );
+      const parts = search.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        const first = parts[0];
+        const last  = parts.slice(1).join(' ');
+        query = query.or(
+          `and(first_name.ilike.%${first}%,last_name.ilike.%${last}%),` +
+          `and(first_name.ilike.%${last}%,last_name.ilike.%${first}%),` +
+          `nickname.ilike.%${search}%`
+        );
+      } else {
+        query = query.or(
+          `first_name.ilike.%${search}%,last_name.ilike.%${search}%,nickname.ilike.%${search}%`
+        );
+      }
     }
 
     // Sort
@@ -110,7 +123,7 @@ router.get('/:slug', async (req, res, next) => {
         odds ( bookmaker, fighter1_odds, fighter2_odds, line_type, recorded_at )
       `)
       .or(`fighter1_id.eq.${fighter.id},fighter2_id.eq.${fighter.id}`)
-      .order('events.date', { ascending: false })
+      .order('date', { referencedTable: 'events', ascending: false })
       .limit(50);
 
     // Get current rankings
@@ -154,7 +167,7 @@ router.get('/:slug/odds-history', async (req, res, next) => {
         odds ( bookmaker, fighter1_odds, fighter2_odds, line_type, recorded_at )
       `)
       .or(`fighter1_id.eq.${fighter.id},fighter2_id.eq.${fighter.id}`)
-      .order('events.date', { ascending: false })
+      .order('date', { referencedTable: 'events', ascending: false })
       .limit(30);
 
     // Calculate ATS record (against the spread)
