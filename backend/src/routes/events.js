@@ -51,7 +51,7 @@ router.get('/:slug', async (req, res, next) => {
     const { data: fights } = await supabase
       .from('fights')
       .select(`
-        id, bout_order, result, method, round, time, card_position, is_title_fight,
+        id, bout_order, result, method, method_detail, round, time, card_position, is_title_fight,
         fighter1_record_at_fight, fighter2_record_at_fight,
         fighter1:fighters!fighter1_id ( id, slug, first_name, last_name, nickname, photo_url ),
         fighter2:fighters!fighter2_id ( id, slug, first_name, last_name, nickname, photo_url ),
@@ -59,10 +59,23 @@ router.get('/:slug', async (req, res, next) => {
         odds ( bookmaker, fighter1_odds, fighter2_odds, line_type, recorded_at )
       `)
       .eq('event_id', event.id)
-      .order('bout_order', { ascending: true, nullsFirst: false })
-      .order('created_at', { ascending: true });
+      .order('bout_order', { ascending: true, nullsFirst: false });
 
-    res.json({ event, fights: fights || [] });
+    // Sort by card section then bout position.
+    // card_position ('main_card'/'prelim'/'early_prelim') is populated for new events;
+    // historical fights have it NULL so fall back to bout_order (0 = main event,
+    // corrected by fix-bout-order.js for all events where the headliner was late-added).
+    const sectionRank = { main_card: 0, prelim: 1, early_prelim: 2 };
+    const sortedFights = (fights || []).sort((a, b) => {
+      const posA = a.card_position != null ? (sectionRank[a.card_position] ?? 0) : null;
+      const posB = b.card_position != null ? (sectionRank[b.card_position] ?? 0) : null;
+      if (posA !== null && posB !== null && posA !== posB) return posA - posB;
+      if (posA !== null && posB === null) return -1;
+      if (posA === null && posB !== null) return 1;
+      return (a.bout_order ?? 999) - (b.bout_order ?? 999);
+    });
+
+    res.json({ event, fights: sortedFights });
   } catch (err) { next(err); }
 });
 

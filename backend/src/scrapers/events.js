@@ -75,12 +75,29 @@ async function scrapeEvent(url) {
       is_complete: !isUpcoming,
     };
 
+    // Detect card sections and fight rows together.
+    // ufcstats uses <tr class="...head..."> rows as section separators.
     const fights = [];
+    let currentSection = 'main_card';
+    let rowIdx = 0;
+
     $('table.b-fight-details__table tbody tr').each((_,row) => {
+      const cls = ($(row).attr('class') || '').toLowerCase();
+      // Section header row — update current section
+      if (cls.includes('head') || cls.includes('section')) {
+        const headerText = $(row).text().trim().toLowerCase();
+        if (headerText.includes('early prelim')) currentSection = 'early_prelim';
+        else if (headerText.includes('prelim'))  currentSection = 'prelim';
+        else                                     currentSection = 'main_card';
+        return;
+      }
+
       const cells = $(row).find('td');
       const f1link = $(cells[1]).find('a').eq(0).attr('href');
       const f2link = $(cells[1]).find('a').eq(1).attr('href');
       if (!f1link || !f2link) return;
+
+      const boutOrder = rowIdx++;
 
       const winCell   = $(cells[0]).text().trim().toLowerCase();
       const wc        = $(cells[6]).find('p').eq(0).text().trim() || $(cells[6]).text().trim();
@@ -101,7 +118,6 @@ async function scrapeEvent(url) {
 
       const isTitleFight   = /title/i.test(wc);
       const isInterimTitle = /interim/i.test(wc);
-      // Normalize wc name for DB lookup (strip "UFC ", " Title Bout", " Bout" etc.)
       const wcNorm = wc
         .replace(/^ufc\s+/i, '')
         .replace(/\s+(interim\s+)?title\s+bout$/i, '')
@@ -111,6 +127,8 @@ async function scrapeEvent(url) {
       fights.push({
         fighter1_ufc_id: f1link.split('/').pop(),
         fighter2_ufc_id: f2link.split('/').pop(),
+        bout_order:      boutOrder,
+        card_position:   currentSection,
         result, method, method_detail: methodDet, round, time,
         weight_class_name: wcNorm || wc,
         is_title_fight:    isTitleFight,
@@ -165,14 +183,14 @@ async function main() {
     eventsImported++;
 
     const fightRows = [];
-    let boutIdx = 0;
     for (const f of fights) {
       const f1id = fighterMap[f.fighter1_ufc_id];
       const f2id = fighterMap[f.fighter2_ufc_id];
       if (!f1id || !f2id) continue;
       fightRows.push({
         event_id: eventData.id, fighter1_id: f1id, fighter2_id: f2id,
-        bout_order: boutIdx++,
+        bout_order:    f.bout_order,
+        card_position: f.card_position,
         result: f.result, method: f.method, method_detail: f.method_detail,
         round: f.round, time: f.time,
         is_title_fight: f.is_title_fight || false,
