@@ -15,9 +15,40 @@ export default function EventPage() {
   if (!data) return <div className="p-8 text-center text-white/30">Event not found</div>;
 
   const { event: e, fights } = data;
-  const mainCard  = fights.filter(f => f.card_position === 'main' || f.card_position == null);
-  const prelims   = fights.filter(f => f.card_position === 'prelim');
-  const earlyPre  = fights.filter(f => f.card_position === 'early_prelim');
+
+  // Build sections. If card_position data exists use it; otherwise split by
+  // bout_order: 0 = Main Event, 1 = Co-Main, rest = Fight Card.
+  const hasCardPos = fights.some(f => f.card_position);
+  let sections;
+
+  if (hasCardPos) {
+    const main   = fights.filter(f => f.card_position === 'main');
+    const prelim = fights.filter(f => f.card_position === 'prelim');
+    const early  = fights.filter(f => f.card_position === 'early_prelim');
+    // Fights that arrived without a card_position go under main card
+    const other  = fights.filter(f => !f.card_position);
+    const mainAll = [...main, ...other];
+
+    sections = [
+      mainAll.length > 0  ? { title: 'Main Card', fights: mainAll }     : null,
+      prelim.length > 0   ? { title: 'Preliminary Card', fights: prelim } : null,
+      early.length > 0    ? { title: 'Early Prelims', fights: early }   : null,
+    ].filter(Boolean);
+  } else {
+    // No card_position data — split by bout_order position
+    const mainEvent = fights.filter(f => f.bout_order === 0);
+    const coMain    = fights.filter(f => f.bout_order === 1);
+    const rest      = fights.filter(f => f.bout_order == null || f.bout_order > 1);
+
+    sections = [
+      mainEvent.length > 0 ? { title: 'Main Event', fights: mainEvent }  : null,
+      coMain.length > 0    ? { title: 'Co-Main Event', fights: coMain }  : null,
+      rest.length > 0      ? { title: 'Fight Card', fights: rest }       : null,
+      // Fallback: all fights if bout_order is entirely unpopulated
+      mainEvent.length === 0 && coMain.length === 0 && rest.length === 0
+        ? { title: 'Fight Card', fights } : null,
+    ].filter(Boolean);
+  }
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-8">
@@ -29,18 +60,12 @@ export default function EventPage() {
         {(e.venue || e.city) && (
           <p className="text-white/40 mt-2 text-sm">{[e.venue, e.city, e.country].filter(Boolean).join(' · ')}</p>
         )}
+        <p className="text-white/20 text-xs mt-1">{fights.length} bout{fights.length !== 1 ? 's' : ''}</p>
       </div>
 
-      <FightSection title="Main Card" fights={mainCard} />
-      {prelims.length > 0 && <FightSection title="Preliminary Card" fights={prelims} />}
-      {earlyPre.length > 0 && <FightSection title="Early Prelims" fights={earlyPre} />}
-
-      {/* If no card positions, just show all fights */}
-      {mainCard.length === fights.length && prelims.length === 0 && (
-        <div className="space-y-2">
-          {fights.map(fight => <FightItem key={fight.id} fight={fight} />)}
-        </div>
-      )}
+      {sections.map(s => (
+        <FightSection key={s.title} title={s.title} fights={s.fights} />
+      ))}
     </main>
   );
 }

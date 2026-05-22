@@ -154,12 +154,14 @@ async function main() {
     eventsImported++;
 
     const fightRows = [];
+    let boutIdx = 0;
     for (const f of fights) {
       const f1id = fighterMap[f.fighter1_ufc_id];
       const f2id = fighterMap[f.fighter2_ufc_id];
       if (!f1id || !f2id) continue;
       fightRows.push({
         event_id: eventData.id, fighter1_id: f1id, fighter2_id: f2id,
+        bout_order: boutIdx++,
         result: f.result, method: f.method, method_detail: f.method_detail,
         round: f.round, time: f.time, is_title_fight: false,
         weight_class_id: wcMap[f.weight_class_name] || null,

@@ -14,20 +14,22 @@ router.get('/', async (req, res, next) => {
       .from('events')
       .select('*', { count: 'exact' });
 
+    // Use is_complete flag rather than date comparison so events with null
+    // dates (e.g. very early events whose date failed to parse) still appear
     if (upcoming === 'true') {
-      query = query.gte('date', new Date().toISOString().split('T')[0]).eq('is_complete', false);
+      query = query.eq('is_complete', false);
     } else if (upcoming === 'false') {
-      query = query.lt('date', new Date().toISOString().split('T')[0]);
+      query = query.eq('is_complete', true);
     }
 
     if (year) {
-      query = query.gte('date', `${year}-01-01`).lt('date', `${parseInt(year)+1}-01-01`);
+      query = query.gte('date', `${year}-01-01`).lte('date', `${year}-12-31`);
     }
 
     if (search) {
-      query = query.ilike('name', );
+      query = query.ilike('name', `%${search}%`);
     }
-    query = query.order('date', { ascending: upcoming === 'true' }).range(offset, offset + limitNum - 1);
+    query = query.order('date', { ascending: upcoming === 'true', nullsFirst: false }).range(offset, offset + limitNum - 1);
 
     const { data, error, count } = await query;
     if (error) throw error;
@@ -57,7 +59,8 @@ router.get('/:slug', async (req, res, next) => {
         odds ( bookmaker, fighter1_odds, fighter2_odds, line_type, recorded_at )
       `)
       .eq('event_id', event.id)
-      .order('bout_order');
+      .order('bout_order', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: true });
 
     res.json({ event, fights: fights || [] });
   } catch (err) { next(err); }

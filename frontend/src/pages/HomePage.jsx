@@ -9,16 +9,16 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Fetch stats independently so a failure in odds/events doesn't hide counts
+    getSiteStats().then(setStats).catch(() => {});
+
     Promise.all([
-      getSiteStats(),
-      getUpcomingOdds(),
-      getEvents({ upcoming: false, limit: 6 }),
-    ]).then(([s, u, r]) => {
-      setStats(s);
+      getUpcomingOdds().catch(() => ({ fights: [] })),
+      getEvents({ upcoming: false, limit: 6 }).catch(() => ({ events: [] })),
+    ]).then(([u, r]) => {
       setUpcoming(u.fights || []);
       setRecent(r.events || []);
-    }).catch(console.error)
-      .finally(() => setLoading(false));
+    }).finally(() => setLoading(false));
   }, []);
 
   return (
@@ -46,11 +46,11 @@ export default function HomePage() {
       <div className="bg-dark-2 border-b border-white/[0.06]">
         <div className="max-w-4xl mx-auto grid grid-cols-2 md:grid-cols-5 divide-x divide-white/[0.06]">
           {[
-            { num: stats?.total_fighters?.toLocaleString()  || '1,847+', label: 'Total Fighters' },
-            { num: stats?.active_fighters?.toLocaleString() || '732',    label: 'Active Roster' },
-            { num: stats?.total_fights?.toLocaleString()    || '6,200+', label: 'Fights Logged' },
-            { num: stats?.total_events?.toLocaleString()    || '690+',   label: 'Events Covered' },
-            { num: '4,100+', label: 'Odds Records' },
+            { num: stats?.total_fighters  != null ? stats.total_fighters.toLocaleString()  : '…', label: 'Total Fighters' },
+            { num: stats?.active_fighters != null ? stats.active_fighters.toLocaleString() : '…', label: 'Active Roster' },
+            { num: stats?.total_fights    != null ? stats.total_fights.toLocaleString()    : '…', label: 'Fights Logged' },
+            { num: stats?.total_events    != null ? stats.total_events.toLocaleString()    : '…', label: 'Events Covered' },
+            { num: stats?.total_odds      != null ? stats.total_odds.toLocaleString()      : '…', label: 'Odds Records' },
           ].map(s => (
             <div key={s.label} className="py-5 text-center px-4">
               <div className="font-display text-3xl tracking-[0.1em] text-gold leading-none">{s.num}</div>

@@ -9,7 +9,11 @@
 require('dotenv').config();
 const supabase = require('../db/client');
 
-const ACTIVE_CUTOFF = '2024-01-01';
+// Fighters whose last fight was more than 12 months ago (and no upcoming fight)
+// are considered retired. Rolling window stays accurate as time passes.
+const cutoffDate = new Date();
+cutoffDate.setFullYear(cutoffDate.getFullYear() - 1);
+const ACTIVE_CUTOFF = cutoffDate.toISOString().split('T')[0];
 
 async function main() {
   console.log('Building fighter → last-fight-date map...');
