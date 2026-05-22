@@ -15,23 +15,50 @@
 require('dotenv').config();
 const supabase = require('../db/client');
 
+// Ring-name → real last name (DB last_name value)
+const NICKNAME_MAP = {
+  'zombie':    'jung',      // Chan Sung Jung "The Korean Zombie"
+  'cowboy':    'cerrone',   // Donald "Cowboy" Cerrone
+  'cyborg':    'justino',   // Cristiane "Cyborg" Justino
+  'shogun':    'rua',       // Mauricio "Shogun" Rua
+  'rampage':   'jackson',   // Quinton "Rampage" Jackson
+  'bigfoot':   'silva',     // Antonio "Bigfoot" Silva
+  'marreta':   'santos',    // Thiago "Marreta" Santos
+  'minotauro': 'nogueira',  // Antonio Rodrigo "Minotauro" Nogueira
+  'cop':       'filipovic', // Mirko Cro Cop Filipovic (last word of "Cro Cop")
+};
+
 function parseHeadliners(eventName) {
-  // Matches ": Name1 vs. Name2" or ": Name1 vs Name2" at the end of the event name
   const m = eventName.match(/:\s*(.+?)\s+vs\.?\s+(.+)$/i);
   if (!m) return null;
-  // Take just the LAST word of each name as the last name for matching
-  // e.g. "Jon Jones" → "Jones", "Ciryl Gane" → "Gane"
-  const last1 = m[1].trim().split(/\s+/).pop().toLowerCase();
-  const last2 = m[2].trim().split(/\s+/).pop().toLowerCase();
+  const extractKey = (s) => {
+    const cleaned = s.trim()
+      .replace(/\s+(ii|iii|iv|vi|vii|viii|ix)$/i, '') // strip Roman numerals (e.g. "Barao II")
+      .replace(/\s+\d+$/, '')                          // strip digit suffixes  (e.g. "Oliveira 2")
+      .trim();
+    const word = cleaned.split(/\s+/).pop().toLowerCase();
+    return NICKNAME_MAP[word] || word;
+  };
+  const last1 = extractKey(m[1]);
+  const last2 = extractKey(m[2]);
+  if (!last1 || !last2) return null;
   return [last1, last2];
 }
 
 function fightMatchesHeadliners(fight, last1, last2) {
-  const f1 = (fight.fighter1?.last_name || '').toLowerCase();
-  const f2 = (fight.fighter2?.last_name || '').toLowerCase();
+  // Match against last_name OR first_name — handles Chinese name order where
+  // first_name='Zhang', last_name='Weili' but the event says "Walker vs. Zhang"
+  const f1l = (fight.fighter1?.last_name  || '').toLowerCase();
+  const f1f = (fight.fighter1?.first_name || '').toLowerCase();
+  const f2l = (fight.fighter2?.last_name  || '').toLowerCase();
+  const f2f = (fight.fighter2?.first_name || '').toLowerCase();
+
+  const f1Matches = (key) => f1l.includes(key) || f1f.includes(key);
+  const f2Matches = (key) => f2l.includes(key) || f2f.includes(key);
+
   return (
-    (f1.includes(last1) && f2.includes(last2)) ||
-    (f1.includes(last2) && f2.includes(last1))
+    (f1Matches(last1) && f2Matches(last2)) ||
+    (f1Matches(last2) && f2Matches(last1))
   );
 }
 
@@ -64,8 +91,8 @@ async function main() {
         .from('fights')
         .select(`
           id, bout_order,
-          fighter1:fighters!fighter1_id ( last_name ),
-          fighter2:fighters!fighter2_id ( last_name )
+          fighter1:fighters!fighter1_id ( first_name, last_name ),
+          fighter2:fighters!fighter2_id ( first_name, last_name )
         `)
         .eq('event_id', event.id)
         .order('bout_order', { ascending: true });
