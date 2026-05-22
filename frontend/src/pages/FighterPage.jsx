@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { getFighter, formatOdds, formatRecord, heightFromInches, getCountryFlag, oddsToImplied } from '../lib/api';
 
@@ -35,7 +35,7 @@ export default function FighterPage() {
       {/* Back */}
       <div className="max-w-7xl mx-auto px-4 pt-4">
         <Link to="/fighters" className="text-white/30 text-sm hover:text-white transition-colors flex items-center gap-1.5">
-          ← Back to Roster
+          â† Back to Roster
         </Link>
       </div>
 
@@ -56,7 +56,7 @@ export default function FighterPage() {
           <div className="flex-1 min-w-0">
             <div className="text-[10px] tracking-[0.3em] text-gold uppercase mb-2 flex items-center gap-3">
               {f.weight_classes?.name}
-              {f.is_champion && <span className="bg-gold/20 text-gold border border-gold/30 px-2 py-0.5 rounded text-[9px]">⟡ CHAMPION</span>}
+              {f.is_champion && <span className="bg-gold/20 text-gold border border-gold/30 px-2 py-0.5 rounded text-[9px]">âŸ¡ CHAMPION</span>}
               {rankings?.[0] && !f.is_champion && (
                 <span className="text-white/30">Ranked #{rankings[0].rank}</span>
               )}
@@ -133,7 +133,7 @@ export default function FighterPage() {
                       <div className="space-y-1.5">
                         {f.strengths.map(s => (
                           <div key={s} className="text-xs text-green-300 bg-win/5 border border-win/10 rounded-lg px-3 py-2">
-                            ✓ {s}
+                            âœ“ {s}
                           </div>
                         ))}
                       </div>
@@ -145,7 +145,7 @@ export default function FighterPage() {
                       <div className="space-y-1.5">
                         {f.weaknesses.map(w => (
                           <div key={w} className="text-xs text-red-300 bg-loss/5 border border-loss/10 rounded-lg px-3 py-2">
-                            ✗ {w}
+                            âœ— {w}
                           </div>
                         ))}
                       </div>
@@ -261,7 +261,7 @@ export default function FighterPage() {
   );
 }
 
-// ── SUB-COMPONENTS ────────────────────────────────────────
+// â”€â”€ SUB-COMPONENTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function RecordStat({ num, label, color }) {
   return (
@@ -319,8 +319,8 @@ function FightRow({ fight, fighterId }) {
   const myOdds = fight.odds?.find(o => o.line_type === 'current') || fight.odds?.[0];
   const myOddsVal = myOdds ? (isF1 ? myOdds.fighter1_odds : myOdds.fighter2_odds) : null;
 
-  // winner_id is not populated — derive win/loss from fighter position + result
-  // 'win' means fighter1 won; so if this fighter is fighter1 and result='win' → WIN
+  // winner_id is not populated â€” derive win/loss from fighter position + result
+  // 'win' means fighter1 won; so if this fighter is fighter1 and result='win' â†’ WIN
   const isWin = fight.result === 'win' && isF1;
   const resultLabel = fight.result === 'win'
     ? (isF1 ? 'WIN' : 'LOSS')
@@ -335,6 +335,9 @@ function FightRow({ fight, fighterId }) {
             {opponent.first_name} {opponent.last_name}
           </Link>
         ) : <span className="text-white/30">Unknown</span>}
+        {fight.is_title_fight && (
+          <span className="ml-1.5 text-[9px] text-gold/80">&#127942;</span>
+        )}
       </td>
       <td className="px-4 py-3 text-xs text-white/40 max-w-[140px] truncate">
         {fight.events ? (
@@ -379,8 +382,8 @@ function UpcomingFightCard({ fight, fighter }) {
   return (
     <div className="border border-gold/20 bg-gold/[0.04] rounded-xl p-5">
       <div className="text-[10px] tracking-[0.3em] text-gold uppercase mb-3">
-        Next Fight — {fight.events?.name} · {fight.events?.date}
-        {fight.is_title_fight && ' · Title Fight'}
+        Next Fight â€” {fight.events?.name} Â· {fight.events?.date}
+        {fight.is_title_fight && ' Â· Title Fight'}
       </div>
       <div className="flex items-center gap-4 mb-4">
         <div className="flex-1">
@@ -432,3 +435,4 @@ function ProfileSkeleton() {
     </main>
   );
 }
+

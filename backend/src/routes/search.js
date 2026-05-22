@@ -1,4 +1,4 @@
-// ── search.js ────────────────────────────────────────────
+﻿// â”€â”€ search.js â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const express = require('express');
 const router = express.Router();
 const supabase = require('../db/client');
@@ -6,12 +6,12 @@ const supabase = require('../db/client');
 // GET /api/search?q=jon+jones
 router.get('/', async (req, res, next) => {
   try {
-    const { q, limit: lim = 10 } = req.query;
+    const { q, limit: lim = 20 } = req.query;
     if (!q || q.length < 2) return res.json({ fighters: [], events: [] });
 
     const limitNum = Math.min(20, parseInt(lim));
 
-    // Build fighter filter — handle "Jon Jones" (multi-word) and "Jones" (single) separately
+    // Build fighter filter â€” handle "Jon Jones" (multi-word) and "Jones" (single) separately
     const parts = q.trim().split(/\s+/);
     let fighterQ = supabase
       .from('fighters')
@@ -31,7 +31,10 @@ router.get('/', async (req, res, next) => {
     }
 
     const [{ data: fighters }, { data: events }] = await Promise.all([
-      fighterQ.limit(limitNum),
+      fighterQ
+        .order('is_champion', { ascending: false })
+        .order('wins', { ascending: false })
+        .limit(limitNum),
 
       supabase
         .from('events')
@@ -49,3 +52,5 @@ router.get('/', async (req, res, next) => {
 });
 
 module.exports = router;
+
+

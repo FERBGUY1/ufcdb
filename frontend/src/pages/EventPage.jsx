@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getEvent, formatOdds } from '../lib/api';
 
@@ -35,7 +35,7 @@ export default function EventPage() {
       early.length > 0    ? { title: 'Early Prelims', fights: early }   : null,
     ].filter(Boolean);
   } else {
-    // No card_position data — split by bout_order position
+    // No card_position data â€” split by bout_order position
     const mainEvent = fights.filter(f => f.bout_order === 0);
     const coMain    = fights.filter(f => f.bout_order === 1);
     const rest      = fights.filter(f => f.bout_order == null || f.bout_order > 1);
@@ -52,13 +52,13 @@ export default function EventPage() {
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-8">
-      <Link to="/events" className="text-white/30 text-sm hover:text-white">← Events</Link>
+      <Link to="/events" className="text-white/30 text-sm hover:text-white">â† Events</Link>
 
       <div className="mt-4 mb-8">
         <div className="text-[10px] tracking-[0.3em] text-gold uppercase mb-2">{e.date}</div>
         <h1 className="font-display text-4xl tracking-[0.08em] mb-1">{e.name}</h1>
         {(e.venue || e.city) && (
-          <p className="text-white/40 mt-2 text-sm">{[e.venue, e.city, e.country].filter(Boolean).join(' · ')}</p>
+          <p className="text-white/40 mt-2 text-sm">{[e.venue, e.city, e.country].filter(Boolean).join(' Â· ')}</p>
         )}
         <p className="text-white/20 text-xs mt-1">{fights.length} bout{fights.length !== 1 ? 's' : ''}</p>
       </div>
@@ -107,6 +107,11 @@ function FightItem({ fight }) {
 
   return (
     <div className={`card p-4 ${fight.is_title_fight ? 'border-gold/20' : ''}`}>
+      {fight.is_title_fight && (
+        <div className="text-[9px] tracking-[0.25em] text-gold uppercase mb-2 flex items-center gap-1.5">
+          <span>&#127942;</span> Title Fight
+        </div>
+      )}
       <div className="flex items-center gap-3">
         {/* Fighter 1 */}
         <div className="flex-1">
@@ -136,7 +141,7 @@ function FightItem({ fight }) {
                   <div className="font-medium">{fmtMethod(fight.method)}</div>
                   {fight.round && (
                     <div className="text-white/30 text-[10px]">
-                      R{fight.round}{fight.time ? ` · ${fight.time}` : ''}
+                      R{fight.round}{fight.time ? ` Â· ${fight.time}` : ''}
                     </div>
                   )}
                 </div>
@@ -178,3 +183,4 @@ function FightItem({ fight }) {
     </div>
   );
 }
+

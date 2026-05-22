@@ -1,4 +1,4 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 const axios   = require('axios');
 const cheerio = require('cheerio');
 const supabase = require('../db/client');
@@ -15,7 +15,7 @@ const http = axios.create({
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-// ── Search Sherdog for a fighter by name ─────────────────
+// â”€â”€ Search Sherdog for a fighter by name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function searchSherdog(firstName, lastName) {
   const query = encodeURIComponent(`${firstName} ${lastName}`);
   const url   = `https://www.sherdog.com/search/fighter/${query}`;
@@ -40,7 +40,7 @@ async function searchSherdog(firstName, lastName) {
   }
 }
 
-// ── Scrape a Sherdog fighter profile ─────────────────────
+// â”€â”€ Scrape a Sherdog fighter profile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function scrapeFighterProfile(url) {
   try {
     const { data } = await http.get(url);
@@ -111,11 +111,11 @@ async function scrapeFighterProfile(url) {
   }
 }
 
-// ── MAIN ─────────────────────────────────────────────────
+// â”€â”€ MAIN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function main() {
-  console.log('╔══════════════════════════════════════╗');
-  console.log('║  UFCDB — Sherdog Scraper             ║');
-  console.log('╚══════════════════════════════════════╝\n');
+  console.log('â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—');
+  console.log('â•‘  UFCDB â€” Sherdog Scraper             â•‘');
+  console.log('â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n');
 
   // Load all fighters that are missing nationality/gym data
   let updated = 0;
@@ -134,7 +134,7 @@ async function main() {
     if (error) { console.error('DB error:', error.message); break; }
     if (!fighters?.length) break;
 
-    console.log(`Processing page ${page + 1} — ${fighters.length} fighters missing nationality data\n`);
+    console.log(`Processing page ${page + 1} â€” ${fighters.length} fighters missing nationality data\n`);
 
     for (let i = 0; i < fighters.length; i++) {
       const f = fighters[i];
@@ -183,11 +183,12 @@ async function main() {
     if (fighters.length < PAGE_SIZE) break;
   }
 
-  console.log('\n╔══════════════════════════════════════╗');
-  console.log('║  Sherdog scrape complete!            ║');
-  console.log(`║  Updated:      ${String(updated).padEnd(23)}║`);
-  console.log(`║  No match:     ${String(failed).padEnd(23)}║`);
-  console.log('╚══════════════════════════════════════╝');
+  console.log('\nâ•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—');
+  console.log('â•‘  Sherdog scrape complete!            â•‘');
+  console.log(`â•‘  Updated:      ${String(updated).padEnd(23)}â•‘`);
+  console.log(`â•‘  No match:     ${String(failed).padEnd(23)}â•‘`);
+  console.log('â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•');
 }
 
 main().catch(console.error);
+

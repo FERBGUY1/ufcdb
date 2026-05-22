@@ -86,35 +86,21 @@ function inferWeightClassId(weight_class_name, weightClassMap) {
   return null;
 }
 
-// ── STEP 1: Get all fighter URLs from the A-Z fighter list ──
-async function getAllFighterUrls() {
-  console.log('Fetching fighter list pages...');
-  const urls = new Set();
-
-  // UFC Stats has A-Z fighter listing
-  const chars = 'abcdefghijklmnopqrstuvwxyz'.split('');
-
-  for (const char of chars) {
-    await sleep(DELAY);
-    try {
-      const url = `${BASE}/statistics/fighters?char=${char}&page=all`;
-      const { data } = await http.get(url);
-      const $ = cheerio.load(data);
-
-      $('table.b-statistics__table tbody tr').each((_, row) => {
-        const link = $(row).find('td a').first().attr('href');
-        if (link && link.includes('/fighter-details/')) {
-          urls.add(link);
-        }
-      });
-
-      console.log(`  ${char.toUpperCase()}: found ${urls.size} total fighters so far`);
-    } catch (e) {
-      console.error(`  Failed to fetch list for char ${char}:`, e.message);
-    }
+// ── STEP 1: Get fighter URLs for a single letter ─────────
+async function getFighterUrlsForChar(char) {
+  const urls = [];
+  try {
+    const url = `${BASE}/statistics/fighters?char=${char}&page=all`;
+    const { data } = await http.get(url);
+    const $ = cheerio.load(data);
+    $('table.b-statistics__table tbody tr').each((_, row) => {
+      const link = $(row).find('td a').first().attr('href');
+      if (link && link.includes('/fighter-details/')) urls.push(link);
+    });
+  } catch (e) {
+    console.error(`  Failed to fetch list for char ${char}:`, e.message);
   }
-
-  return Array.from(urls);
+  return urls;
 }
 
 // ── STEP 2: Scrape individual fighter page ────────────────
@@ -134,7 +120,7 @@ async function scrapeFighter(url, weightClassMap) {
     const nickname = $('p.b-content__Nickname').text().replace(/"/g, '').trim() || null;
 
     // Record
-    const recordText = $('p.b-content__title-record').text().replace('Record:', '').trim();
+    const recordText = $('span.b-content__title-record').text().replace('Record:', '').trim();
     const { wins, losses, draws, nc } = parseRecord(recordText);
 
     // Physical stats from the info boxes
@@ -154,7 +140,7 @@ async function scrapeFighter(url, weightClassMap) {
 
     // Fight stats
     const statsItems = {};
-    $('ul.b-list__box-list-item_type_block').each((_, el) => {
+    $('li.b-list__box-list-item_type_block').each((_, el) => {
       const label = $(el).find('i').text().trim().replace(':', '');
       const value = $(el).text().replace($(el).find('i').text(), '').trim();
       if (label) statsItems[label] = value;
@@ -320,20 +306,22 @@ async function main() {
     }
   }
 
-  // ── Phase 1: Fighters ──
+  // ── Phase 1: Fighters (letter-by-letter so DB writes start immediately) ──
   console.log('Phase 1: Scraping fighter profiles...\n');
-  const fighterUrls = await getAllFighterUrls();
-  console.log(`\nTotal fighter URLs: ${fighterUrls.length}`);
 
   let imported = 0;
   let failed = 0;
+  const chars = 'abcdefghijklmnopqrstuvwxyz'.split('');
 
-  const BATCH_SIZE = 50;
-  for (let i = 0; i < fighterUrls.length; i += BATCH_SIZE) {
-    const batch = fighterUrls.slice(i, i + BATCH_SIZE);
+  for (const char of chars) {
+    await sleep(DELAY);
+    const urls = await getFighterUrlsForChar(char);
+    if (urls.length === 0) { console.log(`  ${char.toUpperCase()}: no fighters`); continue; }
+
+    console.log(`  ${char.toUpperCase()}: ${urls.length} fighters — scraping...`);
 
     const fighters = await Promise.all(
-      batch.map(url => limit(async () => {
+      urls.map(url => limit(async () => {
         await sleep(DELAY);
         return scrapeFighter(url, weightClassMap);
       }))
@@ -342,20 +330,35 @@ async function main() {
     const validFighters = fighters.filter(Boolean);
 
     if (validFighters.length > 0) {
+      // Deduplicate slugs within this batch — append ufc_id suffix on collision
+      const seenSlugs = new Set();
+      for (const f of validFighters) {
+        if (seenSlugs.has(f.slug)) f.slug = `${f.slug}-${f.ufc_id.slice(-6)}`;
+        seenSlugs.add(f.slug);
+      }
+
       const { error } = await supabase
         .from('fighters')
         .upsert(validFighters, { onConflict: 'ufc_id', ignoreDuplicates: false });
 
-      if (error) {
-        console.error(`Batch upsert error:`, error.message);
+      if (error && error.code === '23505') {
+        // Slug already taken by a fighter from a prior letter — retry one-by-one
+        let letterSaved = 0;
+        for (const f of validFighters) {
+          const { error: e2 } = await supabase
+            .from('fighters')
+            .upsert({ ...f, slug: `${f.slug}-${f.ufc_id.slice(-6)}` }, { onConflict: 'ufc_id' });
+          if (e2) failed++; else { imported++; letterSaved++; }
+        }
+        console.log(`  ${char.toUpperCase()}: ✓ ${letterSaved} saved with slug fix (total: ${imported})`);
+      } else if (error) {
+        console.error(`  ${char.toUpperCase()} upsert error:`, error.message);
         failed += validFighters.length;
       } else {
         imported += validFighters.length;
+        console.log(`  ${char.toUpperCase()}: ✓ ${validFighters.length} saved (total: ${imported})`);
       }
     }
-
-    const progress = Math.min(i + BATCH_SIZE, fighterUrls.length);
-    console.log(`Progress: ${progress}/${fighterUrls.length} (${Math.round(progress/fighterUrls.length*100)}%) — imported: ${imported}, failed: ${failed}`);
   }
 
   console.log(`\n✓ Fighter import complete: ${imported} imported, ${failed} failed\n`);

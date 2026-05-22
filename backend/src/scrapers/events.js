@@ -1,5 +1,5 @@
-/**
- * Events + Fights scraper — ufcstats.com
+﻿/**
+ * Events + Fights scraper â€” ufcstats.com
  * Correct cell indices (confirmed from live HTML inspection 2026-05-21):
  *   cells[0]=W/L, cells[1]=fighters, cells[2]=KD, cells[3]=Str,
  *   cells[4]=TD, cells[5]=Sub, cells[6]=W.Class, cells[7]=Method,
@@ -99,11 +99,22 @@ async function scrapeEvent(url) {
       else if (winCell.includes('nc'))   result = 'no_contest';
       else if (isUpcoming)               result = 'upcoming';
 
+      const isTitleFight   = /title/i.test(wc);
+      const isInterimTitle = /interim/i.test(wc);
+      // Normalize wc name for DB lookup (strip "UFC ", " Title Bout", " Bout" etc.)
+      const wcNorm = wc
+        .replace(/^ufc\s+/i, '')
+        .replace(/\s+(interim\s+)?title\s+bout$/i, '')
+        .replace(/\s+bout$/i, '')
+        .trim();
+
       fights.push({
         fighter1_ufc_id: f1link.split('/').pop(),
         fighter2_ufc_id: f2link.split('/').pop(),
         result, method, method_detail: methodDet, round, time,
-        weight_class_name: wc,
+        weight_class_name: wcNorm || wc,
+        is_title_fight:    isTitleFight,
+        is_interim_title:  isInterimTitle,
         fighter1_sig_str: f1Str, fighter2_sig_str: f2Str,
         fighter1_td: f1TD, fighter2_td: f2TD,
       });
@@ -117,9 +128,9 @@ async function scrapeEvent(url) {
 }
 
 async function main() {
-  console.log('╔══════════════════════════════════════╗');
-  console.log('║  UFCDB — Events + Fights Scraper     ║');
-  console.log('╚══════════════════════════════════════╝\n');
+  console.log('â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—');
+  console.log('â•‘  UFCDB â€” Events + Fights Scraper     â•‘');
+  console.log('â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n');
 
   const fighterMap = {};
   let fPage = 0;
@@ -163,7 +174,8 @@ async function main() {
         event_id: eventData.id, fighter1_id: f1id, fighter2_id: f2id,
         bout_order: boutIdx++,
         result: f.result, method: f.method, method_detail: f.method_detail,
-        round: f.round, time: f.time, is_title_fight: false,
+        round: f.round, time: f.time,
+        is_title_fight: f.is_title_fight || false,
         weight_class_id: wcMap[f.weight_class_name] || null,
         fighter1_sig_str: f.fighter1_sig_str || null,
         fighter2_sig_str: f.fighter2_sig_str || null,
@@ -183,7 +195,8 @@ async function main() {
       console.log(`[${i+1}/${eventUrls.length}] Events: ${eventsImported} | Fights: ${fightsImported}`);
   }
 
-  console.log('\nDone — Events: '+eventsImported+' | Fights: '+fightsImported+' | Failed: '+eventsFailed);
+  console.log('\nDone â€” Events: '+eventsImported+' | Fights: '+fightsImported+' | Failed: '+eventsFailed);
 }
 
 main().catch(console.error);
+

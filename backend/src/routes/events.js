@@ -1,4 +1,4 @@
-// ── events.js ────────────────────────────────────────────
+﻿// â”€â”€ events.js â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const express = require('express');
 const router = express.Router();
 const supabase = require('../db/client');
@@ -51,7 +51,7 @@ router.get('/:slug', async (req, res, next) => {
     const { data: fights } = await supabase
       .from('fights')
       .select(`
-        id, result, method, round, time, card_position, is_title_fight,
+        id, bout_order, result, method, round, time, card_position, is_title_fight,
         fighter1_record_at_fight, fighter2_record_at_fight,
         fighter1:fighters!fighter1_id ( id, slug, first_name, last_name, nickname, photo_url ),
         fighter2:fighters!fighter2_id ( id, slug, first_name, last_name, nickname, photo_url ),
@@ -67,3 +67,4 @@ router.get('/:slug', async (req, res, next) => {
 });
 
 module.exports = router;
+
