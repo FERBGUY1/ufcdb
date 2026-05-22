@@ -10,6 +10,7 @@ import StylesPage  from './pages/StylesPage';
 import ComparePage from './pages/ComparePage';
 import RankingsPage from './pages/RankingsPage';
 import NotFoundPage from './pages/NotFoundPage';
+import FightPage     from './pages/FightPage';
 import './styles/globals.css';
 
 export default function App() {
