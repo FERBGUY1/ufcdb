@@ -18,22 +18,23 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // â”€â”€ Search Sherdog for a fighter by name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function searchSherdog(firstName, lastName) {
   const query = encodeURIComponent(`${firstName} ${lastName}`);
-  const url   = `https://www.sherdog.com/search/fighter/${query}`;
+  const url   = `https://www.sherdog.com/stats/fightfinder?SearchTxt=${query}&type=fighter`;
   try {
     const { data } = await http.get(url);
     const $ = cheerio.load(data);
 
-    // First result from search table
-    const firstRow = $('table.fightfinder_result tbody tr').first();
-    if (!firstRow.length) return null;
+    const rows = $('table[class*="fightfinder_result"] tbody tr');
+    if (!rows.length) return null;
 
-    const link = firstRow.find('td a').first().attr('href');
-    const nameText = firstRow.find('td a').first().text().trim();
-
-    // Basic name match check
-    const searchName = `${firstName} ${lastName}`.toLowerCase();
-    if (!nameText.toLowerCase().includes(lastName.toLowerCase())) return null;
-
+    let link = null;
+    rows.each((_, row) => {
+      if (link) return;
+      const a = $(row).find('a[href*="/fighter/"]').first();
+      const nameText = a.text().trim();
+      if (nameText.toLowerCase().includes(lastName.toLowerCase())) {
+        link = a.attr('href');
+      }
+    });
     return link ? `https://www.sherdog.com${link}` : null;
   } catch (e) {
     return null;
@@ -191,4 +192,6 @@ async function main() {
 }
 
 main().catch(console.error);
+
+
 
