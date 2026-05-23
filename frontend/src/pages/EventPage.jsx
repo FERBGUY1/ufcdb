@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getEvent, formatOdds } from '../lib/api';
 
@@ -22,7 +22,7 @@ export default function EventPage() {
   let sections;
 
   if (hasCardPos) {
-    const main   = fights.filter(f => f.card_position === 'main');
+    const main   = fights.filter(f => f.card_position === 'main_card');
     const prelim = fights.filter(f => f.card_position === 'prelim');
     const early  = fights.filter(f => f.card_position === 'early_prelim');
     // Fights that arrived without a card_position go under main card
@@ -30,12 +30,12 @@ export default function EventPage() {
     const mainAll = [...main, ...other];
 
     sections = [
-      mainAll.length > 0  ? { title: 'Main Card', fights: mainAll }     : null,
+      mainAll.length > 0  ? { title: 'Main Card', fights: mainAll }       : null,
       prelim.length > 0   ? { title: 'Preliminary Card', fights: prelim } : null,
-      early.length > 0    ? { title: 'Early Prelims', fights: early }   : null,
+      early.length > 0    ? { title: 'Early Prelims', fights: early }     : null,
     ].filter(Boolean);
   } else {
-    // No card_position data â€” split by bout_order position
+    // No card_position data — split by bout_order position
     const mainEvent = fights.filter(f => f.bout_order === 0);
     const coMain    = fights.filter(f => f.bout_order === 1);
     const rest      = fights.filter(f => f.bout_order == null || f.bout_order > 1);
@@ -44,7 +44,6 @@ export default function EventPage() {
       mainEvent.length > 0 ? { title: 'Main Event', fights: mainEvent }  : null,
       coMain.length > 0    ? { title: 'Co-Main Event', fights: coMain }  : null,
       rest.length > 0      ? { title: 'Fight Card', fights: rest }       : null,
-      // Fallback: all fights if bout_order is entirely unpopulated
       mainEvent.length === 0 && coMain.length === 0 && rest.length === 0
         ? { title: 'Fight Card', fights } : null,
     ].filter(Boolean);
@@ -52,13 +51,13 @@ export default function EventPage() {
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-8">
-      <Link to="/events" className="text-white/30 text-sm hover:text-white">â† Events</Link>
+      <Link to="/events" className="text-white/30 text-sm hover:text-white">&larr; Events</Link>
 
       <div className="mt-4 mb-8">
         <div className="text-[10px] tracking-[0.3em] text-gold uppercase mb-2">{e.date}</div>
         <h1 className="font-display text-4xl tracking-[0.08em] mb-1">{e.name}</h1>
         {(e.venue || e.city) && (
-          <p className="text-white/40 mt-2 text-sm">{[e.venue, e.city, e.country].filter(Boolean).join(' Â· ')}</p>
+          <p className="text-white/40 mt-2 text-sm">{[e.venue, e.city, e.country].filter(Boolean).join(' · ')}</p>
         )}
         <p className="text-white/20 text-xs mt-1">{fights.length} bout{fights.length !== 1 ? 's' : ''}</p>
       </div>
@@ -85,9 +84,8 @@ function FightSection({ title, fights }) {
 function FightItem({ fight }) {
   const f1 = fight.fighter1;
   const f2 = fight.fighter2;
-  // result='win' means fighter1 won (winner_id is not populated in our schema)
   const f1Won = fight.result === 'win';
-  const f2Won = false; // fighter2 is never stored as winner
+  const f2Won = false;
   const isDraw = fight.result === 'draw';
   const isNC   = fight.result === 'no_contest';
   const isUpcoming = fight.result === 'upcoming' || !fight.result;
@@ -141,7 +139,7 @@ function FightItem({ fight }) {
                   <div className="font-medium">{fmtMethod(fight.method)}</div>
                   {fight.round && (
                     <div className="text-white/30 text-[10px]">
-                      R{fight.round}{fight.time ? ` Â· ${fight.time}` : ''}
+                      R{fight.round}{fight.time ? ` · ${fight.time}` : ''}
                     </div>
                   )}
                 </div>
@@ -183,4 +181,3 @@ function FightItem({ fight }) {
     </div>
   );
 }
-
