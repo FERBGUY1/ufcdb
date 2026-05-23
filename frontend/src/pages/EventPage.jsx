@@ -20,13 +20,14 @@ export default function EventPage() {
   // bout_order: 0 = Main Event, 1 = Co-Main, rest = Fight Card.
   const hasCardPos = fights.some(f => f.card_position);
   let sections;
+  const byBoutOrder = arr => [...arr].sort((a, b) => (a.bout_order ?? 999) - (b.bout_order ?? 999));
 
   if (hasCardPos) {
-    const main   = fights.filter(f => f.card_position === 'main_card');
-    const prelim = fights.filter(f => f.card_position === 'prelim');
-    const early  = fights.filter(f => f.card_position === 'early_prelim');
+    const main   = byBoutOrder(fights.filter(f => f.card_position === 'main_card'));
+    const prelim = byBoutOrder(fights.filter(f => f.card_position === 'prelim'));
+    const early  = byBoutOrder(fights.filter(f => f.card_position === 'early_prelim'));
     // Fights that arrived without a card_position go under main card
-    const other  = fights.filter(f => !f.card_position);
+    const other  = byBoutOrder(fights.filter(f => !f.card_position));
     const mainAll = [...main, ...other];
 
     sections = [
