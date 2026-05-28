@@ -96,7 +96,7 @@ async function main() {
   }
 
   let inserted = 0, skipped = 0, noEvent = 0, noFighter = 0;
-  const SEASONS = [2022, 2023, 2024];
+  const SEASONS = [2022, 2023, 2024, 2025, 2026];
 
   for (const season of SEASONS) {
     await sleep(300);
