@@ -16,17 +16,17 @@ export default function EventPage() {
 
   const { event: e, fights } = data;
 
-  // Build sections. If card_position data exists use it; otherwise split by
-  // bout_order: 0 = Main Event, 1 = Co-Main, rest = Fight Card.
   const hasCardPos = fights.some(f => f.card_position);
   let sections;
+
+
+  // bout_order=0 is main event; ascending puts headliner first in every section
   const byBoutOrder = arr => [...arr].sort((a, b) => (a.bout_order ?? 999) - (b.bout_order ?? 999));
 
   if (hasCardPos) {
     const main   = byBoutOrder(fights.filter(f => f.card_position === 'main_card'));
     const prelim = byBoutOrder(fights.filter(f => f.card_position === 'prelim'));
     const early  = byBoutOrder(fights.filter(f => f.card_position === 'early_prelim'));
-    // Fights that arrived without a card_position go under main card
     const other  = byBoutOrder(fights.filter(f => !f.card_position));
     const mainAll = [...main, ...other];
 
@@ -36,7 +36,6 @@ export default function EventPage() {
       early.length > 0    ? { title: 'Early Prelims', fights: early }     : null,
     ].filter(Boolean);
   } else {
-    // No card_position data — split by bout_order position
     const mainEvent = fights.filter(f => f.bout_order === 0);
     const coMain    = fights.filter(f => f.bout_order === 1);
     const rest      = fights.filter(f => f.bout_order == null || f.bout_order > 1);

@@ -27,8 +27,12 @@ export const getConsensusOdds = (id)     => api.get(`/odds/${id}/consensus`).the
 export const getSiteStats = () => api.get('/stats/overview').then(r=>r.data);
 
 // ── PREDICTIONS ──────────────────────────────────────────
-export const getPrediction = (slug1, slug2) =>
-  api.post('/predict', { fighter1_slug: slug1, fighter2_slug: slug2 }).then(r=>r.data);
+export const getPrediction = (slug1, slug2, wcSlug) =>
+  api.post('/predict', { fighter1_slug: slug1, fighter2_slug: slug2, ...(wcSlug && { weight_class_slug: wcSlug }) }).then(r=>r.data);
+
+// ── RANKINGS ─────────────────────────────────────────────
+export const getAllRankings = ()       => api.get('/rankings/all').then(r=>r.data);
+export const getRankings   = (wc)     => api.get('/rankings', {params:{weight_class:wc}}).then(r=>r.data);
 
 // ── STYLES ───────────────────────────────────────────────
 export const getStyleMatchups = (p={}) => api.get('/styles/matchups',{params:p}).then(r=>r.data);
