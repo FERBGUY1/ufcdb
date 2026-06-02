@@ -28,12 +28,12 @@ export default function EventPage() {
     const prelim = byBoutOrder(fights.filter(f => f.card_position === 'prelim'));
     const early  = byBoutOrder(fights.filter(f => f.card_position === 'early_prelim'));
     const other  = byBoutOrder(fights.filter(f => !f.card_position));
-    const mainAll = [...main, ...other];
 
     sections = [
-      mainAll.length > 0  ? { title: 'Main Card', fights: mainAll }       : null,
-      prelim.length > 0   ? { title: 'Preliminary Card', fights: prelim } : null,
-      early.length > 0    ? { title: 'Early Prelims', fights: early }     : null,
+      main.length > 0   ? { title: 'Main Card',        fights: main   } : null,
+      prelim.length > 0 ? { title: 'Preliminary Card', fights: prelim } : null,
+      early.length > 0  ? { title: 'Early Prelims',    fights: early  } : null,
+      other.length > 0  ? { title: 'Fight Card',       fights: other  } : null,
     ].filter(Boolean);
   } else {
     const mainEvent = fights.filter(f => f.bout_order === 0);

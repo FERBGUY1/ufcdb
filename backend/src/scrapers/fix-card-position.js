@@ -48,7 +48,7 @@ async function main() {
     for (const event of events) {
       const { data: fights } = await supabase
         .from('fights')
-        .select('id, bout_order')
+        .select('id, bout_order, card_position')
         .eq('event_id', event.id)
         .order('bout_order', { ascending: true, nullsFirst: false });
 
@@ -57,10 +57,18 @@ async function main() {
       const sorted = [...fights].sort((a, b) => (a.bout_order ?? 999) - (b.bout_order ?? 999));
       const { main_card, prelim, early_prelim } = derivePositions(sorted);
 
+      // Only update fights that currently lack card_position; preserve ufcstats-assigned values
+      const nullIds = new Set(fights.filter(f => f.card_position == null).map(f => f.id));
+      const toMain   = main_card.filter(id => nullIds.has(id));
+      const toPrelim = prelim.filter(id => nullIds.has(id));
+      const toEarly  = early_prelim.filter(id => nullIds.has(id));
+
+      if (!toMain.length && !toPrelim.length && !toEarly.length) continue;
+
       const updateJobs = [
-        main_card.length    ? supabase.from('fights').update({ card_position: 'main_card'    }).in('id', main_card)    : null,
-        prelim.length       ? supabase.from('fights').update({ card_position: 'prelim'       }).in('id', prelim)       : null,
-        early_prelim.length ? supabase.from('fights').update({ card_position: 'early_prelim' }).in('id', early_prelim) : null,
+        toMain.length   ? supabase.from('fights').update({ card_position: 'main_card'    }).in('id', toMain)   : null,
+        toPrelim.length ? supabase.from('fights').update({ card_position: 'prelim'       }).in('id', toPrelim) : null,
+        toEarly.length  ? supabase.from('fights').update({ card_position: 'early_prelim' }).in('id', toEarly)  : null,
       ].filter(Boolean);
 
       const results = await Promise.all(updateJobs);
