@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { getFighter, formatOdds, formatRecord, heightFromInches, getCountryFlag, oddsToImplied } from '../lib/api';
 
@@ -31,7 +31,9 @@ export default function FighterPage() {
   const upcomingFight = fights?.find(fight => fight.result === 'upcoming');
   const dbBoutCount = fights?.filter(fight => fight.result !== 'upcoming').length ?? 0;
   const recordTotal = (f.wins || 0) + (f.losses || 0) + (f.draws || 0) + (f.no_contests || 0);
-  const boutCount = Math.max(dbBoutCount, recordTotal);
+  // Only inflate bout count from record total when we have at least some fights in DB
+  const boutCount = dbBoutCount > 0 ? Math.max(dbBoutCount, recordTotal) : 0;
+  const hasMissingHistory = dbBoutCount === 0 && recordTotal > 0;
 
   return (
     <main>
@@ -72,7 +74,7 @@ export default function FighterPage() {
             )}
 
             {/* Record */}
-            <div className="flex gap-5 mt-4 items-end">
+            <div className="flex gap-5 mt-4 items-end flex-wrap">
               <div>
                 <div className="flex gap-5 items-end">
                   <RecordStat num={f.wins}   label="Wins"   color="text-win" />
@@ -82,10 +84,19 @@ export default function FighterPage() {
                 </div>
                 <div className="text-[9px] tracking-[0.2em] text-white/20 uppercase mt-1">UFC Record</div>
               </div>
+              {(f.career_wins > 0 || f.career_losses > 0) &&
+               (f.career_wins !== f.wins || f.career_losses !== f.losses) && (
+                <div className="pl-4 border-l border-white/10">
+                  <div className="font-display text-2xl tracking-wider text-white/40">
+                    {f.career_wins}-{f.career_losses}{f.career_draws > 0 ? `-${f.career_draws}` : ''}
+                  </div>
+                  <div className="text-[10px] tracking-wider text-white/20 uppercase">Pro Career</div>
+                </div>
+              )}
               {(f.amateur_wins > 0 || f.amateur_losses > 0) && (
                 <div className="pl-4 border-l border-white/10">
                   <div className="font-display text-2xl tracking-wider text-white/30">
-                    {f.amateur_wins}-{f.amateur_losses}
+                    {f.amateur_wins}-{f.amateur_losses}{f.amateur_draws > 0 ? `-${f.amateur_draws}` : ''}
                   </div>
                   <div className="text-[10px] tracking-wider text-white/20 uppercase">Amateur</div>
                 </div>
@@ -180,24 +191,35 @@ export default function FighterPage() {
                   )}
                 </p>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-white/[0.06]">
-                      {['Opponent', 'Event', 'Date', 'Result', 'Method', 'Rnd', 'Odds'].map(h => (
-                        <th key={h} className="text-left px-4 py-2.5 text-[10px] tracking-[0.15em] text-white/30 uppercase font-medium">
-                          {h}
-                        </th>
+              {hasMissingHistory ? (
+                <div className="px-5 py-8 text-center">
+                  <p className="text-sm text-white/30">
+                    Fight-by-fight history not yet imported for this fighter.
+                  </p>
+                  <p className="text-xs text-white/20 mt-1">
+                    Known record: {recordTotal > 0 ? `${f.wins}W–${f.losses}L${f.draws > 0 ? `–${f.draws}D` : ''}${f.no_contests > 0 ? ` (${f.no_contests} NC)` : ''}` : '–'}
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-white/[0.06]">
+                        {['Opponent', 'Event', 'Date', 'Result', 'Method', 'Rnd', 'Odds'].map(h => (
+                          <th key={h} className="text-left px-4 py-2.5 text-[10px] tracking-[0.15em] text-white/30 uppercase font-medium">
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fights?.filter(fight => fight.result !== 'upcoming').map(fight => (
+                        <FightRow key={fight.id} fight={fight} fighterId={f.id} />
                       ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {fights?.filter(fight => fight.result !== 'upcoming').map(fight => (
-                      <FightRow key={fight.id} fight={fight} fighterId={f.id} />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </section>
           </div>
 

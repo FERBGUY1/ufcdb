@@ -15,6 +15,7 @@ const statsRouter       = require('./routes/stats');
 const predictRouter     = require('./routes/predict');
 const styleRouter       = require('./routes/styles');
 const adminRouter       = require('./routes/admin');
+const rankingsRouter    = require('./routes/rankings');
 
 const { syncOdds }             = require('./scrapers/odds');
 const { computeStyleMatchups } = require('./ml/qualityEngine');
@@ -23,7 +24,19 @@ const app  = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(helmet());
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173', credentials: true }));
+app.use(cors({
+  origin: (origin, cb) => {
+    const allowed = [
+      process.env.FRONTEND_URL || 'http://localhost:5173',
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://localhost:5175',
+    ];
+    if (!origin || allowed.includes(origin)) return cb(null, true);
+    cb(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+}));
 app.use(morgan('dev'));
 app.use(express.json());
 
@@ -43,6 +56,7 @@ app.use('/api/stats',    statsRouter);
 app.use('/api/predict',  predictRouter);
 app.use('/api/styles',   styleRouter);
 app.use('/api/admin',    adminRouter);
+app.use('/api/rankings', rankingsRouter);
 
 app.get('/api/health', (req, res) =>
   res.json({ status: 'ok', timestamp: new Date().toISOString() })

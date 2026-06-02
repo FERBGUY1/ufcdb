@@ -1,141 +1,148 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getFighters, formatRecord } from '../lib/api';
-
-const WEIGHT_CLASSES = [
-  { slug: 'heavyweight',        name: 'Heavyweight',         limit: '265 lbs' },
-  { slug: 'light-heavyweight',  name: 'Light Heavyweight',   limit: '205 lbs' },
-  { slug: 'middleweight',       name: 'Middleweight',        limit: '185 lbs' },
-  { slug: 'welterweight',       name: 'Welterweight',        limit: '170 lbs' },
-  { slug: 'lightweight',        name: 'Lightweight',         limit: '155 lbs' },
-  { slug: 'featherweight',      name: 'Featherweight',       limit: '145 lbs' },
-  { slug: 'bantamweight',       name: 'Bantamweight',        limit: '135 lbs' },
-  { slug: 'flyweight',          name: 'Flyweight',           limit: '125 lbs' },
-  { slug: 'womens-strawweight', name: "Women's Strawweight", limit: '115 lbs' },
-  { slug: 'womens-flyweight',   name: "Women's Flyweight",   limit: '125 lbs' },
-  { slug: 'womens-bantamweight',name: "Women's Bantamweight",limit: '135 lbs' },
-  { slug: 'womens-featherweight',name:"Women's Featherweight",limit: '145 lbs' },
-];
+import { getAllRankings, formatRecord } from '../lib/api';
 
 export default function RankingsPage() {
-  const [selected, setSelected] = useState('heavyweight');
-  const [fighters, setFighters] = useState([]);
-  const [loading, setLoading]   = useState(false);
+  const [data, setData]         = useState(null);
+  const [loading, setLoading]   = useState(true);
+  const [selected, setSelected] = useState(null);
 
   useEffect(() => {
-    setLoading(true);
-    getFighters({ weight_class: selected, sort: 'wins', order: 'desc', status: 'active', limit: 16 })
-      .then(d => setFighters(d.fighters || []))
-      .catch(() => setFighters([]))
+    getAllRankings()
+      .then(d => {
+        setData(d);
+        if (d.divisions?.length) setSelected(d.divisions[0].weight_class.slug);
+      })
+      .catch(() => setData(null))
       .finally(() => setLoading(false));
-  }, [selected]);
+  }, []);
 
-  const selectedClass = WEIGHT_CLASSES.find(w => w.slug === selected);
-  const champion = fighters.find(f => f.is_champion);
-  const ranked   = fighters.filter(f => !f.is_champion);
+  const divisions = data?.divisions || [];
+  const division  = divisions.find(d => d.weight_class.slug === selected);
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-8">
       <h1 className="page-header">RANKINGS</h1>
-      <p className="page-sub">Top active fighters by weight class — sorted by win total</p>
-      <p className="text-[10px] text-white/20 tracking-wider mt-1 mb-6">
-        Official UFC rankings sync coming soon · Showing computed rankings based on record
-      </p>
-
-      {/* Weight class tabs */}
-      <div className="flex flex-wrap gap-2 mb-8">
-        {WEIGHT_CLASSES.map(wc => (
-          <button
-            key={wc.slug}
-            onClick={() => setSelected(wc.slug)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              selected === wc.slug
-                ? 'bg-gold text-dark-1'
-                : 'bg-dark-3 text-white/50 hover:text-white hover:bg-dark-4'
-            }`}
-          >
-            {wc.name}
-          </button>
-        ))}
-      </div>
-
-      {/* Division header */}
-      <div className="mb-6">
-        <div className="flex items-baseline gap-3">
-          <h2 className="font-display text-2xl tracking-[0.1em]">{selectedClass?.name.toUpperCase()}</h2>
-          <span className="text-xs text-white/30">{selectedClass?.limit}</span>
-        </div>
+      <div className="flex items-baseline gap-3 mb-1">
+        <p className="page-sub">Official UFC rankings</p>
+        {data?.recorded_date && (
+          <span className="text-[10px] text-white/20 tracking-wider">
+            Updated {data.recorded_date}
+          </span>
+        )}
       </div>
 
       {loading ? (
-        <div className="space-y-2">
-          {Array.from({length: 8}).map((_, i) => (
+        <div className="space-y-2 mt-6">
+          {Array.from({length: 8}).map((_,i) => (
             <div key={i} className="h-14 bg-dark-3 rounded-xl animate-pulse" />
           ))}
         </div>
+      ) : !data || divisions.length === 0 ? (
+        <div className="card p-8 text-center text-white/30 mt-6">
+          Rankings not yet available. Run the rankings scraper to populate.
+        </div>
       ) : (
-        <div className="space-y-1.5">
-          {/* Champion row */}
-          {champion && (
-            <div className="card p-4 border-gold/20 mb-4">
-              <div className="flex items-center gap-4">
-                <div className="w-8 text-center">
-                  <span className="text-gold text-lg">&#127942;</span>
-                </div>
-                <div className="flex-1">
-                  <Link to={`/fighters/${champion.slug}`} className="font-medium hover:text-gold transition-colors">
-                    {champion.first_name} {champion.last_name}
-                  </Link>
-                  {champion.nickname && (
-                    <span className="text-xs text-white/30 ml-2">"{champion.nickname}"</span>
-                  )}
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-medium text-win">
-                    {formatRecord(champion.wins, champion.losses, champion.draws, champion.no_contests)}
-                  </div>
-                  <div className="text-[9px] tracking-[0.2em] text-gold uppercase mt-0.5">Champion</div>
-                </div>
-              </div>
+        <div className="flex gap-6 mt-6">
+          {/* Weight class sidebar */}
+          <aside className="flex-shrink-0 w-44">
+            <div className="space-y-1 sticky top-4">
+              {divisions.map(d => (
+                <button
+                  key={d.weight_class.slug}
+                  onClick={() => setSelected(d.weight_class.slug)}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                    selected === d.weight_class.slug
+                      ? 'bg-gold text-dark-1'
+                      : 'bg-dark-3 text-white/50 hover:text-white hover:bg-dark-4'
+                  }`}
+                >
+                  {d.weight_class.name}
+                </button>
+              ))}
             </div>
-          )}
+          </aside>
 
-          {/* Ranked fighters */}
-          {ranked.slice(0, 15).map((fighter, i) => (
-            <RankedRow key={fighter.id} fighter={fighter} rank={i + 1} />
-          ))}
-
-          {fighters.length === 0 && (
-            <div className="card p-8 text-center text-white/30">
-              No active fighters found in this weight class
-            </div>
-          )}
+          {/* Rankings list */}
+          <div className="flex-1 min-w-0">
+            {division ? (
+              <DivisionRankings division={division} />
+            ) : (
+              <div className="text-white/30 text-sm">Select a weight class</div>
+            )}
+          </div>
         </div>
       )}
     </main>
   );
 }
 
-function RankedRow({ fighter, rank }) {
+function DivisionRankings({ division }) {
+  const wc = division.weight_class;
   return (
-    <div className="card p-4 hover:border-white/10 transition-colors">
-      <div className="flex items-center gap-4">
-        <div className="w-8 text-center flex-shrink-0">
-          <span className="font-display text-white/30 text-lg">#{rank}</span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <Link to={`/fighters/${fighter.slug}`} className="font-medium hover:text-gold transition-colors">
-            {fighter.first_name} {fighter.last_name}
-          </Link>
-          {fighter.nickname && (
-            <span className="text-xs text-white/30 ml-2 truncate">"{fighter.nickname}"</span>
-          )}
-        </div>
-        <div className="text-right flex-shrink-0">
-          <div className="text-sm font-medium">
-            {formatRecord(fighter.wins, fighter.losses, fighter.draws, fighter.no_contests)}
+    <div>
+      <div className="mb-6">
+        <h2 className="font-display text-2xl tracking-[0.1em]">{wc.name.toUpperCase()}</h2>
+      </div>
+
+      <div className="space-y-1.5">
+        {/* Champion */}
+        {division.champion && (
+          <div className="card p-4 border-gold/20 mb-4">
+            <div className="flex items-center gap-4">
+              <div className="w-8 text-center flex-shrink-0">
+                <span className="text-gold text-lg">&#127942;</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <Link to={`/fighters/${division.champion.slug}`} className="font-medium hover:text-gold transition-colors">
+                  {division.champion.first_name} {division.champion.last_name}
+                </Link>
+                {division.champion.nickname && (
+                  <span className="text-xs text-white/30 ml-2">"{division.champion.nickname}"</span>
+                )}
+              </div>
+              <div className="text-right flex-shrink-0">
+                <div className="text-sm font-medium text-win">
+                  {formatRecord(division.champion.wins, division.champion.losses, division.champion.draws, division.champion.no_contests)}
+                </div>
+                <div className="text-[9px] tracking-[0.2em] text-gold uppercase mt-0.5">Champion</div>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Ranked 1-15 */}
+        {division.ranked.map(({ rank, is_interim, fighter }) => (
+          fighter ? (
+            <div key={fighter.id} className="card p-4 hover:border-white/10 transition-colors">
+              <div className="flex items-center gap-4">
+                <div className="w-8 text-center flex-shrink-0">
+                  <span className="font-display text-white/30 text-lg">#{rank}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <Link to={`/fighters/${fighter.slug}`} className="font-medium hover:text-gold transition-colors">
+                    {fighter.first_name} {fighter.last_name}
+                  </Link>
+                  {fighter.nickname && (
+                    <span className="text-xs text-white/30 ml-2 truncate">"{fighter.nickname}"</span>
+                  )}
+                  {is_interim && (
+                    <span className="ml-2 text-[9px] text-gold/70 uppercase tracking-wider">Interim</span>
+                  )}
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <div className="text-sm font-medium">
+                    {formatRecord(fighter.wins, fighter.losses, fighter.draws, fighter.no_contests)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null
+        ))}
+
+        {division.ranked.length === 0 && !division.champion && (
+          <div className="card p-8 text-center text-white/30">No rankings data</div>
+        )}
       </div>
     </div>
   );

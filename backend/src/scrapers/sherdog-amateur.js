@@ -1,10 +1,7 @@
 /**
- * Backfill amateur records (amateur_wins, amateur_losses) for fighters who
- * already have nationality set (meaning Sherdog has their profile).
- * Re-searches Sherdog with strict matching and extracts amateur fight counts.
- *
- * Run AFTER sherdog.js has populated nationality data.
- * Usage: node src/scrapers/sherdog-amateur.js
+ * Backfill amateur records (amateur_wins, amateur_losses) for fighters.
+ * Scrapes Sherdog "FIGHT HISTORY - AMATEUR" section.
+ * Run: node src/scrapers/sherdog-amateur.js
  */
 require('dotenv').config();
 const axios   = require('axios');
@@ -29,25 +26,23 @@ async function searchSherdog(firstName, lastName) {
   try {
     const { data } = await http.get(url);
     const $ = cheerio.load(data);
-    const rows = $('table[class*="fightfinder_result"] tbody tr');
-    if (!rows.length) return null;
+
+    const first = firstName.toLowerCase();
+    const last  = lastName.toLowerCase();
+    const firstWords = first.split(/\s+/);
+    const lastWords  = last.split(/\s+/);
 
     let link = null;
-    rows.each((_, row) => {
+    $('a[href*="/fighter/"]').each(function(_, a) {
       if (link) return;
-      const a = $(row).find('a[href*="/fighter/"]').first();
-      const nameText = a.text().trim().toLowerCase();
-      const first = firstName.toLowerCase();
-      const last  = lastName.toLowerCase();
-      const words      = nameText.split(/\s+/);
-      const firstWords = first.split(/\s+/);
-      const lastWords  = last.split(/\s+/);
+      const nameText = $(a).text().trim().toLowerCase();
+      const words = nameText.split(/\s+/);
       const hasFirst = firstWords.every(fw => words.includes(fw));
       const hasLast  = lastWords.every(lw => words.includes(lw));
-      if (hasFirst && hasLast) link = a.attr('href');
+      if (hasFirst && hasLast) link = $(a).attr('href');
     });
     return link ? `https://www.sherdog.com${link}` : null;
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -60,20 +55,34 @@ async function scrapeAmateurRecord(url) {
     let amateurWins = 0;
     let amateurLosses = 0;
 
-    $('section.fight_history').each((_, section) => {
-      const heading = $(section).find('h2, h3').text().toLowerCase();
-      if (!heading.includes('amateur')) return;
-      $(section).find('table tr:not(.table_head)').each((_, row) => {
+    // Sherdog HTML structure:
+    //   <section>
+    //     <div class="tiled_bg latest_features">
+    //       <div class="slanted_title"><div>FIGHT HISTORY - AMATEUR</div></div>
+    //     </div>
+    //     <div class="module fight_history">
+    //       <table class="new_table fighter"> ... </table>
+    //     </div>
+    //   </section>
+    $('div.slanted_title').each(function(_, titleDiv) {
+      const titleText = $(titleDiv).text().toLowerCase();
+      if (!titleText.includes('amateur')) return;
+
+      // Go up: slanted_title -> tiled_bg -> section, then find sibling fight_history
+      const section = $(titleDiv).closest('section');
+      const tbl = section.find('div.module.fight_history table.new_table.fighter').first();
+
+      tbl.find('tr:not(.table_head)').each(function(_, row) {
         const cells = $(row).find('td');
-        if (cells.length < 2) return;
-        const res = $(cells[0]).find('span').first().text().trim().toLowerCase();
+        if (!cells.length) return;
+        const res = $(cells[0]).text().trim().toLowerCase();
         if (res === 'win')       amateurWins++;
         else if (res === 'loss') amateurLosses++;
       });
     });
 
     return { amateurWins, amateurLosses };
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -83,7 +92,7 @@ async function main() {
   console.log('║  UFCDB — Sherdog Amateur Records      ║');
   console.log('╚═══════════════════════════════════════╝\n');
 
-  let updated = 0, failed = 0;
+  let updated = 0, skipped = 0, failed = 0;
   let page = 0;
   const PAGE_SIZE = 500;
 
@@ -91,7 +100,6 @@ async function main() {
     const { data: fighters, error } = await supabase
       .from('fighters')
       .select('id, first_name, last_name, amateur_wins, amateur_losses')
-      .not('nationality', 'is', null)
       .or('amateur_wins.is.null,amateur_wins.eq.0')
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
       .order('last_name');
@@ -99,7 +107,7 @@ async function main() {
     if (error) { console.error('DB error:', error.message); break; }
     if (!fighters?.length) break;
 
-    console.log(`Processing page ${page + 1} — ${fighters.length} fighters with nationality but no amateur record\n`);
+    console.log(`Page ${page + 1}: ${fighters.length} fighters to check\n`);
 
     for (let i = 0; i < fighters.length; i++) {
       const f = fighters[i];
@@ -113,8 +121,7 @@ async function main() {
       if (!record) { failed++; continue; }
 
       if (record.amateurWins === 0 && record.amateurLosses === 0) {
-        // No amateur record found — skip to avoid overwriting
-        failed++;
+        skipped++;
         continue;
       }
 
@@ -126,7 +133,7 @@ async function main() {
       if (upErr) { failed++; }
       else {
         updated++;
-        console.log(`  [${i+1}/${fighters.length}] ${f.first_name} ${f.last_name}: ${record.amateurWins}W-${record.amateurLosses}L amateur`);
+        console.log(`  [${updated}] ${f.first_name} ${f.last_name}: ${record.amateurWins}W-${record.amateurLosses}L amateur`);
       }
     }
 
@@ -134,7 +141,7 @@ async function main() {
     if (fighters.length < PAGE_SIZE) break;
   }
 
-  console.log(`\nDone — ${updated} amateur records added, ${failed} no data`);
+  console.log(`\nDone — ${updated} records added, ${skipped} no amateur data, ${failed} failed`);
 }
 
 main().catch(console.error);

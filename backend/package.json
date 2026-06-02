@@ -18,7 +18,11 @@
     "compute:styles": "node src/ml/computeStyles.js",
     "compute:cardio": "node src/ml/computeCardio.js",
     "scrape:fix-fights": "node src/scrapers/fix-fight-data.js",
-    "scrape:assign-styles": "node src/scrapers/assign-styles.js"
+    "scrape:assign-styles": "node src/scrapers/assign-styles.js",
+    "scrape:tapology-history": "node src/scrapers/tapology-scraper.js",
+    "scrape:tapology-history:dry": "node src/scrapers/tapology-scraper.js --dry-run --limit 20",
+    "scrape:import-opponents": "node src/scrapers/import-missing-opponents.js",
+    "scrape:import-opponents:dry": "node src/scrapers/import-missing-opponents.js --dry-run"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.20.0",
@@ -33,9 +37,11 @@
     "morgan": "^1.10.0",
     "node-cron": "^3.0.3",
     "p-limit": "^5.0.0",
+    "playwright-core": "^1.60.0",
     "slugify": "^1.6.6"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
   }
 }
+
