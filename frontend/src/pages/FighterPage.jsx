@@ -270,7 +270,12 @@ export default function FighterPage() {
               {f.pro_debut_date && <InfoRow label="Pro Debut" value={f.pro_debut_date} />}
               {f.ufc_debut_date && <InfoRow label="UFC Debut" value={`${f.ufc_debut_date}${f.ufc_debut_event ? ` (${f.ufc_debut_event})` : ''}`} />}
               {f.management && <InfoRow label="Management" value={f.management} />}
-              {f.fighting_style && <InfoRow label="Style" value={f.fighting_style} />}
+              {(f.primary_style || f.fighting_style) && (
+                <InfoRow
+                  label="Style"
+                  value={[f.primary_style || f.fighting_style, f.secondary_style].filter(Boolean).join(' / ')}
+                />
+              )}
             </InfoCard>
 
             {/* Social */}
