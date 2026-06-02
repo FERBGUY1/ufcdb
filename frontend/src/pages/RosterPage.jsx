@@ -28,6 +28,9 @@ export default function RosterPage() {
   const status      = searchParams.get('status') || 'all';
   const query       = searchParams.get('q') || '';
   const page        = parseInt(searchParams.get('page') || '1');
+  const stance      = searchParams.get('stance') || '';
+  const nationality = searchParams.get('nationality') || '';
+  const heightIn    = searchParams.get('height_inches') || '';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -36,6 +39,9 @@ export default function RosterPage() {
         weight_class: weightClass || undefined,
         status: status !== 'all' ? status : undefined,
         search: query || undefined,
+        stance: stance || undefined,
+        nationality: nationality || undefined,
+        height_inches: heightIn || undefined,
         page,
         limit: 60,
         sort: 'last_name',
@@ -47,7 +53,7 @@ export default function RosterPage() {
     } finally {
       setLoading(false);
     }
-  }, [weightClass, status, query, page]);
+  }, [weightClass, status, query, page, stance, nationality, heightIn]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -120,6 +126,31 @@ export default function RosterPage() {
             <span className="text-xs text-white/30">{pagination.total?.toLocaleString()} fighters</span>
           )}
         </div>
+
+        {/* Active attribute filter chip */}
+        {(stance || nationality || heightIn) && (
+          <div className="flex flex-wrap gap-2 items-center">
+            <span className="text-[10px] tracking-widest text-white/30 uppercase">Filtered by:</span>
+            {stance && (
+              <span className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-gold/10 border border-gold/30 text-gold">
+                {stance}
+                <button onClick={() => setParam('stance', '')} className="hover:text-white">✕</button>
+              </span>
+            )}
+            {nationality && (
+              <span className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-gold/10 border border-gold/30 text-gold">
+                {nationality}
+                <button onClick={() => setParam('nationality', '')} className="hover:text-white">✕</button>
+              </span>
+            )}
+            {heightIn && (
+              <span className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-gold/10 border border-gold/30 text-gold">
+                {heightIn}"
+                <button onClick={() => setParam('height_inches', '')} className="hover:text-white">✕</button>
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Grid */}

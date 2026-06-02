@@ -3,7 +3,7 @@ const router = express.Router();
 const supabase = require('../db/client');
 
 // GET /api/fighters
-// Query params: weight_class, status, search, page, limit, sort
+// Query params: weight_class, status, stance, nationality, height_inches, search, page, limit, sort
 router.get('/', async (req, res, next) => {
   try {
     const {
@@ -15,6 +15,9 @@ router.get('/', async (req, res, next) => {
       sort = 'last_name',
       order = 'asc',
       champion,
+      stance,
+      nationality,
+      height_inches,
     } = req.query;
 
     const pageNum = Math.max(1, parseInt(page));
@@ -45,6 +48,15 @@ router.get('/', async (req, res, next) => {
     }
     if (champion === 'true') {
       query = query.eq('is_champion', true);
+    }
+    if (stance) {
+      query = query.ilike('stance', stance);
+    }
+    if (nationality) {
+      query = query.ilike('nationality', nationality);
+    }
+    if (height_inches) {
+      query = query.eq('height_inches', parseInt(height_inches));
     }
     if (search) {
       const parts = search.trim().split(/\s+/);
