@@ -105,10 +105,10 @@ export default function FighterPage() {
 
             {/* Tags */}
             <div className="flex flex-wrap gap-2 mt-4">
-              {f.stance && <Link to={`/roster?stance=${encodeURIComponent(f.stance)}`} className="tag hover:border-gold/40 hover:text-gold transition-colors">{f.stance}</Link>}
-              {f.height_inches && <Link to={`/roster?height_inches=${f.height_inches}`} className="tag hover:border-gold/40 hover:text-gold transition-colors">{heightFromInches(f.height_inches)}</Link>}
+              {f.stance && <Link to={`/fighters?stance=${encodeURIComponent(f.stance)}`} className="tag hover:border-gold/40 hover:text-gold transition-colors">{f.stance}</Link>}
+              {f.height_inches && <Link to={`/fighters?height_inches=${f.height_inches}`} className="tag hover:border-gold/40 hover:text-gold transition-colors">{heightFromInches(f.height_inches)}</Link>}
               {f.reach_inches && <span className="tag">Reach {f.reach_inches}"</span>}
-              {f.nationality && <Link to={`/roster?nationality=${encodeURIComponent(f.nationality)}`} className="tag hover:border-gold/40 hover:text-gold transition-colors">{getCountryFlag(f.nationality)} {f.nationality}</Link>}
+              {f.nationality && <Link to={`/fighters?nationality=${encodeURIComponent(f.nationality)}`} className="tag hover:border-gold/40 hover:text-gold transition-colors">{getCountryFlag(f.nationality)} {f.nationality}</Link>}
               <span className={`tag ${f.status === 'active' ? 'text-win border-win/20' : ''}`}>
                 {f.status}
               </span>
@@ -243,7 +243,7 @@ export default function FighterPage() {
                 <InfoRow label="Born" value={new Date(f.date_of_birth).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} />
               )}
               {f.hometown && <InfoRow label="Hometown" value={f.hometown} />}
-              {f.nationality && <InfoRow label="Nationality" value={`${getCountryFlag(f.nationality)} ${f.nationality}`} to={`/roster?nationality=${encodeURIComponent(f.nationality)}`} />}
+              {f.nationality && <InfoRow label="Nationality" value={`${getCountryFlag(f.nationality)} ${f.nationality}`} to={`/fighters?nationality=${encodeURIComponent(f.nationality)}`} />}
               {f.relationship_status && <InfoRow label="Relationship" value={f.relationship_status} />}
               {f.partner_name && <InfoRow label="Partner" value={f.partner_name} />}
               {f.children_count != null && (
@@ -258,10 +258,10 @@ export default function FighterPage() {
 
             {/* Physical */}
             <InfoCard title="Physical">
-              {f.height_inches && <InfoRow label="Height" value={heightFromInches(f.height_inches)} to={`/roster?height_inches=${f.height_inches}`} />}
+              {f.height_inches && <InfoRow label="Height" value={heightFromInches(f.height_inches)} to={`/fighters?height_inches=${f.height_inches}`} />}
               {f.reach_inches && <InfoRow label="Reach" value={`${f.reach_inches}"`} />}
               {f.leg_reach_inches && <InfoRow label="Leg Reach" value={`${f.leg_reach_inches}"`} />}
-              {f.stance && <InfoRow label="Stance" value={f.stance} to={`/roster?stance=${encodeURIComponent(f.stance)}`} />}
+              {f.stance && <InfoRow label="Stance" value={f.stance} to={`/fighters?stance=${encodeURIComponent(f.stance)}`} />}
               {f.weight_lbs && <InfoRow label="Weight" value={`${f.weight_lbs} lbs`} />}
             </InfoCard>
 
