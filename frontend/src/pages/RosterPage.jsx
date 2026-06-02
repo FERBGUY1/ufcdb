@@ -44,7 +44,7 @@ export default function RosterPage() {
         height_inches: heightIn || undefined,
         page,
         limit: 60,
-        sort: 'last_name',
+        sort: 'ranked',
       });
       setFighters(data.fighters || []);
       setPagination(data.pagination);
@@ -218,9 +218,10 @@ function FighterCard({ fighter: f }) {
         }
       </div>
 
-      {f.is_champion && (
-        <div className="text-[9px] tracking-[0.2em] text-gold uppercase mb-1">⟡ Champion</div>
-      )}
+      {f.is_champion
+        ? <div className="text-[9px] tracking-[0.2em] text-gold uppercase mb-1">⟡ Champion</div>
+        : f.rank != null && <div className="text-[9px] tracking-[0.2em] text-white/30 uppercase mb-1">#{f.rank}</div>
+      }
 
       <div className="text-xs font-medium leading-tight mb-0.5">
         {f.first_name} {f.last_name}

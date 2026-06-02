@@ -76,9 +76,16 @@ router.get('/', async (req, res, next) => {
     }
 
     // Sort
-    const validSorts = ['last_name', 'first_name', 'wins', 'rank', 'updated_at'];
-    const sortField = validSorts.includes(sort) ? sort : 'last_name';
-    query = query.order(sortField, { ascending: order !== 'desc' });
+    const validSorts = ['last_name', 'first_name', 'wins', 'rank', 'updated_at', 'ranked'];
+    const sortField = validSorts.includes(sort) ? sort : 'ranked';
+    if (sortField === 'ranked') {
+      query = query
+        .order('is_champion', { ascending: false })
+        .order('rank', { ascending: true, nullsFirst: false })
+        .order('last_name', { ascending: true });
+    } else {
+      query = query.order(sortField, { ascending: order !== 'desc' });
+    }
 
     // Pagination
     query = query.range(offset, offset + limitNum - 1);
