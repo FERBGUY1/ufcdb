@@ -47,8 +47,19 @@ async function main() {
     if (error) { console.error(`Event ${name}: ${error.message}`); continue; }
     if (!fights?.length) continue;
 
-    // Assign bout_order 0, 1, 2, ...
-    const updates = fights.map((f, i) => ({ id: f.id, bout_order: i }));
+    // Find the highest existing bout_order in this event so we append after it
+    const { data: maxRows } = await supabase
+      .from('fights')
+      .select('bout_order')
+      .eq('event_id', eventId)
+      .not('bout_order', 'is', null)
+      .order('bout_order', { ascending: false })
+      .limit(1);
+
+    const maxBoutOrder = (maxRows && maxRows.length > 0) ? maxRows[0].bout_order : -1;
+    const startIdx = maxBoutOrder + 1;
+
+    const updates = fights.map((f, i) => ({ id: f.id, bout_order: startIdx + i }));
 
     for (const u of updates) {
       const { error: e2 } = await supabase
