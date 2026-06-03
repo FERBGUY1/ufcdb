@@ -16,18 +16,25 @@ export default function EventPage() {
 
   const { event: e, fights } = data;
 
-  const hasCardPos = fights.some(f => f.card_position);
+  const SECTION_RANK = { main_card: 0, prelim: 1, early_prelim: 2 };
+
+  // Sort globally: section rank first, then bout_order ascending within each section.
+  // bout_order=0 is always the main event headliner.
+  const sortedFights = [...fights].sort((a, b) => {
+    const ra = a.card_position != null ? (SECTION_RANK[a.card_position] ?? 3) : 3;
+    const rb = b.card_position != null ? (SECTION_RANK[b.card_position] ?? 3) : 3;
+    if (ra !== rb) return ra - rb;
+    return (a.bout_order ?? 999) - (b.bout_order ?? 999);
+  });
+
+  const hasCardPos = sortedFights.some(f => f.card_position);
   let sections;
 
-
-  // bout_order=0 is main event; ascending puts headliner first in every section
-  const byBoutOrder = arr => [...arr].sort((a, b) => (a.bout_order ?? 999) - (b.bout_order ?? 999));
-
   if (hasCardPos) {
-    const main   = byBoutOrder(fights.filter(f => f.card_position === 'main_card'));
-    const prelim = byBoutOrder(fights.filter(f => f.card_position === 'prelim'));
-    const early  = byBoutOrder(fights.filter(f => f.card_position === 'early_prelim'));
-    const other  = byBoutOrder(fights.filter(f => !f.card_position));
+    const main   = sortedFights.filter(f => f.card_position === 'main_card');
+    const prelim = sortedFights.filter(f => f.card_position === 'prelim');
+    const early  = sortedFights.filter(f => f.card_position === 'early_prelim');
+    const other  = sortedFights.filter(f => !f.card_position);
 
     sections = [
       main.length > 0   ? { title: 'Main Card',        fights: main   } : null,
@@ -36,17 +43,7 @@ export default function EventPage() {
       other.length > 0  ? { title: 'Fight Card',       fights: other  } : null,
     ].filter(Boolean);
   } else {
-    const mainEvent = fights.filter(f => f.bout_order === 0);
-    const coMain    = fights.filter(f => f.bout_order === 1);
-    const rest      = fights.filter(f => f.bout_order == null || f.bout_order > 1);
-
-    sections = [
-      mainEvent.length > 0 ? { title: 'Main Event', fights: mainEvent }  : null,
-      coMain.length > 0    ? { title: 'Co-Main Event', fights: coMain }  : null,
-      rest.length > 0      ? { title: 'Fight Card', fights: rest }       : null,
-      mainEvent.length === 0 && coMain.length === 0 && rest.length === 0
-        ? { title: 'Fight Card', fights } : null,
-    ].filter(Boolean);
+    sections = [{ title: 'Fight Card', fights: sortedFights }];
   }
 
   return (
