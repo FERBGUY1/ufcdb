@@ -1,26 +1,112 @@
-﻿/**
- * Events + Fights scraper â€” ufcstats.com
- * Correct cell indices (confirmed from live HTML inspection 2026-05-21):
+/**
+ * Events + Fights scraper — ufcstats.com
+ * Correct cell indices confirmed from live page inspection:
  *   cells[0]=W/L, cells[1]=fighters, cells[2]=KD, cells[3]=Str,
- *   cells[4]=TD, cells[5]=Sub, cells[6]=W.Class, cells[7]=Method,
- *   cells[8]=Round, cells[9]=Time
+ *   cells[4]=TD, cells[5]=Sub, cells[6]=W.Class, cells[7]=Method, cells[8]=Round, cells[9]=Time
+ *
+ * On re-runs, existing fights are updated (bout_order, card_position, stats).
+ * New fights are inserted. bout_order=0 is the main event.
+ *
+ * Flags:
+ *   --rounds-data        Also scrape per-fight detail pages for round-by-round stats
+ *   --event <ufc_id>     Process only one event by its ufcstats ID
+ *
+ * Usage: node src/scrapers/events.js [--rounds-data] [--event <ufc_id>]
  */
 require('dotenv').config();
-const axios   = require('axios');
-const cheerio = require('cheerio');
+const axios    = require('axios');
+const cheerio  = require('cheerio');
 const supabase = require('../db/client');
 
-const DELAY = parseInt(process.env.SCRAPE_DELAY_MS || '1500');
-const BASE  = 'http://ufcstats.com';
+const DELAY         = parseInt(process.env.SCRAPE_DELAY_MS || '1500');
+const BASE          = 'http://ufcstats.com';
+const SCRAPE_ROUNDS = process.argv.includes('--rounds-data');
 
 const http = axios.create({
   timeout: 15000,
-  headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+  headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
 });
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 function toSlug(name) {
-  return name.toLowerCase().replace(/[^a-z0-9\s-]/g,'').replace(/\s+/g,'-').replace(/-+/g,'-').trim();
+  return name.toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .trim();
+}
+
+// Mirrors the heuristic in fix-card-position.js so positions stay consistent.
+function deriveCardPosition(boutOrder, total) {
+  if (total <= 5)  return 'main_card';
+  if (total <= 10) return boutOrder < 5 ? 'main_card' : 'prelim';
+  if (total <= 14) {
+    const earlyCount = total - 9;
+    if (boutOrder < 5)                  return 'main_card';
+    if (boutOrder < total - earlyCount) return 'prelim';
+    return 'early_prelim';
+  }
+  // 15+ fights: 5 main + 6 prelim + rest early prelim
+  if (boutOrder < 5)  return 'main_card';
+  if (boutOrder < 11) return 'prelim';
+  return 'early_prelim';
+}
+
+// Fight detail page has one "Round N" section per round, each containing a
+// totals table (Fighter|KD|Sig.Str|Sig.Str%|TotalStr|TD|TD%|SubAtt|Rev|Ctrl).
+async function scrapeFightDetail(url) {
+  try {
+    await sleep(DELAY);
+    const { data } = await http.get(url);
+    const $ = cheerio.load(data);
+
+    const rounds = [];
+
+    $('section.b-fight-details__section.js-fight-section').each((_, section) => {
+      const titleText  = $(section).find('p').first().text().trim();
+      const roundMatch = titleText.match(/Round\s+(\d+)/i);
+      if (!roundMatch) return;
+
+      const roundNum = parseInt(roundMatch[1]);
+      // First table = round totals; second = sig strikes breakdown
+      const rows = $(section).find('table.js-fight-table').first().find('tbody tr');
+      if (rows.length < 2) return;
+
+      const c1 = $(rows[0]).find('td');
+      const c2 = $(rows[1]).find('td');
+      // Columns: Fighter(0) KD(1) Sig.Str(2) Sig.Str%(3) TotalStr(4) TD(5) TD%(6) SubAtt(7) Rev(8) Ctrl(9)
+      rounds.push({
+        round: roundNum,
+        f1: {
+          kd:          parseInt(c1.eq(1).text().trim()) || 0,
+          sig_str:     c1.eq(2).text().trim() || null,
+          sig_str_pct: c1.eq(3).text().trim() || null,
+          total_str:   c1.eq(4).text().trim() || null,
+          td:          c1.eq(5).text().trim() || null,
+          td_pct:      c1.eq(6).text().trim() || null,
+          sub_att:     parseInt(c1.eq(7).text().trim()) || 0,
+          rev:         parseInt(c1.eq(8).text().trim()) || 0,
+          ctrl:        c1.eq(9).text().trim() || null,
+        },
+        f2: {
+          kd:          parseInt(c2.eq(1).text().trim()) || 0,
+          sig_str:     c2.eq(2).text().trim() || null,
+          sig_str_pct: c2.eq(3).text().trim() || null,
+          total_str:   c2.eq(4).text().trim() || null,
+          td:          c2.eq(5).text().trim() || null,
+          td_pct:      c2.eq(6).text().trim() || null,
+          sub_att:     parseInt(c2.eq(7).text().trim()) || 0,
+          rev:         parseInt(c2.eq(8).text().trim()) || 0,
+          ctrl:        c2.eq(9).text().trim() || null,
+        },
+      });
+    });
+
+    return rounds.length ? rounds : null;
+  } catch (e) {
+    console.error(`  Error scraping fight detail ${url}:`, e.message);
+    return null;
+  }
 }
 
 async function getAllEventUrls() {
@@ -32,12 +118,14 @@ async function getAllEventUrls() {
       try {
         const { data } = await http.get(`${BASE}/statistics/events/${type}?page=${page}`);
         const $ = cheerio.load(data);
-        const links = $('a[href*="/event-details/"]').map((_,a) => $(a).attr('href')).get();
+        const links = $('a[href*="/event-details/"]').map((_, a) => $(a).attr('href')).get();
         if (!links.length) break;
         links.forEach(l => { if (!urls.includes(l)) urls.push(l); });
         if (!$('a:contains("Next")').length) break;
         page++;
-      } catch { break; }
+      } catch {
+        break;
+      }
     }
   }
   return urls;
@@ -52,15 +140,15 @@ async function scrapeEvent(url) {
     if (!name) return null;
 
     const details = {};
-    $('li.b-list__box-list-item').each((_,el) => {
-      const label = $(el).find('i').text().trim().replace(':','');
-      const value = $(el).text().replace($(el).find('i').text(),'').trim();
+    $('li.b-list__box-list-item').each((_, el) => {
+      const label = $(el).find('i').text().trim().replace(':', '');
+      const value = $(el).text().replace($(el).find('i').text(), '').trim();
       if (label && value) details[label] = value;
     });
 
-    const dateStr  = details['Date'];
-    const location = details['Location'] || '';
-    const parts    = location.split(',').map(s => s.trim());
+    const dateStr    = details['Date'];
+    const location   = details['Location'] || '';
+    const parts      = location.split(',').map(s => s.trim());
     const isUpcoming = !dateStr || new Date(dateStr) > new Date();
 
     const event = {
@@ -75,29 +163,13 @@ async function scrapeEvent(url) {
       is_complete: !isUpcoming,
     };
 
-    // Detect card sections and fight rows together.
-    // ufcstats uses <tr class="...head..."> rows as section separators.
-    const fights = [];
-    let currentSection = 'main_card';
-    let rowIdx = 0;
-
-    $('table.b-fight-details__table tbody tr').each((_,row) => {
-      const cls = ($(row).attr('class') || '').toLowerCase();
-      // Section header row — update current section
-      if (cls.includes('head') || cls.includes('section')) {
-        const headerText = $(row).text().trim().toLowerCase();
-        if (headerText.includes('early prelim')) currentSection = 'early_prelim';
-        else if (headerText.includes('prelim'))  currentSection = 'prelim';
-        else                                     currentSection = 'main_card';
-        return;
-      }
-
-      const cells = $(row).find('td');
+    const rawFights = [];
+    $('table.b-fight-details__table tbody tr').each((i, row) => {
+      const $row   = $(row);
+      const cells  = $row.find('td');
       const f1link = $(cells[1]).find('a').eq(0).attr('href');
       const f2link = $(cells[1]).find('a').eq(1).attr('href');
       if (!f1link || !f2link) return;
-
-      const boutOrder = rowIdx++;
 
       const winCell   = $(cells[0]).text().trim().toLowerCase();
       const wc        = $(cells[6]).find('p').eq(0).text().trim() || $(cells[6]).text().trim();
@@ -105,38 +177,45 @@ async function scrapeEvent(url) {
       const methodDet = $(cells[7]).find('p').eq(1).text().trim();
       const round     = parseInt($(cells[8]).find('p').eq(0).text().trim() || $(cells[8]).text().trim()) || null;
       const time      = $(cells[9]).find('p').eq(0).text().trim() || $(cells[9]).text().trim();
+
+      const f1KD  = parseInt($(cells[2]).find('p').eq(0).text().trim()) || null;
+      const f2KD  = parseInt($(cells[2]).find('p').eq(1).text().trim()) || null;
       const f1Str = $(cells[3]).find('p').eq(0).text().trim() || null;
       const f2Str = $(cells[3]).find('p').eq(1).text().trim() || null;
       const f1TD  = $(cells[4]).find('p').eq(0).text().trim() || null;
       const f2TD  = $(cells[4]).find('p').eq(1).text().trim() || null;
 
       let result = null;
-      if (winCell.includes('win'))       result = 'win';
+      if      (winCell.includes('win'))  result = 'win';
       else if (winCell.includes('draw')) result = 'draw';
       else if (winCell.includes('nc'))   result = 'no_contest';
       else if (isUpcoming)               result = 'upcoming';
 
-      const isTitleFight   = /title/i.test(wc);
-      const isInterimTitle = /interim/i.test(wc);
-      const wcNorm = wc
-        .replace(/^ufc\s+/i, '')
-        .replace(/\s+(interim\s+)?title\s+bout$/i, '')
-        .replace(/\s+bout$/i, '')
-        .trim();
-
-      fights.push({
-        fighter1_ufc_id: f1link.split('/').pop(),
-        fighter2_ufc_id: f2link.split('/').pop(),
-        bout_order:      boutOrder,
-        card_position:   currentSection,
-        result, method, method_detail: methodDet, round, time,
-        weight_class_name: wcNorm || wc,
-        is_title_fight:    isTitleFight,
-        is_interim_title:  isInterimTitle,
-        fighter1_sig_str: f1Str, fighter2_sig_str: f2Str,
-        fighter1_td: f1TD, fighter2_td: f2TD,
+      rawFights.push({
+        fighter1_ufc_id:   f1link.split('/').pop(),
+        fighter2_ufc_id:   f2link.split('/').pop(),
+        result,
+        method,
+        method_detail:     methodDet,
+        round,
+        time,
+        weight_class_name: wc,
+        fighter1_sig_str:  f1Str,
+        fighter2_sig_str:  f2Str,
+        fighter1_td:       f1TD,
+        fighter2_td:       f2TD,
+        fighter1_kd:       f1KD,
+        fighter2_kd:       f2KD,
+        bout_order:        i,           // 0 = main event
+        detail_url:        $row.attr('data-link') || null,
       });
     });
+
+    const total  = rawFights.length;
+    const fights = rawFights.map(f => ({
+      ...f,
+      card_position: deriveCardPosition(f.bout_order, total),
+    }));
 
     return { event, fights };
   } catch (e) {
@@ -146,14 +225,22 @@ async function scrapeEvent(url) {
 }
 
 async function main() {
-  console.log('â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—');
-  console.log('â•‘  UFCDB â€” Events + Fights Scraper     â•‘');
-  console.log('â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n');
+  console.log('╔══════════════════════════════════════╗');
+  console.log('║  UFCDB — Events + Fights Scraper     ║');
+  if (SCRAPE_ROUNDS) {
+    console.log('║  Mode: +rounds data                  ║');
+  }
+  console.log('╚══════════════════════════════════════╝\n');
 
+  // Build fighter map: ufc_id → UUID
   const fighterMap = {};
   let fPage = 0;
   while (true) {
-    const { data: batch } = await supabase.from('fighters').select('id, ufc_id').not('ufc_id','is',null).range(fPage*1000,(fPage+1)*1000-1);
+    const { data: batch } = await supabase
+      .from('fighters')
+      .select('id, ufc_id')
+      .not('ufc_id', 'is', null)
+      .range(fPage * 1000, (fPage + 1) * 1000 - 1);
     if (!batch?.length) break;
     batch.forEach(f => { fighterMap[f.ufc_id] = f.id; });
     if (batch.length < 1000) break;
@@ -165,10 +252,23 @@ async function main() {
   const wcMap = {};
   for (const wc of wcs || []) wcMap[wc.name] = wc.id;
 
-  const eventUrls = await getAllEventUrls();
-  console.log(`Found ${eventUrls.length} events\n`);
+  // Support --event <ufc_id> for single-event runs
+  const singleIdx = process.argv.indexOf('--event');
+  const singleId  = singleIdx >= 0 ? process.argv[singleIdx + 1] : null;
 
-  let eventsImported = 0, fightsImported = 0, eventsFailed = 0;
+  let eventUrls;
+  if (singleId) {
+    eventUrls = [`${BASE}/event-details/${singleId}`];
+    console.log(`Single-event mode: ${singleId}\n`);
+  } else {
+    eventUrls = await getAllEventUrls();
+    console.log(`Found ${eventUrls.length} events\n`);
+  }
+
+  let eventsProcessed = 0;
+  let fightsUpdated   = 0;
+  let fightsInserted  = 0;
+  let eventsFailed    = 0;
 
   for (let i = 0; i < eventUrls.length; i++) {
     await sleep(DELAY);
@@ -178,43 +278,122 @@ async function main() {
     const { event, fights } = result;
 
     const { data: eventData, error: eventErr } = await supabase
-      .from('events').upsert(event, { onConflict: 'ufc_id' }).select('id').single();
-    if (eventErr || !eventData) { eventsFailed++; continue; }
-    eventsImported++;
+      .from('events')
+      .upsert(event, { onConflict: 'ufc_id' })
+      .select('id')
+      .single();
 
-    const fightRows = [];
+    if (eventErr || !eventData) {
+      console.error(`  Failed: ${event.name} —`, eventErr?.message);
+      eventsFailed++;
+      continue;
+    }
+
+    eventsProcessed++;
+
+    // Fetch existing fights so we update rather than re-insert
+    const { data: existingFights } = await supabase
+      .from('fights')
+      .select('id, fighter1_id, fighter2_id, rounds_data')
+      .eq('event_id', eventData.id);
+
+    // Canonical key: sort UUIDs so fighter order doesn't matter
+    const existingMap = {};
+    for (const ef of existingFights || []) {
+      const key = [ef.fighter1_id, ef.fighter2_id].sort().join('|');
+      existingMap[key] = ef;
+    }
+
     for (const f of fights) {
       const f1id = fighterMap[f.fighter1_ufc_id];
       const f2id = fighterMap[f.fighter2_ufc_id];
       if (!f1id || !f2id) continue;
-      fightRows.push({
-        event_id: eventData.id, fighter1_id: f1id, fighter2_id: f2id,
-        bout_order:    f.bout_order,
-        card_position: f.card_position,
-        result: f.result, method: f.method, method_detail: f.method_detail,
-        round: f.round, time: f.time,
-        is_title_fight: f.is_title_fight || false,
-        weight_class_id: wcMap[f.weight_class_name] || null,
-        fighter1_sig_str: f.fighter1_sig_str || null,
-        fighter2_sig_str: f.fighter2_sig_str || null,
-        fighter1_td: f.fighter1_td || null,
-        fighter2_td: f.fighter2_td || null,
-      });
+
+      const canonKey = [f1id, f2id].sort().join('|');
+      const existing = existingMap[canonKey];
+
+      // Optionally scrape per-fight detail page; skip if already populated
+      let rounds_data = undefined;
+      if (SCRAPE_ROUNDS && f.detail_url && !existing?.rounds_data) {
+        rounds_data = await scrapeFightDetail(f.detail_url);
+      }
+
+      if (existing) {
+        const updatePayload = {
+          bout_order:       f.bout_order,
+          card_position:    f.card_position,
+          result:           f.result,
+          method:           f.method,
+          method_detail:    f.method_detail,
+          round:            f.round,
+          time:             f.time,
+          weight_class_id:  wcMap[f.weight_class_name] || null,
+          fighter1_sig_str: f.fighter1_sig_str || null,
+          fighter2_sig_str: f.fighter2_sig_str || null,
+          fighter1_td:      f.fighter1_td || null,
+          fighter2_td:      f.fighter2_td || null,
+          fighter1_kd:      f.fighter1_kd || null,
+          fighter2_kd:      f.fighter2_kd || null,
+        };
+        if (rounds_data !== undefined) updatePayload.rounds_data = rounds_data;
+
+        const { error: updErr } = await supabase
+          .from('fights')
+          .update(updatePayload)
+          .eq('id', existing.id);
+
+        if (updErr) {
+          console.error(`  Update error (${event.name}):`, updErr.message);
+        } else {
+          fightsUpdated++;
+        }
+      } else {
+        const insertPayload = {
+          event_id:         eventData.id,
+          fighter1_id:      f1id,
+          fighter2_id:      f2id,
+          result:           f.result,
+          method:           f.method,
+          method_detail:    f.method_detail,
+          round:            f.round,
+          time:             f.time,
+          is_title_fight:   false,
+          weight_class_id:  wcMap[f.weight_class_name] || null,
+          fighter1_sig_str: f.fighter1_sig_str || null,
+          fighter2_sig_str: f.fighter2_sig_str || null,
+          fighter1_td:      f.fighter1_td || null,
+          fighter2_td:      f.fighter2_td || null,
+          fighter1_kd:      f.fighter1_kd || null,
+          fighter2_kd:      f.fighter2_kd || null,
+          bout_order:       f.bout_order,
+          card_position:    f.card_position,
+        };
+        if (rounds_data !== undefined) insertPayload.rounds_data = rounds_data;
+
+        const { error: insErr } = await supabase
+          .from('fights')
+          .insert(insertPayload);
+
+        if (insErr && !insErr.message?.includes('duplicate')) {
+          console.error(`  Insert error (${event.name}):`, insErr.message);
+        } else {
+          fightsInserted++;
+        }
+      }
     }
 
-    if (fightRows.length > 0) {
-      const { error: fightErr } = await supabase.from('fights').insert(fightRows);
-      if (fightErr && !fightErr.message?.includes('duplicate')) {
-        console.error(`  Fights insert error (${event.name}):`, fightErr.message);
-      } else { fightsImported += fightRows.length; }
+    if (eventsProcessed % 25 === 0 || i < 5) {
+      console.log(`[${i+1}/${eventUrls.length}] Events: ${eventsProcessed} | Updated: ${fightsUpdated} | New: ${fightsInserted}`);
     }
-
-    if (eventsImported % 25 === 0 || i < 5)
-      console.log(`[${i+1}/${eventUrls.length}] Events: ${eventsImported} | Fights: ${fightsImported}`);
   }
 
-  console.log('\nDone â€” Events: '+eventsImported+' | Fights: '+fightsImported+' | Failed: '+eventsFailed);
+  console.log('\n╔══════════════════════════════════════╗');
+  console.log('║  Complete!                           ║');
+  console.log(`║  Events: ${String(eventsProcessed).padEnd(27)}║`);
+  console.log(`║  Fights updated: ${String(fightsUpdated).padEnd(19)}║`);
+  console.log(`║  New fights:     ${String(fightsInserted).padEnd(19)}║`);
+  console.log(`║  Failed events:  ${String(eventsFailed).padEnd(19)}║`);
+  console.log('╚══════════════════════════════════════╝');
 }
 
 main().catch(console.error);
-
