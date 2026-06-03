@@ -1,31 +1,39 @@
-/**
- * Fix bout_order for events where the main event fight was assigned a high bout_order
- * because the fighters weren't in the DB when the event was first scraped (or were
- * manually inserted later).
+﻿/**
+ * Fix bout_order for all events so fights are ordered:
+ *   main_card first (main event headliner at bout_order=0, then co-main etc.),
+ *   then prelim, then early_prelim.
  *
- * Strategy:
- *   1. Parse the event name to extract headliner last names (e.g. "Jones vs. Gane")
- *   2. Find the fight matching those fighters in the event
- *   3. Swap that fight's bout_order with the fight currently at bout_order=0
+ * Strategy (per event):
+ *   1. Fetch all fights with card_position and fighter names.
+ *   2. Group by card_position: main_card, prelim, early_prelim, null.
+ *   3. Within main_card: headliner fight first (matched from event name),
+ *      rest in ascending existing bout_order.
+ *   4. Assign new bout_order 0, 1, 2... across sections:
+ *      main_card -> prelim -> early_prelim -> null-position fights.
+ *   5. Skip events already in correct order; update only changed fights.
  *
- * This ensures the main event is always sorted first on event pages.
+ * Does NOT modify card_position values.
  *
  * Usage: node src/scrapers/fix-bout-order.js
  */
 require('dotenv').config();
 const supabase = require('../db/client');
 
-// Ring-name → real last name (DB last_name value)
 const NICKNAME_MAP = {
-  'zombie':    'jung',      // Chan Sung Jung "The Korean Zombie"
-  'cowboy':    'cerrone',   // Donald "Cowboy" Cerrone
-  'cyborg':    'justino',   // Cristiane "Cyborg" Justino
-  'shogun':    'rua',       // Mauricio "Shogun" Rua
-  'rampage':   'jackson',   // Quinton "Rampage" Jackson
-  'bigfoot':   'silva',     // Antonio "Bigfoot" Silva
-  'marreta':   'santos',    // Thiago "Marreta" Santos
-  'minotauro': 'nogueira',  // Antonio Rodrigo "Minotauro" Nogueira
-  'cop':       'filipovic', // Mirko Cro Cop Filipovic (last word of "Cro Cop")
+  'zombie':      'jung',
+  'cowboy':      'cerrone',
+  'cyborg':      'justino',
+  'shogun':      'rua',
+  'rampage':     'jackson',
+  'bigfoot':     'silva',
+  'marreta':     'santos',
+  'minotauro':   'nogueira',
+  'cop':         'filipovic',
+  'notorious':   'mcgregor',
+  'stylebender': 'adesanya',
+  'blessed':     'holloway',
+  'spider':      'silva',
+  'eagle':       'nurmagomedov',
 };
 
 function parseHeadliners(eventName) {
@@ -33,8 +41,8 @@ function parseHeadliners(eventName) {
   if (!m) return null;
   const extractKey = (s) => {
     const cleaned = s.trim()
-      .replace(/\s+(ii|iii|iv|vi|vii|viii|ix)$/i, '') // strip Roman numerals (e.g. "Barao II")
-      .replace(/\s+\d+$/, '')                          // strip digit suffixes  (e.g. "Oliveira 2")
+      .replace(/\s+(ii|iii|iv|vi|vii|viii|ix)$/i, '')
+      .replace(/\s+\d+$/, '')
       .trim();
     const word = cleaned.split(/\s+/).pop().toLowerCase();
     return NICKNAME_MAP[word] || word;
@@ -46,87 +54,123 @@ function parseHeadliners(eventName) {
 }
 
 function fightMatchesHeadliners(fight, last1, last2) {
-  // Match against last_name OR first_name — handles Chinese name order where
-  // first_name='Zhang', last_name='Weili' but the event says "Walker vs. Zhang"
   const f1l = (fight.fighter1?.last_name  || '').toLowerCase();
   const f1f = (fight.fighter1?.first_name || '').toLowerCase();
   const f2l = (fight.fighter2?.last_name  || '').toLowerCase();
   const f2f = (fight.fighter2?.first_name || '').toLowerCase();
-
   const f1Matches = (key) => f1l.includes(key) || f1f.includes(key);
   const f2Matches = (key) => f2l.includes(key) || f2f.includes(key);
-
   return (
     (f1Matches(last1) && f2Matches(last2)) ||
     (f1Matches(last2) && f2Matches(last1))
   );
 }
 
-async function main() {
-  console.log('╔═══════════════════════════════════════╗');
-  console.log('║  UFCDB — Fix Bout Order               ║');
-  console.log('╚═══════════════════════════════════════╝\n');
+function sortFightsForEvent(fights, headliners) {
+  const byOrder = (a, b) => (a.bout_order ?? 999999) - (b.bout_order ?? 999999);
 
-  let fixed = 0, skipped = 0, noMatch = 0;
+  const groups = { main_card: [], prelim: [], early_prelim: [], unknown: [] };
+  for (const f of fights) {
+    const key = f.card_position && groups[f.card_position] ? f.card_position : 'unknown';
+    groups[key].push(f);
+  }
+  for (const key of Object.keys(groups)) groups[key].sort(byOrder);
+
+  // If no card_positions are set at all, treat all fights as one group
+  const hasPositions = groups.main_card.length + groups.prelim.length + groups.early_prelim.length > 0;
+  if (!hasPositions) {
+    const all = groups.unknown.sort(byOrder);
+    if (headliners) {
+      const [l1, l2] = headliners;
+      const idx = all.findIndex(f => fightMatchesHeadliners(f, l1, l2));
+      if (idx > 0) all.unshift(...all.splice(idx, 1));
+    }
+    return all;
+  }
+
+  // Put headliner first within main_card
+  if (headliners && groups.main_card.length > 0) {
+    const [l1, l2] = headliners;
+    const idx = groups.main_card.findIndex(f => fightMatchesHeadliners(f, l1, l2));
+    if (idx > 0) groups.main_card.unshift(...groups.main_card.splice(idx, 1));
+  }
+
+  return [...groups.main_card, ...groups.prelim, ...groups.early_prelim, ...groups.unknown];
+}
+
+async function main() {
+  console.log('===========================================');
+  console.log('  UFCDB -- Fix bout_order (all events)   ');
+  console.log('===========================================\n');
+
+  let fixed = 0, alreadyCorrect = 0, noFights = 0, errors = 0;
   let page = 0;
-  const PAGE_SIZE = 200;
+  const PAGE_SIZE = 100;
 
   while (true) {
     const { data: events, error } = await supabase
       .from('events')
       .select('id, name')
-      .eq('is_complete', true)
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
-      .order('date', { ascending: false });
+      .order('date', { ascending: true });
 
     if (error) { console.error('DB error:', error.message); break; }
     if (!events?.length) break;
 
     for (const event of events) {
-      const headliners = parseHeadliners(event.name);
-      if (!headliners) { skipped++; continue; }
-      const [last1, last2] = headliners;
-
-      const { data: fights } = await supabase
+      const { data: fights, error: fe } = await supabase
         .from('fights')
         .select(`
-          id, bout_order,
+          id, bout_order, card_position,
           fighter1:fighters!fighter1_id ( first_name, last_name ),
           fighter2:fighters!fighter2_id ( first_name, last_name )
         `)
         .eq('event_id', event.id)
-        .order('bout_order', { ascending: true });
+        .order('bout_order', { ascending: true, nullsFirst: false });
 
-      if (!fights?.length) { skipped++; continue; }
+      if (fe) { console.error('  Fight fetch error for', event.name, ':', fe.message); errors++; continue; }
+      if (!fights?.length) { noFights++; continue; }
 
-      const mainFight = fights.find(f => fightMatchesHeadliners(f, last1, last2));
-      if (!mainFight) { noMatch++; continue; }
+      const headliners = parseHeadliners(event.name);
+      const sorted = sortFightsForEvent(fights, headliners);
 
-      // Already at position 0 — nothing to do
-      if (mainFight.bout_order === 0) { skipped++; continue; }
+      // Check if already in the correct order
+      const needsUpdate = sorted.some((f, i) => f.bout_order !== i);
+      if (!needsUpdate) { alreadyCorrect++; continue; }
 
-      // Swap with the fight currently at bout_order=0
-      const currentFirst = fights.find(f => f.bout_order === 0);
-      const tempOrder = mainFight.bout_order;
-
-      if (currentFirst) {
-        await supabase.from('fights').update({ bout_order: tempOrder }).eq('id', currentFirst.id);
+      // Update only fights whose bout_order changed
+      let hasError = false;
+      for (let i = 0; i < sorted.length; i++) {
+        if (sorted[i].bout_order === i) continue;
+        const { error: ue } = await supabase
+          .from('fights')
+          .update({ bout_order: i })
+          .eq('id', sorted[i].id);
+        if (ue) { console.error('  Update error fight', sorted[i].id, ':', ue.message); hasError = true; }
       }
-      await supabase.from('fights').update({ bout_order: 0 }).eq('id', mainFight.id);
 
-      fixed++;
-      console.log(`  Fixed: ${event.name}`);
-      console.log(`    ${mainFight.fighter1?.last_name} vs ${mainFight.fighter2?.last_name}: bout_order ${tempOrder} → 0`);
-      if (currentFirst) {
-        console.log(`    ${currentFirst.fighter1?.last_name} vs ${currentFirst.fighter2?.last_name}: bout_order 0 → ${tempOrder}`);
+      if (hasError) {
+        errors++;
+        console.error('  FAILED:', event.name);
+      } else {
+        fixed++;
+        const mainFight = sorted[0];
+        const f1 = mainFight.fighter1?.last_name || '?';
+        const f2 = mainFight.fighter2?.last_name || '?';
+        console.log('  Fixed: ' + event.name + ' (' + sorted.length + ' fights, main: ' + f1 + ' vs ' + f2 + ')');
       }
     }
 
     page++;
+    console.log('\nPage ' + page + ' done -- ' + fixed + ' fixed, ' + alreadyCorrect + ' already correct\n');
     if (events.length < PAGE_SIZE) break;
   }
 
-  console.log(`\nDone — ${fixed} events fixed, ${skipped} already correct/no pattern, ${noMatch} no matching fight found`);
+  console.log('===========================================');
+  console.log('  ' + fixed + ' events updated');
+  console.log('  ' + alreadyCorrect + ' already correct');
+  console.log('  ' + noFights + ' events with no fights');
+  console.log('  ' + errors + ' errors');
 }
 
 main().catch(console.error);
