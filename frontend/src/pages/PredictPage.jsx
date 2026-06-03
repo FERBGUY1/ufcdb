@@ -67,11 +67,11 @@ export default function PredictPage() {
           <select
             value={weightClass}
             onChange={e => { setWeightClass(e.target.value); setPrediction(null); }}
-            className="bg-transparent border-none text-sm text-white/80 focus:outline-none cursor-pointer"
+            className="bg-dark-3 border-none text-sm text-white/80 focus:outline-none cursor-pointer rounded"
           >
-            <option value="">Auto (fighter's natural class)</option>
+            <option value="" className="bg-dark-3 text-white">Auto (fighter's natural class)</option>
             {WEIGHT_CLASSES.map(wc => (
-              <option key={wc.slug} value={wc.slug}>{wc.name}</option>
+              <option key={wc.slug} value={wc.slug} className="bg-dark-3 text-white">{wc.name}</option>
             ))}
           </select>
         </div>
@@ -129,7 +129,7 @@ function FighterSelector({ label, selected, onSelect, onClear }) {
 
   if (selected) {
     return (
-      <div className="card p-5 text-center">
+      <div className="card p-5 text-center relative">
         <div className="text-[10px] tracking-[0.2em] text-white/30 uppercase mb-3">{label}</div>
         <div className="w-16 h-16 rounded-full bg-dark-4 border-2 border-gold/40 flex items-center justify-center font-display text-2xl text-gold mx-auto mb-3">
           {selected.first_name?.[0]}{selected.last_name?.[0]}
@@ -139,7 +139,12 @@ function FighterSelector({ label, selected, onSelect, onClear }) {
         </Link>
         <div className="text-xs text-white/40 mt-1">{fmtRecord(selected.wins, selected.losses, selected.draws)}</div>
         <div className="text-xs text-gold/70 mt-0.5">{selected.primary_style}</div>
-        <button onClick={onClear} className="mt-3 text-xs text-white/30 hover:text-white/60 transition-colors">Change fighter</button>
+        <button
+          onClick={onClear}
+          className="mt-4 flex items-center gap-1.5 mx-auto text-xs text-white/40 hover:text-red-400 transition-colors border border-white/10 hover:border-red-500/30 rounded-lg px-3 py-1.5"
+        >
+          <span>&#x2715;</span> Change Fighter
+        </button>
       </div>
     );
   }
