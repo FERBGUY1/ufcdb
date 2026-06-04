@@ -9,6 +9,22 @@ const supabase = require('../db/client');
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ── WEIGHT CLASS CONTEXT ──────────────────────────────────
+async function deriveNaturalWeightClassId(fighterId, fallbackId) {
+  const { data: fights } = await supabase
+    .from('fights')
+    .select('weight_class_id')
+    .or(`fighter1_id.eq.${fighterId},fighter2_id.eq.${fighterId}`)
+    .not('weight_class_id', 'is', null);
+
+  if (!fights || fights.length === 0) return fallbackId;
+
+  const counts = {};
+  for (const f of fights) {
+    counts[f.weight_class_id] = (counts[f.weight_class_id] || 0) + 1;
+  }
+  return parseInt(Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]);
+}
+
 async function computeWeightClassContext(f1, f2, weightClassId) {
   if (!weightClassId) return null;
 
@@ -19,8 +35,13 @@ async function computeWeightClassContext(f1, f2, weightClassId) {
   const targetWC = wcById[weightClassId];
   if (!targetWC) return null;
 
-  const f1PrimaryWC = f1.primary_weight_class_id ? wcById[f1.primary_weight_class_id] : null;
-  const f2PrimaryWC = f2.primary_weight_class_id ? wcById[f2.primary_weight_class_id] : null;
+  const [f1NaturalId, f2NaturalId] = await Promise.all([
+    deriveNaturalWeightClassId(f1.id, f1.primary_weight_class_id),
+    deriveNaturalWeightClassId(f2.id, f2.primary_weight_class_id),
+  ]);
+
+  const f1PrimaryWC = f1NaturalId ? wcById[f1NaturalId] : null;
+  const f2PrimaryWC = f2NaturalId ? wcById[f2NaturalId] : null;
 
   const f1Diff = f1PrimaryWC ? (targetWC.sort_order - f1PrimaryWC.sort_order) : 0;
   const f2Diff = f2PrimaryWC ? (targetWC.sort_order - f2PrimaryWC.sort_order) : 0;
