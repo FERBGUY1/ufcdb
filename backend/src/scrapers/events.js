@@ -172,7 +172,7 @@ async function scrapeEvent(url) {
       if (!f1link || !f2link) return;
 
       const winCell   = $(cells[0]).text().trim().toLowerCase();
-      const wc        = $(cells[6]).find('p').eq(0).text().trim() || $(cells[6]).text().trim();
+      const wc        = ($(cells[6]).find('p').eq(0).text().trim() || $(cells[6]).text().trim()).replace(/\s+Bout$/i, '').trim();
       const method    = $(cells[7]).find('p').eq(0).text().trim();
       const methodDet = $(cells[7]).find('p').eq(1).text().trim();
       const round     = parseInt($(cells[8]).find('p').eq(0).text().trim() || $(cells[8]).text().trim()) || null;

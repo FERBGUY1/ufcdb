@@ -61,7 +61,7 @@ export default function FighterPage() {
           <div className="flex-1 min-w-0">
             <div className="text-[10px] tracking-[0.3em] text-gold uppercase mb-2 flex items-center gap-3">
               {f.weight_classes?.name}
-              {f.is_champion && <span className="bg-gold/20 text-gold border border-gold/30 px-2 py-0.5 rounded text-[9px]">âŸ¡ CHAMPION</span>}
+              {f.is_champion && <span className="bg-gold/20 text-gold border border-gold/30 px-2 py-0.5 rounded text-[9px]">CHAMPION</span>}
               {rankings?.[0] && !f.is_champion && (
                 <span className="text-white/30">Ranked #{rankings[0].rank}</span>
               )}
@@ -482,6 +482,7 @@ function ProfileSkeleton() {
     </main>
   );
 }
+
 
 
 

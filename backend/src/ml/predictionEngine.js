@@ -9,14 +9,17 @@ const supabase = require('../db/client');
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ── WEIGHT CLASS CONTEXT ──────────────────────────────────
-async function deriveNaturalWeightClassId(fighterId, fallbackId) {
+// Returns the most-fought weight class id from actual fight history, or null if none exist.
+// Callers must handle null — never falls back to primary_weight_class_id here, since that field
+// is often wrong and would produce incorrect direction signals in the predictor.
+async function deriveNaturalWeightClassId(fighterId) {
   const { data: fights } = await supabase
     .from('fights')
     .select('weight_class_id')
     .or(`fighter1_id.eq.${fighterId},fighter2_id.eq.${fighterId}`)
     .not('weight_class_id', 'is', null);
 
-  if (!fights || fights.length === 0) return fallbackId;
+  if (!fights || fights.length === 0) return null;
 
   const counts = {};
   for (const f of fights) {
@@ -36,8 +39,8 @@ async function computeWeightClassContext(f1, f2, weightClassId) {
   if (!targetWC) return null;
 
   const [f1NaturalId, f2NaturalId] = await Promise.all([
-    deriveNaturalWeightClassId(f1.id, f1.primary_weight_class_id),
-    deriveNaturalWeightClassId(f2.id, f2.primary_weight_class_id),
+    deriveNaturalWeightClassId(f1.id),
+    deriveNaturalWeightClassId(f2.id),
   ]);
 
   const f1PrimaryWC = f1NaturalId ? wcById[f1NaturalId] : null;
@@ -218,10 +221,10 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId) {
 
   if (!f1 || !f2) throw new Error('One or both fighters not found');
 
-  // Derive target weight class from f1's fight history when none is explicitly specified.
-  // Using primary_weight_class_id here would give wrong direction signals since that field is often incorrect.
+  // Derive target weight class from f1's actual fight history when none is specified.
+  // Only fall back to primary_weight_class_id if there is truly no fight data at all.
   if (!weightClassId) {
-    weightClassId = await deriveNaturalWeightClassId(f1.id, f1.primary_weight_class_id);
+    weightClassId = (await deriveNaturalWeightClassId(f1.id)) ?? f1.primary_weight_class_id ?? null;
   }
 
   const weightClassContext = await computeWeightClassContext(f1, f2, weightClassId);
