@@ -246,29 +246,79 @@ router.get('/:slug/compare', async (req, res, next) => {
 
     if (!opponent) return res.status(400).json({ error: 'opponent slug required' });
 
-    const [{ data: f1 }, { data: f2 }] = await Promise.all([
-      supabase.from('fighters').select('*').eq('slug', slug).single(),
-      supabase.from('fighters').select('*').eq('slug', opponent).single(),
+    const [{ data: f1, error: e1 }, { data: f2, error: e2 }] = await Promise.all([
+      supabase.from('fighters').select('*, weight_classes(id, name, slug)').eq('slug', slug).single(),
+      supabase.from('fighters').select('*, weight_classes(id, name, slug)').eq('slug', opponent).single(),
     ]);
 
-    if (!f1 || !f2) return res.status(404).json({ error: 'One or both fighters not found' });
+    if (e1 || e2 || !f1 || !f2) return res.status(404).json({ error: 'One or both fighters not found' });
 
-    // Check if they have fought before
-    const { data: history } = await supabase
-      .from('fights')
-      .select(`
-        result, method, round, time,
-        events ( name, date ),
-        winner:fighters!winner_id ( id, first_name, last_name )
-      `)
-      .or(`and(fighter1_id.eq.${f1.id},fighter2_id.eq.${f2.id}),and(fighter1_id.eq.${f2.id},fighter2_id.eq.${f1.id})`)
-      .order('events.date', { ascending: false });
+    const [
+      { data: history },
+      { data: rankings1 },
+      { data: rankings2 },
+      { data: recentFights1 },
+      { data: recentFights2 },
+    ] = await Promise.all([
+      // Head to head
+      supabase.from('fights')
+        .select(`
+          id, result, method, round, time, fighter1_id,
+          events ( name, date, slug )
+        `)
+        .or(`and(fighter1_id.eq.${f1.id},fighter2_id.eq.${f2.id}),and(fighter1_id.eq.${f2.id},fighter2_id.eq.${f1.id})`)
+        .order('events(date)', { ascending: false }),
+
+      // Rankings f1
+      supabase.from('rankings')
+        .select('rank, is_interim, weight_classes(name, slug)')
+        .eq('fighter_id', f1.id)
+        .order('recorded_date', { ascending: false })
+        .limit(3),
+
+      // Rankings f2
+      supabase.from('rankings')
+        .select('rank, is_interim, weight_classes(name, slug)')
+        .eq('fighter_id', f2.id)
+        .order('recorded_date', { ascending: false })
+        .limit(3),
+
+      // Recent fights f1
+      supabase.from('fights')
+        .select(`
+          id, result, method, round, fighter1_id,
+          events ( name, date, slug ),
+          fighter1:fighters!fighter1_id ( id, slug, first_name, last_name ),
+          fighter2:fighters!fighter2_id ( id, slug, first_name, last_name )
+        `)
+        .or(`fighter1_id.eq.${f1.id},fighter2_id.eq.${f1.id}`)
+        .neq('result', 'upcoming')
+        .order('events(date)', { ascending: false })
+        .limit(5),
+
+      // Recent fights f2
+      supabase.from('fights')
+        .select(`
+          id, result, method, round, fighter1_id,
+          events ( name, date, slug ),
+          fighter1:fighters!fighter1_id ( id, slug, first_name, last_name ),
+          fighter2:fighters!fighter2_id ( id, slug, first_name, last_name )
+        `)
+        .or(`fighter1_id.eq.${f2.id},fighter2_id.eq.${f2.id}`)
+        .neq('result', 'upcoming')
+        .order('events(date)', { ascending: false })
+        .limit(5),
+    ]);
 
     res.json({
       fighter1: f1,
       fighter2: f2,
       head_to_head: history || [],
       stat_comparison: buildStatComparison(f1, f2),
+      rankings1: rankings1 || [],
+      rankings2: rankings2 || [],
+      recent_fights1: recentFights1 || [],
+      recent_fights2: recentFights2 || [],
     });
   } catch (err) {
     next(err);

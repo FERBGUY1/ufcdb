@@ -1,6 +1,6 @@
-import { useState, useRef } from 'react';
-import { Link } from 'react-router-dom';
-import { getPrediction, search, fmtRecord } from '../lib/api';
+import { useState, useRef, useEffect } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { getPrediction, search, fmtRecord, getFighter } from '../lib/api';
 
 const WEIGHT_CLASSES = [
   { slug: 'strawweight',         name: 'Strawweight' },
@@ -19,12 +19,35 @@ const WEIGHT_CLASSES = [
 ];
 
 export default function PredictPage() {
+  const [searchParams] = useSearchParams();
   const [f1, setF1] = useState(null);
   const [f2, setF2] = useState(null);
   const [weightClass, setWeightClass] = useState('');
   const [prediction, setPrediction] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // Pre-load fighters from URL params and auto-predict if both present
+  useEffect(() => {
+    const slug1 = searchParams.get('f1') || searchParams.get('fighter1');
+    const slug2 = searchParams.get('f2') || searchParams.get('fighter2');
+    if (!slug1 && !slug2) return;
+
+    Promise.all([
+      slug1 ? getFighter(slug1).then(d => d.fighter).catch(() => null) : Promise.resolve(null),
+      slug2 ? getFighter(slug2).then(d => d.fighter).catch(() => null) : Promise.resolve(null),
+    ]).then(([fighter1, fighter2]) => {
+      if (fighter1) setF1(fighter1);
+      if (fighter2) setF2(fighter2);
+      if (fighter1 && fighter2) {
+        setLoading(true); setError(null); setPrediction(null);
+        getPrediction(fighter1.slug, fighter2.slug, null)
+          .then(setPrediction)
+          .catch(e => setError(e.response?.data?.error || 'Prediction failed. Try again.'))
+          .finally(() => setLoading(false));
+      }
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const predict = async () => {
     if (!f1 || !f2) return;
