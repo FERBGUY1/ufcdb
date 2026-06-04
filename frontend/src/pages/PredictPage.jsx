@@ -346,7 +346,7 @@ function PredictionResult({ prediction: p, f1Name, f2Name }) {
       <div className="flex gap-3 justify-center pt-2">
         <Link to={`/fighters/${f1?.slug}`} className="btn-outline text-xs">{f1?.last_name} Profile</Link>
         <Link to={`/fighters/${f2?.slug}`} className="btn-outline text-xs">{f2?.last_name} Profile</Link>
-        <Link to={`/compare?f1=${f1?.slug}&f2=${f2?.slug}`} className="btn-outline text-xs">Full Comparison</Link>
+        <Link to={`/compare?f1=${f1?.slug}&f2=${f2?.slug}`} className="btn-outline text-xs">Compare Fighters</Link>
       </div>
     </div>
   );
