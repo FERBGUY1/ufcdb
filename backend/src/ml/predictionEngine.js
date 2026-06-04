@@ -31,7 +31,10 @@ async function deriveNaturalWeightClassId(fighterId) {
 async function computeWeightClassContext(f1, f2, weightClassId) {
   if (!weightClassId) return null;
 
-  const { data: allWCs } = await supabase.from('weight_classes').select('id, name, slug, sort_order');
+  // Fetch limit_lbs alongside sort_order — we use limit_lbs for direction because
+  // sort_order is inconsistent across genders (male classes descend 1→8, female ascend 9→12).
+  // limit_lbs is unambiguous: 265=HW, 125=FW. Higher lbs = heavier = moving UP.
+  const { data: allWCs } = await supabase.from('weight_classes').select('id, name, slug, sort_order, limit_lbs');
   if (!allWCs) return null;
 
   const wcById = Object.fromEntries(allWCs.map(w => [w.id, w]));
@@ -46,24 +49,28 @@ async function computeWeightClassContext(f1, f2, weightClassId) {
   const f1PrimaryWC = f1NaturalId ? wcById[f1NaturalId] : null;
   const f2PrimaryWC = f2NaturalId ? wcById[f2NaturalId] : null;
 
-  const f1Diff = f1PrimaryWC ? (targetWC.sort_order - f1PrimaryWC.sort_order) : 0;
-  const f2Diff = f2PrimaryWC ? (targetWC.sort_order - f2PrimaryWC.sort_order) : 0;
+  // Diff in lbs: positive = target is heavier = moving UP, negative = moving DOWN.
+  // Falls back to 0 when limit_lbs is null (Catch Weight, Super Heavyweight).
+  const f1Diff = (targetWC.limit_lbs != null && f1PrimaryWC?.limit_lbs != null)
+    ? targetWC.limit_lbs - f1PrimaryWC.limit_lbs : 0;
+  const f2Diff = (targetWC.limit_lbs != null && f2PrimaryWC?.limit_lbs != null)
+    ? targetWC.limit_lbs - f2PrimaryWC.limit_lbs : 0;
 
   return {
     weight_class:         targetWC.name,
     weight_class_slug:    targetWC.slug,
-    f1_primary_class:     f1PrimaryWC ? f1PrimaryWC.name : null,
-    f2_primary_class:     f2PrimaryWC ? f2PrimaryWC.name : null,
+    f1_primary_class:     f1PrimaryWC?.name ?? null,
+    f2_primary_class:     f2PrimaryWC?.name ?? null,
     f1_at_natural_weight: f1Diff === 0,
     f2_at_natural_weight: f2Diff === 0,
-    f1_moving_up:         f1Diff < 0,
-    f2_moving_up:         f2Diff < 0,
-    f1_moving_down:       f1Diff > 0,
-    f2_moving_down:       f2Diff > 0,
+    f1_moving_up:         f1Diff > 0,
+    f2_moving_up:         f2Diff > 0,
+    f1_moving_down:       f1Diff < 0,
+    f2_moving_down:       f2Diff < 0,
     f1_class_diff:        f1Diff,
     f2_class_diff:        f2Diff,
-    has_size_mismatch:    Math.abs(f1Diff - f2Diff) >= 2,
-    uncertainty_flag:     Math.abs(f1Diff) >= 2 || Math.abs(f2Diff) >= 2,
+    has_size_mismatch:    Math.abs(f1Diff - f2Diff) >= 30,
+    uncertainty_flag:     Math.abs(f1Diff) >= 30 || Math.abs(f2Diff) >= 30,
   };
 }
 
