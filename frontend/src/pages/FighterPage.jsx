@@ -375,7 +375,7 @@ function FightRow({ fight, fighterId }) {
     <tr className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors cursor-pointer" onClick={()=>navigate(`/fights/${fight.id}`)} title="View fight details">
       <td className="px-4 py-3">
         {opponent ? (
-          <Link to={`/fighters/${opponent.slug}`} className="font-medium hover:text-gold transition-colors">
+          <Link to={`/fighters/${opponent.slug}`} className="font-medium hover:text-gold transition-colors" onClick={e => e.stopPropagation()}>
             {opponent.first_name} {opponent.last_name}
           </Link>
         ) : <span className="text-white/30">Unknown</span>}
@@ -385,7 +385,7 @@ function FightRow({ fight, fighterId }) {
       </td>
       <td className="px-4 py-3 text-xs text-white/40 max-w-[140px] truncate">
         {fight.events ? (
-          <Link to={`/events/${fight.events.slug}`} className="hover:text-white/70 transition-colors">
+          <Link to={`/events/${fight.events.slug}`} className="hover:text-white/70 transition-colors" onClick={e => e.stopPropagation()}>
             {fight.events.name}
           </Link>
         ) : '--'}
@@ -440,7 +440,7 @@ function UpcomingFightCard({ fight, fighter }) {
         <span className="font-display text-loss text-sm">VS</span>
         <div className="flex-1 text-right">
           {opponent ? (
-            <Link to={`/fighters/${opponent.slug}`} className="font-medium hover:text-gold transition-colors">
+            <Link to={`/fighters/${opponent.slug}`} className="font-medium hover:text-gold transition-colors" onClick={e => e.stopPropagation()}>
               {opponent.first_name} {opponent.last_name}
             </Link>
           ) : <span className="font-medium">TBD</span>}
@@ -482,6 +482,7 @@ function ProfileSkeleton() {
     </main>
   );
 }
+
 
 
 
