@@ -135,6 +135,7 @@ router.get('/:slug', async (req, res, next) => {
         is_title_fight, fighter1_record_at_fight, fighter2_record_at_fight,
         fighter1_sig_str, fighter2_sig_str, fighter1_td, fighter2_td,
         card_position,
+        weight_classes ( id, name, slug ),
         events ( id, name, slug, date, city, country ),
         fighter1:fighters!fighter1_id ( id, slug, first_name, last_name, nickname, photo_url ),
         fighter2:fighters!fighter2_id ( id, slug, first_name, last_name, nickname, photo_url ),

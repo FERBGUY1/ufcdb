@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getEvent, formatOdds } from '../lib/api';
 
@@ -125,6 +125,11 @@ function FightItem({ fight }) {
 
         {/* Result center */}
         <div className="text-center min-w-[80px]">
+          {fight.weight_classes?.name && (
+            <div className="text-[9px] tracking-[0.1em] text-white/25 uppercase mb-1">
+              {fight.weight_classes.name}
+            </div>
+          )}
           {isUpcoming ? (
             <span className="font-display text-xs text-white/30">VS</span>
           ) : (
@@ -178,3 +183,4 @@ function FightItem({ fight }) {
     </div>
   );
 }
+

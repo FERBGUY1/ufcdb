@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { getFighter, formatOdds, formatRecord, heightFromInches, getCountryFlag, oddsToImplied } from '../lib/api';
 
@@ -205,7 +205,7 @@ export default function FighterPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-white/[0.06]">
-                        {['Opponent', 'Event', 'Date', 'Result', 'Method', 'Rnd', 'Odds'].map(h => (
+                        {['Opponent', 'Event', 'Date', 'Class', 'Result', 'Method', 'Rnd', 'Odds'].map(h => (
                           <th key={h} className="text-left px-4 py-2.5 text-[10px] tracking-[0.15em] text-white/30 uppercase font-medium">
                             {h}
                           </th>
@@ -393,6 +393,9 @@ function FightRow({ fight, fighterId }) {
       <td className="px-4 py-3 text-xs text-white/30 whitespace-nowrap">
         {fight.events?.date || '--'}
       </td>
+      <td className="px-4 py-3 text-xs text-white/30 whitespace-nowrap">
+        {fight.weight_classes?.name || '--'}
+      </td>
       <td className="px-4 py-3">
         <span className={isWin ? 'result-win' : 'result-loss'}>{resultLabel}</span>
       </td>
@@ -479,4 +482,6 @@ function ProfileSkeleton() {
     </main>
   );
 }
+
+
 
