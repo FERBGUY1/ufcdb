@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 const axios   = require('axios');
 const cheerio = require('cheerio');
 const supabase = require('../db/client');
@@ -15,7 +15,7 @@ const http = axios.create({
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-// â”€â”€ Search Sherdog for a fighter by name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Search Sherdog for a fighter by name
 async function searchSherdog(firstName, lastName) {
   const query = encodeURIComponent(`${firstName} ${lastName}`);
   const url   = `https://www.sherdog.com/stats/fightfinder?SearchTxt=${query}&type=fighter`;
@@ -33,8 +33,6 @@ async function searchSherdog(firstName, lastName) {
       const nameText = a.text().trim().toLowerCase();
       const first = firstName.toLowerCase();
       const last  = lastName.toLowerCase();
-      // Both first AND last name must appear as whole words — prevents e.g.
-      // "Aaron Canarte" matching a search for "Tom Aaron"
       const words      = nameText.split(/\s+/);
       const firstWords = first.split(/\s+/);
       const lastWords  = last.split(/\s+/);
@@ -43,118 +41,97 @@ async function searchSherdog(firstName, lastName) {
       if (hasFirst && hasLast) link = a.attr('href');
     });
     return link ? `https://www.sherdog.com${link}` : null;
-  } catch (e) {
+  } catch {
     return null;
   }
 }
 
-// â”€â”€ Scrape a Sherdog fighter profile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Scrape a Sherdog fighter profile
 async function scrapeFighterProfile(url) {
   try {
     const { data } = await http.get(url);
     const $ = cheerio.load(data);
 
-    const details = {};
+    // Nationality — microdata itemprop (reliable)
+    const nationality = $('[itemprop="nationality"]').text().trim() || null;
 
-    // Bio fields from the fighter profile table
-    $('.fighter-data .fighter-info .bio-holder .bio th, .fighter-data .fighter-info .bio-holder .bio td').each((i, el) => {
-      // bio table uses th for labels, td for values in pairs
-    });
+    // Gym / Association — microdata itemprop (reliable)
+    const association = $('[itemprop="memberOf"] [itemprop="name"]').first().text().trim() ||
+                        $('a.association-link').text().trim() || null;
 
-    // Try the info box approach
-    $('div.fighter-info span.item').each((_, el) => {
-      const label = $(el).find('strong').text().trim().replace(':', '').toLowerCase();
-      const value = $(el).clone().children().remove().end().text().trim() ||
-                    $(el).text().replace($(el).find('strong').text(), '').trim();
-      if (label && value) details[label] = value;
-    });
+    // Date of birth — [itemprop="birthDate"] is present on modern Sherdog profiles
+    const dobRaw = $('[itemprop="birthDate"]').text().trim();
+    let date_of_birth = null;
+    if (dobRaw && dobRaw !== '--') {
+      try { date_of_birth = new Date(dobRaw).toISOString().split('T')[0]; } catch {}
+    }
 
-    // Alternative selectors for different page layouts
-    $('table.bio_graph tr').each((_, row) => {
-      const cells = $(row).find('td');
-      if (cells.length >= 2) {
-        const label = $(cells[0]).text().trim().replace(':', '').toLowerCase();
-        const value = $(cells[1]).text().trim();
-        if (label && value && value !== '--') details[label] = value;
-      }
-    });
+    // Hometown — Sherdog's span.item[0] holds "Nationality City" concatenated.
+    // Strip the nationality prefix to extract just the city/location.
+    let hometown = null;
+    const spanItemText = $('div.fighter-info span.item').first().text().replace(/\s+/g, ' ').trim();
+    if (spanItemText && nationality && spanItemText.startsWith(nationality)) {
+      hometown = spanItemText.slice(nationality.length).trim() || null;
+    } else if (spanItemText && !nationality) {
+      hometown = spanItemText || null;
+    }
 
-    // Nationality / association from profile header area
-    const nationality = $('strong[itemprop="nationality"]').text().trim() ||
-                        details['nationality'] || details['country'] || null;
-
-    const birthplace = $('span[itemprop="birthPlace"]').text().trim() ||
-                       details['birth place'] || details['birthplace'] || details['hometown'] || null;
-
-    const association = $('span[itemprop="memberOf"] span[itemprop="name"]').first().text().trim() ||
-                        $('a.association-link').text().trim() ||
-                        details['association'] || details['gym'] || null;
-
-    const headCoach = details['head coach'] || details['coach'] || null;
-
-    const weight = $('span.fighter_weight strong').text().trim() || null;
-    const height = $('span.fighter_height strong').text().trim() || null;
-
-    // Pro debut — scan the professional fight history table
-    const fights = [];
-    // Sherdog fight tables have a section title preceding them; the first table
-    // with class "fight_history" is the professional record
+    // Pro debut — last date in the professional fight history table
+    const fightDates = [];
     $('section.fight_history table tr:not(.table_head)').each((_, row) => {
       const cells = $(row).find('td');
       if (cells.length < 3) return;
-      const dateStr = $(cells[2]).text().trim();
-      if (dateStr && dateStr !== 'N/A') fights.push(dateStr);
+      const d = $(cells[2]).text().trim();
+      if (d && d !== 'N/A') fightDates.push(d);
     });
-    // Fallback to any fight_history table
-    if (!fights.length) {
+    if (!fightDates.length) {
       $('table.fight_history tr:not(.table_head)').each((_, row) => {
         const cells = $(row).find('td');
         if (cells.length < 4) return;
-        const dateStr = $(cells[2]).text().trim();
-        if (dateStr && dateStr !== 'N/A') fights.push(dateStr);
+        const d = $(cells[2]).text().trim();
+        if (d && d !== 'N/A') fightDates.push(d);
       });
     }
-    const proDebutDate = fights.length ? fights[fights.length - 1] : null;
+    let pro_debut_date = null;
+    if (fightDates.length) {
+      try { pro_debut_date = new Date(fightDates[fightDates.length - 1]).toISOString().split('T')[0]; } catch {}
+    }
 
-    // Amateur record — count rows in the amateur fight history section
-    let amateurWins = 0;
-    let amateurLosses = 0;
-    // Sherdog amateur section is identified by a heading with "Amateur Fights"
+    // Amateur record
+    let amateurWins = 0, amateurLosses = 0;
     $('section.fight_history').each((_, section) => {
-      const heading = $(section).find('h2, h3').text().toLowerCase();
-      if (!heading.includes('amateur')) return;
+      if (!$(section).find('h2, h3').text().toLowerCase().includes('amateur')) return;
       $(section).find('table tr:not(.table_head)').each((_, row) => {
         const cells = $(row).find('td');
-        if (cells.length < 2) return;
+        if (!cells.length) return;
         const res = $(cells[0]).find('span').first().text().trim().toLowerCase();
-        if (res === 'win')  amateurWins++;
+        if (res === 'win')       amateurWins++;
         else if (res === 'loss') amateurLosses++;
       });
     });
 
     return {
-      nationality:    nationality || null,
-      hometown:       birthplace  || null,
-      gym_name:       association || null,
-      head_coach:     headCoach   || null,
+      nationality,
+      hometown,
+      gym_name:       association  || null,
+      date_of_birth,
       amateur_wins:   amateurWins  || null,
       amateur_losses: amateurLosses || null,
-      pro_debut_date: proDebutDate ? (() => {
-        try { return new Date(proDebutDate).toISOString().split('T')[0]; } catch { return null; }
-      })() : null,
+      pro_debut_date,
     };
-  } catch (e) {
+  } catch {
     return null;
   }
 }
 
-// â”€â”€ MAIN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// MAIN
 async function main() {
-  console.log('â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—');
-  console.log('â•‘  UFCDB â€” Sherdog Scraper             â•‘');
-  console.log('â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n');
+  console.log('╔═══════════════════════════════════════╗');
+  console.log('║  UFCDB — Sherdog Scraper              ║');
+  console.log('╚═══════════════════════════════════════╝\n');
 
-  // Load all fighters that are missing nationality/gym data
+  // Target fighters missing nationality OR hometown (or both).
+  // Fighters with nationality but no hometown are now backfilled too.
   let updated = 0;
   let failed  = 0;
   let page    = 0;
@@ -163,15 +140,15 @@ async function main() {
   while (true) {
     const { data: fighters, error } = await supabase
       .from('fighters')
-      .select('id, first_name, last_name, nationality, gym_name, hometown, head_coach')
-      .is('nationality', null)
+      .select('id, first_name, last_name, nationality, gym_name, hometown, date_of_birth, amateur_wins, pro_debut_date')
+      .or('nationality.is.null,hometown.is.null')
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
       .order('last_name');
 
     if (error) { console.error('DB error:', error.message); break; }
     if (!fighters?.length) break;
 
-    console.log(`Processing page ${page + 1} â€” ${fighters.length} fighters missing nationality data\n`);
+    console.log(`Processing page ${page + 1} — ${fighters.length} fighters missing nationality or hometown\n`);
 
     for (let i = 0; i < fighters.length; i++) {
       const f = fighters[i];
@@ -186,20 +163,20 @@ async function main() {
 
       await sleep(DELAY);
       const profile = await scrapeFighterProfile(profileUrl);
-      if (!profile || !Object.values(profile).some(Boolean)) {
+      if (!profile || !Object.values(profile).some(v => v)) {
         failed++;
         continue;
       }
 
-      // Only update fields that Sherdog has that we're missing
+      // Only write fields that are currently null in the DB
       const patch = {};
-      if (profile.nationality   && !f.nationality)   patch.nationality   = profile.nationality;
-      if (profile.hometown      && !f.hometown)       patch.hometown      = profile.hometown;
-      if (profile.gym_name      && !f.gym_name)       patch.gym_name      = profile.gym_name;
-      if (profile.head_coach    && !f.head_coach)     patch.head_coach    = profile.head_coach;
-      if (profile.amateur_wins  != null)              patch.amateur_wins  = profile.amateur_wins;
-      if (profile.amateur_losses != null)             patch.amateur_losses = profile.amateur_losses;
-      if (profile.pro_debut_date)                    patch.pro_debut_date = profile.pro_debut_date;
+      if (profile.nationality    && !f.nationality)    patch.nationality    = profile.nationality;
+      if (profile.hometown       && !f.hometown)       patch.hometown       = profile.hometown;
+      if (profile.gym_name       && !f.gym_name)       patch.gym_name       = profile.gym_name;
+      if (profile.date_of_birth  && !f.date_of_birth)  patch.date_of_birth  = profile.date_of_birth;
+      if (profile.amateur_wins   != null && !f.amateur_wins)  patch.amateur_wins   = profile.amateur_wins;
+      if (profile.amateur_losses != null)              patch.amateur_losses = profile.amateur_losses;
+      if (profile.pro_debut_date && !f.pro_debut_date) patch.pro_debut_date = profile.pro_debut_date;
 
       if (Object.keys(patch).length === 0) { failed++; continue; }
 
@@ -212,9 +189,8 @@ async function main() {
         failed++;
       } else {
         updated++;
-        if (updated % 25 === 0) {
+        if (updated % 25 === 0)
           console.log(`  Updated ${updated} fighters so far (failed/no-match: ${failed})`);
-        }
       }
     }
 
@@ -222,14 +198,11 @@ async function main() {
     if (fighters.length < PAGE_SIZE) break;
   }
 
-  console.log('\nâ•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—');
-  console.log('â•‘  Sherdog scrape complete!            â•‘');
-  console.log(`â•‘  Updated:      ${String(updated).padEnd(23)}â•‘`);
-  console.log(`â•‘  No match:     ${String(failed).padEnd(23)}â•‘`);
-  console.log('â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•');
+  console.log('\n╔═══════════════════════════════════════╗');
+  console.log('║  Sherdog scrape complete!             ║');
+  console.log(`║  Updated:   ${String(updated).padEnd(26)}║`);
+  console.log(`║  No match:  ${String(failed).padEnd(26)}║`);
+  console.log('╚═══════════════════════════════════════╝');
 }
 
 main().catch(console.error);
-
-
-
