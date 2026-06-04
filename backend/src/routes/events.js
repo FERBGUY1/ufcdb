@@ -48,26 +48,34 @@ router.get('/:slug', async (req, res, next) => {
 
     if (error || !event) return res.status(404).json({ error: 'Event not found' });
 
-    const { data: fights } = await supabase
-      .from('fights')
-      .select(`
-        id, bout_order, result, method, method_detail, round, time, card_position, is_title_fight,
-        fighter1_record_at_fight, fighter2_record_at_fight,
-        weight_classes ( id, name, slug ),
-        fighter1:fighters!fighter1_id ( id, slug, first_name, last_name, nickname, photo_url ),
-        fighter2:fighters!fighter2_id ( id, slug, first_name, last_name, nickname, photo_url ),
-        winner:fighters!winner_id ( id, first_name, last_name ),
-        odds ( bookmaker, fighter1_odds, fighter2_odds, line_type, recorded_at )
-      `)
-      .eq('event_id', event.id)
-      .order('bout_order', { ascending: true, nullsFirst: false });
+    const [{ data: fights }, { data: allWCs }] = await Promise.all([
+      supabase
+        .from('fights')
+        .select(`
+          id, bout_order, result, method, method_detail, round, time, card_position, is_title_fight,
+          fighter1_record_at_fight, fighter2_record_at_fight, weight_class_id,
+          fighter1:fighters!fighter1_id ( id, slug, first_name, last_name, nickname, photo_url ),
+          fighter2:fighters!fighter2_id ( id, slug, first_name, last_name, nickname, photo_url ),
+          winner:fighters!winner_id ( id, first_name, last_name ),
+          odds ( bookmaker, fighter1_odds, fighter2_odds, line_type, recorded_at )
+        `)
+        .eq('event_id', event.id)
+        .order('bout_order', { ascending: true, nullsFirst: false }),
+      supabase.from('weight_classes').select('id, name, slug'),
+    ]);
+
+    const wcById = Object.fromEntries((allWCs || []).map(w => [w.id, w]));
+    const fightsWithWC = (fights || []).map(f => ({
+      ...f,
+      weight_classes: f.weight_class_id ? (wcById[f.weight_class_id] || null) : null,
+    }));
 
     // Sort by card section then bout position.
     // card_position ('main_card'/'prelim'/'early_prelim') is populated for new events;
     // historical fights have it NULL so fall back to bout_order (0 = main event,
     // corrected by fix-bout-order.js for all events where the headliner was late-added).
     const sectionRank = { main_card: 0, prelim: 1, early_prelim: 2 };
-    const sortedFights = (fights || []).sort((a, b) => {
+    const sortedFights = fightsWithWC.sort((a, b) => {
       const posA = a.card_position != null ? (sectionRank[a.card_position] ?? 0) : null;
       const posB = b.card_position != null ? (sectionRank[b.card_position] ?? 0) : null;
       if (posA !== null && posB !== null && posA !== posB) return posA - posB;

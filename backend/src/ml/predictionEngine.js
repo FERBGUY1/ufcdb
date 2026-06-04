@@ -218,6 +218,12 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId) {
 
   if (!f1 || !f2) throw new Error('One or both fighters not found');
 
+  // Derive target weight class from f1's fight history when none is explicitly specified.
+  // Using primary_weight_class_id here would give wrong direction signals since that field is often incorrect.
+  if (!weightClassId) {
+    weightClassId = await deriveNaturalWeightClassId(f1.id, f1.primary_weight_class_id);
+  }
+
   const weightClassContext = await computeWeightClassContext(f1, f2, weightClassId);
 
   const cacheFilter = 'and(fighter1_id.eq.' + fighter1Id + ',fighter2_id.eq.' + fighter2Id + '),and(fighter1_id.eq.' + fighter2Id + ',fighter2_id.eq.' + fighter1Id + ')';

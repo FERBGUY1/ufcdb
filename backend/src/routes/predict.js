@@ -29,10 +29,9 @@ router.post('/', async (req, res, next) => {
     let weightClassId = null;
     if (weight_class_slug) {
       const { data: wc } = await supabase.from('weight_classes').select('id').eq('slug', weight_class_slug).single();
-      weightClassId = wc?.id;
-    } else {
-      weightClassId = f1.primary_weight_class_id;
+      weightClassId = wc?.id ?? null;
     }
+    // When no weight class is specified, generatePrediction derives it from f1's fight history
 
     const prediction = await generatePrediction(f1.id, f2.id, weightClassId);
     res.json(prediction);

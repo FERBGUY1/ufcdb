@@ -128,27 +128,34 @@ router.get('/:slug', async (req, res, next) => {
     }
 
     // Get fight history with event info and odds
-    const { data: fights } = await supabase
-      .from('fights')
-      .select(`
-        id, result, method, method_detail, round, time,
-        is_title_fight, fighter1_record_at_fight, fighter2_record_at_fight,
-        fighter1_sig_str, fighter2_sig_str, fighter1_td, fighter2_td,
-        card_position,
-        weight_classes ( id, name, slug ),
-        events ( id, name, slug, date, city, country ),
-        fighter1:fighters!fighter1_id ( id, slug, first_name, last_name, nickname, photo_url ),
-        fighter2:fighters!fighter2_id ( id, slug, first_name, last_name, nickname, photo_url ),
-        winner:fighters!winner_id ( id, slug, first_name, last_name ),
-        odds ( bookmaker, fighter1_odds, fighter2_odds, line_type, recorded_at )
-      `)
-      .or(`fighter1_id.eq.${fighter.id},fighter2_id.eq.${fighter.id}`)
-      .order('events(date)', { ascending: false })
-      .limit(200);
+    const [{ data: fights }, { data: allWCs }] = await Promise.all([
+      supabase
+        .from('fights')
+        .select(`
+          id, result, method, method_detail, round, time,
+          is_title_fight, fighter1_record_at_fight, fighter2_record_at_fight,
+          fighter1_sig_str, fighter2_sig_str, fighter1_td, fighter2_td,
+          card_position, weight_class_id,
+          events ( id, name, slug, date, city, country ),
+          fighter1:fighters!fighter1_id ( id, slug, first_name, last_name, nickname, photo_url ),
+          fighter2:fighters!fighter2_id ( id, slug, first_name, last_name, nickname, photo_url ),
+          winner:fighters!winner_id ( id, slug, first_name, last_name ),
+          odds ( bookmaker, fighter1_odds, fighter2_odds, line_type, recorded_at )
+        `)
+        .or(`fighter1_id.eq.${fighter.id},fighter2_id.eq.${fighter.id}`)
+        .order('events(date)', { ascending: false })
+        .limit(200),
+      supabase.from('weight_classes').select('id, name, slug'),
+    ]);
+
+    const wcById = Object.fromEntries((allWCs || []).map(w => [w.id, w]));
 
     // The DB ordering by events(date) is authoritative. This JS sort is a
     // belt-and-suspenders fallback for fights with no linked event (null date).
-    const sortedFights = (fights || []).sort((a, b) => {
+    const sortedFights = (fights || []).map(f => ({
+      ...f,
+      weight_classes: f.weight_class_id ? (wcById[f.weight_class_id] || null) : null,
+    })).sort((a, b) => {
       const da = a.events?.date ?? '';
       const db = b.events?.date ?? '';
       if (db > da) return 1;
