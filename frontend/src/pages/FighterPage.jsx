@@ -107,12 +107,48 @@ export default function FighterPage() {
             <div className="flex flex-wrap gap-2 mt-4">
               {f.stance && <Link to={`/fighters?stance=${encodeURIComponent(f.stance)}`} className="tag hover:border-gold/40 hover:text-gold transition-colors">{f.stance}</Link>}
               {f.height_inches && <Link to={`/fighters?height_inches=${f.height_inches}`} className="tag hover:border-gold/40 hover:text-gold transition-colors">{heightFromInches(f.height_inches)}</Link>}
-              {f.reach_inches && <span className="tag">Reach {f.reach_inches}"</span>}
+              {f.reach_inches && <Link to={`/fighters?reach_inches=${f.reach_inches}`} className="tag hover:border-gold/40 hover:text-gold transition-colors">Reach {f.reach_inches}"</Link>}
               {f.nationality && <Link to={`/fighters?nationality=${encodeURIComponent(f.nationality)}`} className="tag hover:border-gold/40 hover:text-gold transition-colors">{getCountryFlag(f.nationality)} {f.nationality}</Link>}
-              <span className={`tag ${f.status === 'active' ? 'text-win border-win/20' : ''}`}>
-                {f.status}
-              </span>
+              {f.status && (
+                <Link to={`/fighters?status=${encodeURIComponent(f.status)}`} className={`tag hover:border-gold/40 hover:text-gold transition-colors ${f.status === 'active' ? 'text-win border-win/20' : ''}`}>
+                  {f.status}
+                </Link>
+              )}
             </div>
+
+            {/* Social icons */}
+            {(f.instagram || f.twitter || f.youtube || f.tiktok) && (
+              <div className="flex gap-3 mt-4">
+                {f.instagram && (
+                  <a href={`https://instagram.com/${f.instagram.replace('@','')}`} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/80 transition-colors" title={f.instagram}>
+                    <IconInstagram />
+                    <span className="hidden sm:inline">{f.instagram}</span>
+                  </a>
+                )}
+                {f.twitter && (
+                  <a href={`https://x.com/${f.twitter.replace('@','')}`} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/80 transition-colors" title={f.twitter}>
+                    <IconX />
+                    <span className="hidden sm:inline">{f.twitter}</span>
+                  </a>
+                )}
+                {f.youtube && (
+                  <a href={`https://youtube.com/${f.youtube}`} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/80 transition-colors" title={f.youtube}>
+                    <IconYouTube />
+                    <span className="hidden sm:inline">{f.youtube}</span>
+                  </a>
+                )}
+                {f.tiktok && (
+                  <a href={`https://tiktok.com/${f.tiktok}`} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/80 transition-colors" title={f.tiktok}>
+                    <IconTikTok />
+                    <span className="hidden sm:inline">{f.tiktok}</span>
+                  </a>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -259,7 +295,7 @@ export default function FighterPage() {
             {/* Physical */}
             <InfoCard title="Physical">
               {f.height_inches && <InfoRow label="Height" value={heightFromInches(f.height_inches)} to={`/fighters?height_inches=${f.height_inches}`} />}
-              {f.reach_inches && <InfoRow label="Reach" value={`${f.reach_inches}"`} />}
+              {f.reach_inches && <InfoRow label="Reach" value={`${f.reach_inches}"`} to={`/fighters?reach_inches=${f.reach_inches}`} />}
               {f.leg_reach_inches && <InfoRow label="Leg Reach" value={`${f.leg_reach_inches}"`} />}
               {f.stance && <InfoRow label="Stance" value={f.stance} to={`/fighters?stance=${encodeURIComponent(f.stance)}`} />}
               {f.weight_lbs && <InfoRow label="Weight" value={`${f.weight_lbs} lbs`} />}
@@ -279,12 +315,8 @@ export default function FighterPage() {
             </InfoCard>
 
             {/* Social */}
-            {(f.instagram || f.twitter || f.youtube) && (
-              <InfoCard title="Social Media">
-                {f.instagram && <InfoRow label="Instagram" value={f.instagram} link={`https://instagram.com/${f.instagram.replace('@','')}`} />}
-                {f.twitter && <InfoRow label="Twitter/X" value={f.twitter} link={`https://x.com/${f.twitter.replace('@','')}`} />}
-                {f.youtube && <InfoRow label="YouTube" value={f.youtube} link={f.youtube} />}
-              </InfoCard>
+            {(f.instagram || f.twitter || f.youtube || f.tiktok) && (
+              <SocialLinks fighter={f} />
             )}
 
             {/* Compare button */}
@@ -466,6 +498,89 @@ function UpcomingFightCard({ fight, fighter }) {
   );
 }
 
+function IconInstagram() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/>
+    </svg>
+  );
+}
+
+function IconX() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.741l7.73-8.835L1.254 2.25H8.08l4.253 5.622 5.91-5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+    </svg>
+  );
+}
+
+function IconYouTube() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+    </svg>
+  );
+}
+
+function IconTikTok() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.32 6.32 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.69a8.18 8.18 0 004.79 1.54V6.78a4.85 4.85 0 01-1.02-.09z"/>
+    </svg>
+  );
+}
+
+function SocialLinks({ fighter: f }) {
+  const links = [
+    f.instagram && {
+      label: 'Instagram',
+      handle: f.instagram,
+      url: `https://instagram.com/${f.instagram.replace('@', '')}`,
+      Icon: IconInstagram,
+      color: 'hover:text-pink-400',
+    },
+    f.twitter && {
+      label: 'Twitter / X',
+      handle: f.twitter,
+      url: `https://x.com/${f.twitter.replace('@', '')}`,
+      Icon: IconX,
+      color: 'hover:text-white',
+    },
+    f.youtube && {
+      label: 'YouTube',
+      handle: f.youtube,
+      url: `https://youtube.com/${f.youtube}`,
+      Icon: IconYouTube,
+      color: 'hover:text-red-400',
+    },
+    f.tiktok && {
+      label: 'TikTok',
+      handle: f.tiktok,
+      url: `https://tiktok.com/${f.tiktok}`,
+      Icon: IconTikTok,
+      color: 'hover:text-white',
+    },
+  ].filter(Boolean);
+
+  return (
+    <div className="card p-4">
+      <h3 className="text-[10px] tracking-[0.2em] text-white/30 uppercase font-medium mb-3">Social Media</h3>
+      <div className="space-y-2">
+        {links.map(({ label, handle, url, Icon, color }) => (
+          <a key={label} href={url} target="_blank" rel="noopener noreferrer"
+            className={`flex items-center gap-3 py-2 px-3 rounded-lg bg-white/[0.03] border border-white/[0.06] text-white/50 ${color} transition-colors group`}>
+            <span className="flex-shrink-0"><Icon /></span>
+            <span className="text-xs font-medium flex-1 truncate">{handle}</span>
+            <svg className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ProfileSkeleton() {
   return (
     <main>
@@ -482,6 +597,7 @@ function ProfileSkeleton() {
     </main>
   );
 }
+
 
 
 

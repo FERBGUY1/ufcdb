@@ -3,7 +3,7 @@ const router = express.Router();
 const supabase = require('../db/client');
 
 // GET /api/fighters
-// Query params: weight_class, status, stance, nationality, height_inches, search, page, limit, sort
+// Query params: weight_class, status, stance, nationality, height_inches, reach_inches, search, page, limit, sort
 router.get('/', async (req, res, next) => {
   try {
     const {
@@ -18,6 +18,7 @@ router.get('/', async (req, res, next) => {
       stance,
       nationality,
       height_inches,
+      reach_inches,
     } = req.query;
 
     const pageNum = Math.max(1, parseInt(page));
@@ -57,6 +58,9 @@ router.get('/', async (req, res, next) => {
     }
     if (height_inches) {
       query = query.eq('height_inches', parseInt(height_inches));
+    }
+    if (reach_inches) {
+      query = query.eq('reach_inches', parseInt(reach_inches));
     }
     if (search) {
       const parts = search.trim().split(/\s+/);

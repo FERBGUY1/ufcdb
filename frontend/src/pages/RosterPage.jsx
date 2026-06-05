@@ -31,6 +31,7 @@ export default function RosterPage() {
   const stance      = searchParams.get('stance') || '';
   const nationality = searchParams.get('nationality') || '';
   const heightIn    = searchParams.get('height_inches') || '';
+  const reachIn     = searchParams.get('reach_inches') || '';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,6 +43,7 @@ export default function RosterPage() {
         stance: stance || undefined,
         nationality: nationality || undefined,
         height_inches: heightIn || undefined,
+        reach_inches: reachIn || undefined,
         page,
         limit: 60,
         sort: 'ranked',
@@ -53,7 +55,7 @@ export default function RosterPage() {
     } finally {
       setLoading(false);
     }
-  }, [weightClass, status, query, page, stance, nationality, heightIn]);
+  }, [weightClass, status, query, page, stance, nationality, heightIn, reachIn]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -128,7 +130,7 @@ export default function RosterPage() {
         </div>
 
         {/* Active attribute filter chip */}
-        {(stance || nationality || heightIn) && (
+        {(stance || nationality || heightIn || reachIn) && (
           <div className="flex flex-wrap gap-2 items-center">
             <span className="text-[10px] tracking-widest text-white/30 uppercase">Filtered by:</span>
             {stance && (
@@ -147,6 +149,12 @@ export default function RosterPage() {
               <span className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-gold/10 border border-gold/30 text-gold">
                 {heightIn}"
                 <button onClick={() => setParam('height_inches', '')} className="hover:text-white">✕</button>
+              </span>
+            )}
+            {reachIn && (
+              <span className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-gold/10 border border-gold/30 text-gold">
+                Reach {reachIn}"
+                <button onClick={() => setParam('reach_inches', '')} className="hover:text-white">✕</button>
               </span>
             )}
           </div>
