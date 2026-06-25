@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { getPrediction, search, fmtRecord, getFighter } from '../lib/api';
+import { getPrediction, search, fmtProRecord, getFighter } from '../lib/api';
 
 const WEIGHT_CLASSES = [
   { slug: 'strawweight',         name: 'Strawweight' },
@@ -160,7 +160,7 @@ function FighterSelector({ label, selected, onSelect, onClear }) {
         <Link to={`/fighters/${selected.slug}`} className="font-display text-xl tracking-wider hover:text-gold transition-colors">
           {selected.first_name?.toUpperCase()} {selected.last_name?.toUpperCase()}
         </Link>
-        <div className="text-xs text-white/40 mt-1">{fmtRecord(selected.wins, selected.losses, selected.draws)}</div>
+        <div className="text-xs text-white/40 mt-1">{fmtProRecord(selected)}</div>
         <div className="text-xs text-gold/70 mt-0.5">{selected.primary_style}</div>
         <button
           onClick={onClear}
@@ -191,7 +191,7 @@ function FighterSelector({ label, selected, onSelect, onClear }) {
                 </div>
                 <div className="min-w-0">
                   <div className="text-sm font-medium">{f.first_name} {f.last_name}</div>
-                  <div className="text-xs text-white/40">{fmtRecord(f.wins,f.losses,f.draws)} · {f.primary_style || 'Unknown style'}</div>
+                  <div className="text-xs text-white/40">{fmtProRecord(f)} · {f.primary_style || 'Unknown style'}</div>
                 </div>
                 <span className={`ml-auto text-[9px] px-2 py-0.5 rounded-full ${f.status === 'active' ? 'bg-win/10 text-win' : 'bg-white/5 text-white/30'}`}>
                   {f.status}

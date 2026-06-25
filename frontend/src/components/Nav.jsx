@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { search } from '../lib/api';
+import { search, fmtProRecord } from '../lib/api';
 
 export default function Nav() {
   const location  = useLocation();
@@ -81,7 +81,7 @@ export default function Nav() {
                     </div>
                     <div className="min-w-0">
                       <div className="text-xs font-medium truncate">{f.first_name} {f.last_name}</div>
-                      <div className="text-[10px] text-white/40">{f.weight_classes?.name} · {f.wins}-{f.losses}-{f.draws}</div>
+                      <div className="text-[10px] text-white/40">{f.weight_classes?.name} · {fmtProRecord(f)}</div>
                     </div>
                     <span className={`ml-auto text-[9px] px-1.5 py-0.5 rounded-full flex-shrink-0 ${f.status==='active'?'bg-win/10 text-win':'bg-white/5 text-white/30'}`}>
                       {f.status}

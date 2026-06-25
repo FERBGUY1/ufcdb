@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getAllRankings, formatRecord } from '../lib/api';
+import { getAllRankings, formatProRecord } from '../lib/api';
 
 export default function RankingsPage() {
   const [data, setData]         = useState(null);
@@ -103,7 +103,7 @@ function DivisionRankings({ division }) {
               </div>
               <div className="text-right flex-shrink-0">
                 <div className="text-sm font-medium text-win">
-                  {formatRecord(division.champion.wins, division.champion.losses, division.champion.draws, division.champion.no_contests)}
+                  {formatProRecord(division.champion)}
                 </div>
                 <div className="text-[9px] tracking-[0.2em] text-gold uppercase mt-0.5">Champion</div>
               </div>
@@ -132,7 +132,7 @@ function DivisionRankings({ division }) {
                 </div>
                 <div className="text-right flex-shrink-0">
                   <div className="text-sm font-medium">
-                    {formatRecord(fighter.wins, fighter.losses, fighter.draws, fighter.no_contests)}
+                    {formatProRecord(fighter)}
                   </div>
                 </div>
               </div>

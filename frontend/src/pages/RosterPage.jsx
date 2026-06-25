@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { getFighters, formatRecord } from '../lib/api';
+import { getFighters, formatProRecord } from '../lib/api';
 
 const WEIGHT_CLASSES = [
   { slug: '',                     label: 'All Divisions' },
@@ -238,7 +238,7 @@ function FighterCard({ fighter: f }) {
         <div className="text-[10px] text-gold italic mb-1.5 truncate">"{f.nickname}"</div>
       )}
       <div className="text-[11px] text-white/40">
-        {formatRecord(f.wins, f.losses, f.draws, f.no_contests)}
+        {formatProRecord(f)}
       </div>
       <div className="text-[9px] text-white/20 mt-1 truncate">{f.gym_name}</div>
       <div className={`mt-2 text-[9px] px-2 py-0.5 rounded-full inline-block ${
