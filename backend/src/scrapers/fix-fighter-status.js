@@ -9,10 +9,10 @@
 require('dotenv').config();
 const supabase = require('../db/client');
 
-// Fighters whose last fight was more than 12 months ago (and no upcoming fight)
+// Fighters whose last fight was more than 18 months ago (and no upcoming fight)
 // are considered retired. Rolling window stays accurate as time passes.
 const cutoffDate = new Date();
-cutoffDate.setFullYear(cutoffDate.getFullYear() - 1);
+cutoffDate.setMonth(cutoffDate.getMonth() - 18);
 const ACTIVE_CUTOFF = cutoffDate.toISOString().split('T')[0];
 
 async function main() {

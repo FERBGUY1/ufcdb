@@ -1,3 +1,12 @@
+﻿/**
+
+main().catch(e => { console.error(e); process.exit(1); });
+
+  } else if (MODE === 'backfill') {
+    queue = fighters.filter(f => nullMethodFighters.has(f.id));
+  } else {
+    console.error('Unknown mode:', MODE); process.exit(1);
+
 /**
  * tapology-scraper.js
  *
@@ -42,10 +51,12 @@ const NOMATCH_FILE  = path.resolve(__dirname, '../../../tapology-no-match.json')
 // â”€â”€ Maps â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const MONTH_MAP = { Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12 };
 const METHOD_MAP = {
-  'KO':'KO/TKO','TKO':'KO/TKO','SUB':'Submission',
-  'DEC':'Decision','UDEC':'Decision','SDEC':'Decision','MDEC':'Decision',
-  'DRAW':'Draw','NC':'No Contest','DQ':'Disqualification',
+  'KO':'KO/TKO','TKO':'KO/TKO','SUB':'SUB',
+  'DEC':'DEC','UDEC':'U-DEC','U-DEC':'U-DEC','SDEC':'S-DEC','S-DEC':'S-DEC','MDEC':'M-DEC','M-DEC':'M-DEC',
+  'CNC':'CNC','OVERTURNED':'Overturned','DRAW':'Draw','NC':'NC','NO CONTEST':'NC','DQ':'DQ','DISQUALIFICATION':'DQ',
 };
+// Only values that are actually method names -- prevents storing opponent names as method
+const VALID_METHODS = new Set(Object.values(METHOD_MAP));
 // Ordered longest-first so "light heavyweight" matches before "heavyweight"
 const WC_MAP = [
   ["women's strawweight",  'womens-strawweight'],
@@ -214,7 +225,7 @@ async function main() {
   console.log('Loading DB...');
   const fighters = await loadAll('fighters', 'id,first_name,last_name,wins,losses,draws');
   const events   = await loadAll('events', 'id,name,date');
-  const fights   = await loadAll('fights', 'event_id,fighter1_id,fighter2_id');
+  const fights   = await loadAll('fights', 'id,event_id,fighter1_id,fighter2_id,method,round,time');
   const { data: wcs } = await supabase.from('weight_classes').select('id,name,slug');
   console.log(`  ${fighters.length} fighters | ${events.length} events | ${fights.length} fights\n`);
 
@@ -241,6 +252,20 @@ async function main() {
 
   // Fight dedup + per-fighter stats
   const fightSet   = new Set(fights.map(f => `${f.event_id}:${f.fighter1_id}:${f.fighter2_id}`));
+  // backfill mode: fights that exist but have no method, for 2022+ events
+  const nullMethodMap      = {};  // 'evId:f1Id:f2Id' -> fight.id
+  const nullMethodFighters = new Set();
+  fights.forEach(f => {
+    if (!f.method) {
+      const d = evDateById[f.event_id];
+      if (d && d >= '2022-01-01') {
+        nullMethodMap[f.event_id + ':' + f.fighter1_id + ':' + f.fighter2_id] = f.id;
+        nullMethodMap[f.event_id + ':' + f.fighter2_id + ':' + f.fighter1_id] = f.id;
+        nullMethodFighters.add(f.fighter1_id);
+        nullMethodFighters.add(f.fighter2_id);
+      }
+    }
+  });
   const linkedIds  = new Set();
   const pre2022Ids = new Set();
   const fightCount = {};
@@ -280,6 +305,8 @@ async function main() {
       const rec = (f.wins || 0) + (f.losses || 0) + (f.draws || 0);
       return rec > 0 && (fightCount[f.id] || 0) < rec;
     });
+  } else if (MODE === 'backfill') {
+    queue = fighters.filter(f => nullMethodFighters.has(f.id));
   } else {
     console.error('Unknown mode:', MODE); process.exit(1);
   }
@@ -297,6 +324,7 @@ async function main() {
 
   // Launch headless Chrome
   const browser = await chromium.launch({
+    executablePath: CHROME,
     headless: true,
     args: ['--no-sandbox', '--disable-blink-features=AutomationControlled', '--disable-dev-shm-usage', '--disable-extensions'],
   });
@@ -306,7 +334,7 @@ async function main() {
   });
   const page = await newPage(ctx);
 
-  let inserted = 0, skipped = 0, notFound = 0, noUFC = 0, errors = 0;
+  let inserted = 0, updated = 0, skipped = 0, notFound = 0, noUFC = 0, errors = 0;
   const noMatchLog = [];
 
   for (let i = 0; i < final.length; i++) {
@@ -364,10 +392,28 @@ async function main() {
 
       const k1 = `${dbEvent.id}:${f.id}:${oppId}`;
       const k2 = `${dbEvent.id}:${oppId}:${f.id}`;
-      if (fightSet.has(k1) || fightSet.has(k2)) { skipped++; fSkipped++; continue; }
+      const existId = nullMethodMap[k1] || nullMethodMap[k2];
+      if (fightSet.has(k1) || fightSet.has(k2)) {
+        if (MODE === 'backfill' && existId && method) {
+          if (!DRY) {
+            const patch = { method };
+            if (round) patch.round = round;
+            if (time)  patch.time  = time;
+            await supabase.from('fights').update(patch).eq('id', existId);
+            delete nullMethodMap[k1]; delete nullMethodMap[k2];
+          } else {
+            console.log('  [DRY] UPDATE ' + name + ' vs ' + tf.opponent + ' method=' + method + ' R' + (round || '?'));
+          }
+          updated++; fSkipped++;
+        } else {
+          skipped++; fSkipped++;
+        }
+        continue;
+      }
 
       const outcome = tf.outcome;
-      const method  = METHOD_MAP[(tf.methodShort || '').toUpperCase()] || tf.methodShort || null;
+      const mapped  = METHOD_MAP[(tf.methodShort || '').toUpperCase()];
+      const method  = mapped !== undefined ? mapped : (VALID_METHODS.has(tf.methodShort) ? tf.methodShort : null);
       const round   = parseRound(tf.text);
       const time    = parseTime(tf.text);
       const winner  = outcome === 'W' ? f.id : outcome === 'L' ? oppId : null;
@@ -403,7 +449,7 @@ async function main() {
 
     const pct = Math.round((i + 1) / final.length * 100);
     if ((i + 1) % 10 === 0 || i === final.length - 1)
-      console.log(`  [${pct}%] ${i + 1}/${final.length} | +${inserted} inserted | ${skipped} dup | ${notFound} not-found`);
+      console.log(`  [${pct}%] ${i + 1}/${final.length} | +${inserted} inserted | ~${updated} backfilled | ${skipped} dup | ${notFound} not-found`);
   }
 
   await browser.close();
@@ -413,6 +459,7 @@ async function main() {
   console.log(`  Mode:                 ${MODE}`);
   console.log(`  Fighters processed:   ${final.length}`);
   console.log(`  Fights inserted:      ${inserted}`);
+  console.log(`  Methods backfilled:   ${updated}`);
   console.log(`  Fights skipped (dup): ${skipped}`);
   console.log(`  Not found on Tap:     ${notFound}`);
   console.log(`  No UFC fights found:  ${noUFC}`);

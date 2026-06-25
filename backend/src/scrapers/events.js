@@ -1,42 +1,113 @@
 /**
- * Events + Fights scraper — ufcstats.com
- * Correct cell indices confirmed from live page inspection:
- *   cells[0]=W/L, cells[1]=fighters, cells[2]=KD, cells[3]=Str,
- *   cells[4]=TD, cells[5]=Sub, cells[6]=W.Class, cells[7]=Method, cells[8]=Round, cells[9]=Time
+ * Events + Fights scraper — API-Sports (v1.mma.api-sports.io)
  *
- * On re-runs, existing fights are updated (bout_order, card_position, stats).
- * New fights are inserted. bout_order=0 is the main event.
+ * Replaces the ufcstats.com scraper (blocked by Cloudflare since June 2025).
+ * Fetches UFC fights by season, groups by event slug, upserts events + fights.
+ *
+ * What the API provides:  winner, weight class, event name/date, fight status
+ * What it does NOT have:  method (KO/SUB/DEC), round, time — existing values
+ *   for those fields are preserved on updates and left null on new inserts.
  *
  * Flags:
- *   --rounds-data        Also scrape per-fight detail pages for round-by-round stats
- *   --event <ufc_id>     Process only one event by its ufcstats ID
+ *   --season YEAR    Process only one season (default: all seasons 2022–current+1)
+ *   --dry-run        Print changes without writing to DB
  *
- * Usage: node src/scrapers/events.js [--rounds-data] [--event <ufc_id>]
+ * Usage: node src/scrapers/events.js [--season YEAR] [--dry-run]
  */
 require('dotenv').config();
 const axios    = require('axios');
-const cheerio  = require('cheerio');
 const supabase = require('../db/client');
 
-const DELAY         = parseInt(process.env.SCRAPE_DELAY_MS || '1500');
-const BASE          = 'http://ufcstats.com';
-const SCRAPE_ROUNDS = process.argv.includes('--rounds-data');
+const KEY = process.env.API_SPORTS_KEY;
+const BASE = process.env.API_SPORTS_BASE || 'https://v1.mma.api-sports.io';
+const DRY  = process.argv.includes('--dry-run');
 
-const http = axios.create({
-  timeout: 15000,
-  headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+if (!KEY || KEY === 'your-api-sports-key') {
+  console.error('ERROR: Set API_SPORTS_KEY in .env before running.');
+  process.exit(1);
+}
+
+const api = axios.create({
+  baseURL: BASE,
+  timeout: 20000,
+  headers: { 'x-apisports-key': KEY },
 });
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function toSlug(name) {
   return name.toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .trim();
 }
 
-// Mirrors the heuristic in fix-card-position.js so positions stay consistent.
+function norm(s) {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function fixEncoding(s) {
+  if (!s) return s;
+  try { return decodeURIComponent(escape(s)); } catch { return s; }
+}
+
+// norm(api_name) => norm(db_name)
+// Handles encoding variants, nickname/middle-name differences, romanization variants
+const NAME_MAP = {
+  // Single-name fighters stored as first==last in DB; API sometimes sends space-separated form
+  'rongzhu':            'rongzhurongzhu',
+  'aoriqileng':         'aoriqilengaoriqileng',
+  'alatengheili':       'alatengheilialatengheili',
+  'yizha':              'yizhayizha',
+  'sumudaerji':         'sumudaerjisumudaerji',
+  'maheshate':          'maheshatemaheshate',
+  'mizuki':             'mizukimizuki',
+  // Middle name / extra name differences
+  'iangarry':           'ianmachadogarry',
+  'markomadsen':        'markmadsen',
+  'josemigueldelgado':  'josedelgado',
+  // Nickname vs registered name in ufcstats
+  'bobbygreen':         'kinggreen',
+  'charlieradtke':      'charlesradtke',
+  'zachscroggin':       'zacharyscroggin',
+  'billygoff':          'billyraygoff',
+  'montserratrendon':   'montserendon',
+  // Romanization variants
+  'daunjung':           'dawoonjung',
+  'baysangursusurkaev': 'baisangursusurkaev',
+  // Spelling variants (API vs ufcstats)
+  'assualmabayev':      'asualmabayev',
+  'bernardosopaj':      'benardosopaj',
+  'raffaelcerqueira':   'rafaelcerqueira',
+  'zacharyreese':       'zachreese',
+  'kleidisonrodrigues': 'kleydsonrodrigues',
+  // Fighter changed name (married)
+  'teciatorres':         'teciapennington',
+  // Single-name (additional)
+  'sulangrangbo':        'sulangrangbosulangrangbo',
+};
+
+function lookupFighter(rawName, byName) {
+  if (!rawName || /^(opponent\s+)?tba$/i.test(rawName.trim())) return null;
+  let id = byName[norm(rawName)];
+  if (id) return id;
+  const fixed = fixEncoding(rawName);
+  if (fixed !== rawName) {
+    id = byName[norm(fixed)];
+    if (id) return id;
+  }
+  const n = norm(rawName);
+  if (NAME_MAP[n]) { id = byName[NAME_MAP[n]]; if (id) return id; }
+  const nf = norm(fixed);
+  if (nf !== n && NAME_MAP[nf]) { id = byName[NAME_MAP[nf]]; if (id) return id; }
+  return null;
+}
+
 function deriveCardPosition(boutOrder, total) {
   if (total <= 5)  return 'main_card';
   if (total <= 10) return boutOrder < 5 ? 'main_card' : 'prelim';
@@ -46,354 +117,248 @@ function deriveCardPosition(boutOrder, total) {
     if (boutOrder < total - earlyCount) return 'prelim';
     return 'early_prelim';
   }
-  // 15+ fights: 5 main + 6 prelim + rest early prelim
   if (boutOrder < 5)  return 'main_card';
   if (boutOrder < 11) return 'prelim';
   return 'early_prelim';
 }
 
-// Fight detail page has one "Round N" section per round, each containing a
-// totals table (Fighter|KD|Sig.Str|Sig.Str%|TotalStr|TD|TD%|SubAtt|Rev|Ctrl).
-async function scrapeFightDetail(url) {
-  try {
-    await sleep(DELAY);
-    const { data } = await http.get(url);
-    const $ = cheerio.load(data);
-
-    const rounds = [];
-
-    $('section.b-fight-details__section.js-fight-section').each((_, section) => {
-      const titleText  = $(section).find('p').first().text().trim();
-      const roundMatch = titleText.match(/Round\s+(\d+)/i);
-      if (!roundMatch) return;
-
-      const roundNum = parseInt(roundMatch[1]);
-      // First table = round totals; second = sig strikes breakdown
-      const rows = $(section).find('table.js-fight-table').first().find('tbody tr');
-      if (rows.length < 2) return;
-
-      const c1 = $(rows[0]).find('td');
-      const c2 = $(rows[1]).find('td');
-      // Columns: Fighter(0) KD(1) Sig.Str(2) Sig.Str%(3) TotalStr(4) TD(5) TD%(6) SubAtt(7) Rev(8) Ctrl(9)
-      rounds.push({
-        round: roundNum,
-        f1: {
-          kd:          parseInt(c1.eq(1).text().trim()) || 0,
-          sig_str:     c1.eq(2).text().trim() || null,
-          sig_str_pct: c1.eq(3).text().trim() || null,
-          total_str:   c1.eq(4).text().trim() || null,
-          td:          c1.eq(5).text().trim() || null,
-          td_pct:      c1.eq(6).text().trim() || null,
-          sub_att:     parseInt(c1.eq(7).text().trim()) || 0,
-          rev:         parseInt(c1.eq(8).text().trim()) || 0,
-          ctrl:        c1.eq(9).text().trim() || null,
-        },
-        f2: {
-          kd:          parseInt(c2.eq(1).text().trim()) || 0,
-          sig_str:     c2.eq(2).text().trim() || null,
-          sig_str_pct: c2.eq(3).text().trim() || null,
-          total_str:   c2.eq(4).text().trim() || null,
-          td:          c2.eq(5).text().trim() || null,
-          td_pct:      c2.eq(6).text().trim() || null,
-          sub_att:     parseInt(c2.eq(7).text().trim()) || 0,
-          rev:         parseInt(c2.eq(8).text().trim()) || 0,
-          ctrl:        c2.eq(9).text().trim() || null,
-        },
-      });
-    });
-
-    return rounds.length ? rounds : null;
-  } catch (e) {
-    console.error(`  Error scraping fight detail ${url}:`, e.message);
-    return null;
+async function loadAll(table, select) {
+  const rows = [];
+  let offset = 0;
+  while (true) {
+    const { data } = await supabase.from(table).select(select).range(offset, offset + 999);
+    if (!data?.length) break;
+    rows.push(...data);
+    if (data.length < 1000) break;
+    offset += 1000;
   }
-}
-
-async function getAllEventUrls() {
-  const urls = [];
-  for (const type of ['completed', 'upcoming']) {
-    let page = 1;
-    while (true) {
-      await sleep(DELAY);
-      try {
-        const { data } = await http.get(`${BASE}/statistics/events/${type}?page=${page}`);
-        const $ = cheerio.load(data);
-        const links = $('a[href*="/event-details/"]').map((_, a) => $(a).attr('href')).get();
-        if (!links.length) break;
-        links.forEach(l => { if (!urls.includes(l)) urls.push(l); });
-        if (!$('a:contains("Next")').length) break;
-        page++;
-      } catch {
-        break;
-      }
-    }
-  }
-  return urls;
-}
-
-async function scrapeEvent(url) {
-  try {
-    const { data } = await http.get(url);
-    const $ = cheerio.load(data);
-
-    const name = $('h2.b-content__title-headline').text().trim();
-    if (!name) return null;
-
-    const details = {};
-    $('li.b-list__box-list-item').each((_, el) => {
-      const label = $(el).find('i').text().trim().replace(':', '');
-      const value = $(el).text().replace($(el).find('i').text(), '').trim();
-      if (label && value) details[label] = value;
-    });
-
-    const dateStr    = details['Date'];
-    const location   = details['Location'] || '';
-    const parts      = location.split(',').map(s => s.trim());
-    const isUpcoming = !dateStr || new Date(dateStr) > new Date();
-
-    const event = {
-      ufc_id:      url.split('/').pop(),
-      name,
-      slug:        toSlug(name),
-      date:        dateStr ? new Date(dateStr).toISOString().split('T')[0] : null,
-      venue:       details['Venue'] || null,
-      city:        parts[0] || null,
-      state:       parts[1] || null,
-      country:     parts[2] || parts[1] || null,
-      is_complete: !isUpcoming,
-    };
-
-    const rawFights = [];
-    $('table.b-fight-details__table tbody tr').each((i, row) => {
-      const $row   = $(row);
-      const cells  = $row.find('td');
-      const f1link = $(cells[1]).find('a').eq(0).attr('href');
-      const f2link = $(cells[1]).find('a').eq(1).attr('href');
-      if (!f1link || !f2link) return;
-
-      const winCell   = $(cells[0]).text().trim().toLowerCase();
-      const wc        = ($(cells[6]).find('p').eq(0).text().trim() || $(cells[6]).text().trim()).replace(/\s+Bout$/i, '').trim();
-      const method    = $(cells[7]).find('p').eq(0).text().trim();
-      const methodDet = $(cells[7]).find('p').eq(1).text().trim();
-      const round     = parseInt($(cells[8]).find('p').eq(0).text().trim() || $(cells[8]).text().trim()) || null;
-      const time      = $(cells[9]).find('p').eq(0).text().trim() || $(cells[9]).text().trim();
-
-      const f1KD  = parseInt($(cells[2]).find('p').eq(0).text().trim()) || null;
-      const f2KD  = parseInt($(cells[2]).find('p').eq(1).text().trim()) || null;
-      const f1Str = $(cells[3]).find('p').eq(0).text().trim() || null;
-      const f2Str = $(cells[3]).find('p').eq(1).text().trim() || null;
-      const f1TD  = $(cells[4]).find('p').eq(0).text().trim() || null;
-      const f2TD  = $(cells[4]).find('p').eq(1).text().trim() || null;
-
-      let result = null;
-      if      (winCell.includes('win'))  result = 'win';
-      else if (winCell.includes('draw')) result = 'draw';
-      else if (winCell.includes('nc'))   result = 'no_contest';
-      else if (isUpcoming)               result = 'upcoming';
-
-      rawFights.push({
-        fighter1_ufc_id:   f1link.split('/').pop(),
-        fighter2_ufc_id:   f2link.split('/').pop(),
-        result,
-        method,
-        method_detail:     methodDet,
-        round,
-        time,
-        weight_class_name: wc,
-        fighter1_sig_str:  f1Str,
-        fighter2_sig_str:  f2Str,
-        fighter1_td:       f1TD,
-        fighter2_td:       f2TD,
-        fighter1_kd:       f1KD,
-        fighter2_kd:       f2KD,
-        bout_order:        i,           // 0 = main event
-        detail_url:        $row.attr('data-link') || null,
-      });
-    });
-
-    const total  = rawFights.length;
-    const fights = rawFights.map(f => ({
-      ...f,
-      card_position: deriveCardPosition(f.bout_order, total),
-    }));
-
-    return { event, fights };
-  } catch (e) {
-    console.error(`  Error scraping ${url}:`, e.message);
-    return null;
-  }
+  return rows;
 }
 
 async function main() {
-  console.log('╔══════════════════════════════════════╗');
-  console.log('║  UFCDB — Events + Fights Scraper     ║');
-  if (SCRAPE_ROUNDS) {
-    console.log('║  Mode: +rounds data                  ║');
-  }
-  console.log('╚══════════════════════════════════════╝\n');
+  console.log('╔══════════════════════════════════════════╗');
+  console.log('║  UFCDB — Events + Fights (API-Sports)    ║');
+  if (DRY) console.log('║  Mode: DRY RUN                           ║');
+  console.log('╚══════════════════════════════════════════╝\n');
 
-  // Build fighter map: ufc_id → UUID
-  const fighterMap = {};
-  let fPage = 0;
-  while (true) {
-    const { data: batch } = await supabase
-      .from('fighters')
-      .select('id, ufc_id')
-      .not('ufc_id', 'is', null)
-      .range(fPage * 1000, (fPage + 1) * 1000 - 1);
-    if (!batch?.length) break;
-    batch.forEach(f => { fighterMap[f.ufc_id] = f.id; });
-    if (batch.length < 1000) break;
-    fPage++;
-  }
-  console.log(`  ${Object.keys(fighterMap).length} fighters mapped\n`);
+  const { data: st } = await api.get('/status');
+  const { current, limit_day } = st.response.requests;
+  console.log(`API quota: ${current}/${limit_day} used  (${limit_day - current} remaining)\n`);
 
+  // Fighter name → UUID
+  console.log('Loading fighters...');
+  const fighters = await loadAll('fighters', 'id, first_name, last_name');
+  const fighterByName = {};
+  for (const f of fighters) {
+    const full    = norm((f.first_name || '') + ' ' + (f.last_name || ''));
+    const compact = norm((f.first_name || '') + (f.last_name || ''));
+    if (full)    fighterByName[full]    = f.id;
+    if (compact) fighterByName[compact] = f.id;
+  }
+  console.log(`  ${fighters.length} fighters\n`);
+
+  // Weight class name → id
   const { data: wcs } = await supabase.from('weight_classes').select('id, name');
-  const wcMap = {};
-  for (const wc of wcs || []) wcMap[wc.name] = wc.id;
+  const wcByNorm = {};
+  for (const wc of wcs || []) wcByNorm[norm(wc.name)] = wc.id;
 
-  // Support --event <ufc_id> for single-event runs
-  const singleIdx = process.argv.indexOf('--event');
-  const singleId  = singleIdx >= 0 ? process.argv[singleIdx + 1] : null;
-
-  let eventUrls;
-  if (singleId) {
-    eventUrls = [`${BASE}/event-details/${singleId}`];
-    console.log(`Single-event mode: ${singleId}\n`);
-  } else {
-    eventUrls = await getAllEventUrls();
-    console.log(`Found ${eventUrls.length} events\n`);
+  function resolveWC(category) {
+    const n = norm(category);
+    return wcByNorm[n] || null;
   }
 
-  let eventsProcessed = 0;
-  let fightsUpdated   = 0;
-  let fightsInserted  = 0;
-  let eventsFailed    = 0;
+  // Existing events: date → event row, norm(name) → event row
+  console.log('Loading events...');
+  const dbEvents = await loadAll('events', 'id, name, slug, date, is_complete');
+  const evByDate = {};
+  const evByNorm = {};
+  for (const ev of dbEvents) {
+    if (ev.date) evByDate[ev.date] = ev;
+    evByNorm[norm(ev.name)] = ev;
+  }
+  console.log(`  ${dbEvents.length} events\n`);
 
-  for (let i = 0; i < eventUrls.length; i++) {
-    await sleep(DELAY);
-    const result = await scrapeEvent(eventUrls[i]);
-    if (!result) { eventsFailed++; continue; }
+  // Existing fights: "eventId:sortedF1:sortedF2" → fight row
+  console.log('Loading fights...');
+  const fightRefs = await loadAll('fights', 'id, event_id, fighter1_id, fighter2_id');
+  const fightMap = {};
+  for (const f of fightRefs) {
+    const key = f.event_id + ':' + [f.fighter1_id, f.fighter2_id].sort().join(':');
+    fightMap[key] = f;
+  }
+  console.log(`  ${fightRefs.length} fights\n`);
 
-    const { event, fights } = result;
+  // Determine seasons
+  const seasonIdx  = process.argv.indexOf('--season');
+  const singleYear = seasonIdx >= 0 ? parseInt(process.argv[seasonIdx + 1]) : null;
+  const now        = new Date().getFullYear();
+  const seasons    = singleYear
+    ? [singleYear]
+    : Array.from({ length: now - 2022 + 2 }, (_, i) => 2022 + i);
+  console.log(`Seasons: ${seasons.join(', ')}\n`);
 
-    const { data: eventData, error: eventErr } = await supabase
-      .from('events')
-      .upsert(event, { onConflict: 'ufc_id' })
-      .select('id')
-      .single();
+  let eventsInserted = 0, eventsUpdated = 0;
+  let fightsInserted = 0, fightsUpdated = 0, noFighter = 0;
+  const unmatched = new Set();
 
-    if (eventErr || !eventData) {
-      console.error(`  Failed: ${event.name} —`, eventErr?.message);
-      eventsFailed++;
+  for (const season of seasons) {
+    await sleep(300);
+    console.log(`── Season ${season} ${'─'.repeat(30)}`);
+
+    let apiFights;
+    try {
+      const { data } = await api.get('/fights', { params: { season } });
+      apiFights = data.response || [];
+    } catch (e) {
+      console.error(`  Failed: ${e.message}`);
       continue;
     }
+    console.log(`  ${apiFights.length} fights from API`);
 
-    eventsProcessed++;
-
-    // Fetch existing fights so we update rather than re-insert
-    const { data: existingFights } = await supabase
-      .from('fights')
-      .select('id, fighter1_id, fighter2_id, rounds_data')
-      .eq('event_id', eventData.id);
-
-    // Canonical key: sort UUIDs so fighter order doesn't matter
-    const existingMap = {};
-    for (const ef of existingFights || []) {
-      const key = [ef.fighter1_id, ef.fighter2_id].sort().join('|');
-      existingMap[key] = ef;
+    // Group by slug; skip cancelled
+    const groups = {};
+    for (const f of apiFights) {
+      if (f.status.short === 'CANC') continue;
+      if (!groups[f.slug]) groups[f.slug] = [];
+      groups[f.slug].push(f);
     }
+    console.log(`  ${Object.keys(groups).length} events after removing cancelled`);
 
-    for (const f of fights) {
-      const f1id = fighterMap[f.fighter1_ufc_id];
-      const f2id = fighterMap[f.fighter2_ufc_id];
-      if (!f1id || !f2id) continue;
+    for (const [slug, evFights] of Object.entries(groups)) {
+      // Event date: prefer the is_main fight's date; else latest date in group
+      const mainFight = evFights.find(f => f.is_main);
+      const eventDate = mainFight
+        ? mainFight.date.slice(0, 10)
+        : evFights.map(f => f.date.slice(0, 10)).sort().pop();
 
-      const canonKey = [f1id, f2id].sort().join('|');
-      const existing = existingMap[canonKey];
+      const isComplete = evFights.some(f => f.status.short === 'FT');
 
-      // Optionally scrape per-fight detail page; skip if already populated
-      let rounds_data = undefined;
-      if (SCRAPE_ROUNDS && f.detail_url && !existing?.rounds_data) {
-        rounds_data = await scrapeFightDetail(f.detail_url);
+      // Find existing DB event by date first (check ±1 day for UTC vs local offset),
+      // then fall back to normalized name match
+      let dbEvent = evByDate[eventDate];
+      if (!dbEvent) {
+        const d = new Date(eventDate + 'T12:00:00Z');
+        const prev = new Date(d); prev.setUTCDate(prev.getUTCDate() - 1);
+        const next = new Date(d); next.setUTCDate(next.getUTCDate() + 1);
+        dbEvent = evByDate[prev.toISOString().slice(0, 10)]
+               || evByDate[next.toISOString().slice(0, 10)]
+               || evByNorm[norm(slug)];
       }
 
-      if (existing) {
-        const updatePayload = {
-          bout_order:       f.bout_order,
-          card_position:    f.card_position,
-          result:           f.result,
-          method:           f.method,
-          method_detail:    f.method_detail,
-          round:            f.round,
-          time:             f.time,
-          weight_class_id:  wcMap[f.weight_class_name] || null,
-          fighter1_sig_str: f.fighter1_sig_str || null,
-          fighter2_sig_str: f.fighter2_sig_str || null,
-          fighter1_td:      f.fighter1_td || null,
-          fighter2_td:      f.fighter2_td || null,
-          fighter1_kd:      f.fighter1_kd || null,
-          fighter2_kd:      f.fighter2_kd || null,
+      if (!dbEvent) {
+        if (DRY) {
+          console.log(`  [DRY] New event: "${slug}" (${eventDate})`);
+          eventsInserted++;
+          continue;
+        }
+        const payload = {
+          name:        slug,
+          slug:        toSlug(slug),
+          date:        eventDate,
+          is_complete: isComplete,
         };
-        if (rounds_data !== undefined) updatePayload.rounds_data = rounds_data;
+        const { data: ins, error } = await supabase
+          .from('events')
+          .upsert(payload, { onConflict: 'slug' })
+          .select('id, name, date, is_complete')
+          .single();
+        if (error || !ins) {
+          console.error(`  Event insert failed "${slug}":`, error?.message);
+          continue;
+        }
+        dbEvent = ins;
+        evByDate[eventDate] = dbEvent;
+        evByNorm[norm(slug)] = dbEvent;
+        eventsInserted++;
+        console.log(`  + Event: "${slug}" (${eventDate})`);
+      } else if (!dbEvent.is_complete && isComplete) {
+        if (!DRY) {
+          await supabase.from('events').update({ is_complete: true }).eq('id', dbEvent.id);
+        }
+        dbEvent.is_complete = true;
+        eventsUpdated++;
+      }
 
-        const { error: updErr } = await supabase
-          .from('fights')
-          .update(updatePayload)
-          .eq('id', existing.id);
+      // Sort: main event first (bout_order 0), then remaining in API order
+      const sorted = [
+        ...evFights.filter(f =>  f.is_main),
+        ...evFights.filter(f => !f.is_main),
+      ];
+      const total = sorted.length;
 
-        if (updErr) {
-          console.error(`  Update error (${event.name}):`, updErr.message);
-        } else {
+      for (let i = 0; i < sorted.length; i++) {
+        const af    = sorted[i];
+        const f1raw = af.fighters?.first?.name  || '';
+        const f2raw = af.fighters?.second?.name || '';
+        const f1Win = af.fighters?.first?.winner  === true;
+        const f2Win = af.fighters?.second?.winner === true;
+
+        const f1Id = lookupFighter(f1raw, fighterByName);
+        const f2Id = lookupFighter(f2raw, fighterByName);
+        if (!f1Id || !f2Id) {
+          noFighter++;
+          if (!f1Id && f1raw && !/^(opponent\s+)?tba$/i.test(f1raw.trim())) unmatched.add(f1raw);
+          if (!f2Id && f2raw && !/^(opponent\s+)?tba$/i.test(f2raw.trim())) unmatched.add(f2raw);
+          continue;
+        }
+
+        const winnerId  = f1Win ? f1Id : (f2Win ? f2Id : null);
+        const result    = af.status.short === 'FT'
+          ? (winnerId ? 'win' : 'draw')
+          : 'upcoming';
+        const wcId      = resolveWC(af.category);
+        const boutOrder = i;
+        const cardPos   = deriveCardPosition(boutOrder, total);
+        const fightKey  = dbEvent.id + ':' + [f1Id, f2Id].sort().join(':');
+        const existing  = fightMap[fightKey];
+
+        if (existing) {
+          if (!DRY) {
+            await supabase.from('fights').update({
+              winner_id:       winnerId,
+              result,
+              weight_class_id: wcId,
+            }).eq('id', existing.id);
+          }
           fightsUpdated++;
-        }
-      } else {
-        const insertPayload = {
-          event_id:         eventData.id,
-          fighter1_id:      f1id,
-          fighter2_id:      f2id,
-          result:           f.result,
-          method:           f.method,
-          method_detail:    f.method_detail,
-          round:            f.round,
-          time:             f.time,
-          is_title_fight:   false,
-          weight_class_id:  wcMap[f.weight_class_name] || null,
-          fighter1_sig_str: f.fighter1_sig_str || null,
-          fighter2_sig_str: f.fighter2_sig_str || null,
-          fighter1_td:      f.fighter1_td || null,
-          fighter2_td:      f.fighter2_td || null,
-          fighter1_kd:      f.fighter1_kd || null,
-          fighter2_kd:      f.fighter2_kd || null,
-          bout_order:       f.bout_order,
-          card_position:    f.card_position,
-        };
-        if (rounds_data !== undefined) insertPayload.rounds_data = rounds_data;
-
-        const { error: insErr } = await supabase
-          .from('fights')
-          .insert(insertPayload);
-
-        if (insErr && !insErr.message?.includes('duplicate')) {
-          console.error(`  Insert error (${event.name}):`, insErr.message);
         } else {
+          if (!DRY) {
+            const { error } = await supabase.from('fights').insert({
+              event_id:        dbEvent.id,
+              fighter1_id:     f1Id,
+              fighter2_id:     f2Id,
+              winner_id:       winnerId,
+              result,
+              weight_class_id: wcId,
+              is_title_fight:  false,
+              bout_order:      boutOrder,
+              card_position:   cardPos,
+            });
+            if (error && !error.message?.includes('duplicate')) {
+              console.error(`  Fight insert error (${slug}):`, error.message);
+              continue;
+            }
+          }
           fightsInserted++;
+          fightMap[fightKey] = { id: 'pending' };
         }
       }
-    }
-
-    if (eventsProcessed % 25 === 0 || i < 5) {
-      console.log(`[${i+1}/${eventUrls.length}] Events: ${eventsProcessed} | Updated: ${fightsUpdated} | New: ${fightsInserted}`);
     }
   }
 
-  console.log('\n╔══════════════════════════════════════╗');
-  console.log('║  Complete!                           ║');
-  console.log(`║  Events: ${String(eventsProcessed).padEnd(27)}║`);
-  console.log(`║  Fights updated: ${String(fightsUpdated).padEnd(19)}║`);
-  console.log(`║  New fights:     ${String(fightsInserted).padEnd(19)}║`);
-  console.log(`║  Failed events:  ${String(eventsFailed).padEnd(19)}║`);
-  console.log('╚══════════════════════════════════════╝');
+  console.log('\n╔══════════════════════════════════════════╗');
+  console.log('║  Complete!                               ║');
+  console.log(`║  Events inserted: ${String(eventsInserted).padEnd(22)}║`);
+  console.log(`║  Events updated:  ${String(eventsUpdated).padEnd(22)}║`);
+  console.log(`║  Fights inserted: ${String(fightsInserted).padEnd(22)}║`);
+  console.log(`║  Fights updated:  ${String(fightsUpdated).padEnd(22)}║`);
+  console.log(`║  Fighter no-match:${String(noFighter).padEnd(22)}║`);
+  console.log('╚══════════════════════════════════════════╝');
+  if (unmatched.size) {
+    console.log('');
+    console.log('Unmatched fighter names (' + unmatched.size + '):');
+    for (const n of [...unmatched].sort()) console.log('  ' + n);
+  }
 }
 
-main().catch(console.error);
+main().catch(e => { console.error(e); process.exit(1); });

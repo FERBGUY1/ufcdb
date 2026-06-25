@@ -14,7 +14,7 @@ async function main() {
   while (true) {
     const { data: rows, error } = await supabase
       .from('fights')
-      .select('fighter1_id, fighter2_id, result')
+      .select('fighter1_id, fighter2_id, winner_id, result')
       .neq('result', 'upcoming')
       .not('result', 'is', null)
       .range(page * PAGE, (page + 1) * PAGE - 1);
@@ -23,23 +23,26 @@ async function main() {
     if (!rows || rows.length === 0) break;
 
     for (const r of rows) {
-      const { fighter1_id: f1, fighter2_id: f2, result } = r;
+      const { fighter1_id: f1, fighter2_id: f2, winner_id, result } = r;
       if (!f1 || !f2) continue;
       if (!records[f1]) records[f1] = init();
       if (!records[f2]) records[f2] = init();
 
       if (result === 'win') {
-        records[f1].wins++;
-        records[f2].losses++;
+        // Use winner_id when set (API-Sports fights may have winner as either fighter1 or fighter2).
+        // Fall back to fighter1=winner for legacy ufcstats data (winner always listed first).
+        const winnerId = winner_id || f1;
+        const loserId  = winnerId === f1 ? f2 : f1;
+        if (!records[winnerId]) records[winnerId] = init();
+        if (!records[loserId])  records[loserId]  = init();
+        records[winnerId].wins++;
+        records[loserId].losses++;
       } else if (result === 'draw') {
         records[f1].draws++;
         records[f2].draws++;
       } else if (result === 'no_contest') {
         records[f1].no_contests++;
         records[f2].no_contests++;
-      } else if (result === 'loss') {
-        records[f1].losses++;
-        records[f2].wins++;
       }
     }
 
