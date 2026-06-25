@@ -27,3 +27,7 @@ Thumbs.db
 
 # Misc
 *.tsbuildinfo
+
+# Tapology scraper run artifacts (progress/output files, run helper)
+tapology-*.json
+*.bat
