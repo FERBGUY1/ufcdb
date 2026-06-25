@@ -5,7 +5,7 @@ const supabase = require('../db/client');
 
 router.get('/', async (req, res, next) => {
   try {
-    const { page = 1, limit: lim = 20, upcoming, year, search } = req.query;
+    const { page = 1, limit: lim = 20, upcoming, year, search, fighter } = req.query;
     const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.min(50, parseInt(lim));
     const offset = (pageNum - 1) * limitNum;
@@ -13,6 +13,23 @@ router.get('/', async (req, res, next) => {
     let query = supabase
       .from('events')
       .select('*', { count: 'exact' });
+
+    // Filter to events a given fighter competed on. Resolve the fighter's
+    // event ids via the fights table (fighter1 or fighter2), then constrain the
+    // events query with .in(). A fighter has well under 100 fights, so the id
+    // list stays under the .in() URL-length cap. ANDs with the other filters.
+    if (fighter) {
+      const { data: fRows, error: fErr } = await supabase
+        .from('fights')
+        .select('event_id')
+        .or(`fighter1_id.eq.${fighter},fighter2_id.eq.${fighter}`);
+      if (fErr) throw fErr;
+      const eventIds = [...new Set((fRows || []).map(r => r.event_id).filter(Boolean))];
+      if (!eventIds.length) {
+        return res.json({ events: [], pagination: { total: 0, page: pageNum, limit: limitNum } });
+      }
+      query = query.in('id', eventIds);
+    }
 
     // Use is_complete flag rather than date comparison so events with null
     // dates (e.g. very early events whose date failed to parse) still appear
