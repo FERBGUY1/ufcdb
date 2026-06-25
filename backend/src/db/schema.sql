@@ -88,6 +88,12 @@ CREATE TABLE IF NOT EXISTS fighters (
   career_draws          INTEGER DEFAULT 0,
   career_no_contests    INTEGER DEFAULT 0,
 
+  -- Professional MMA Record (all promotions, from Sherdog; NULL = not scraped)
+  pro_wins              INTEGER,
+  pro_losses            INTEGER,
+  pro_draws             INTEGER,
+  pro_nc                INTEGER,
+
   -- Amateur Record
   amateur_wins          INTEGER DEFAULT 0,
   amateur_losses        INTEGER DEFAULT 0,

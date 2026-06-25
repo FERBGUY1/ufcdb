@@ -15,7 +15,7 @@ router.get('/', async (req, res, next) => {
     const parts = q.trim().split(/\s+/);
     let fighterQ = supabase
       .from('fighters')
-      .select('id, slug, first_name, last_name, nickname, status, wins, losses, draws, photo_url, weight_classes(name)');
+      .select('id, slug, first_name, last_name, nickname, status, wins, losses, draws, no_contests, pro_wins, pro_losses, pro_draws, pro_nc, photo_url, weight_classes(name)');
 
     if (parts.length >= 2) {
       const first = parts[0];

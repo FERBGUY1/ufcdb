@@ -31,6 +31,7 @@ router.get('/', async (req, res, next) => {
         id, slug, first_name, last_name, nickname, status,
         is_champion, is_interim_champ, rank,
         wins, losses, draws, no_contests,
+        pro_wins, pro_losses, pro_draws, pro_nc,
         height_inches, reach_inches, stance,
         nationality, gym_name, head_coach,
         photo_url, instagram,
@@ -122,7 +123,7 @@ router.get('/:slug', async (req, res, next) => {
       .select(`
         *,
         weight_classes ( id, name, slug ),
-        gyms ( id, name, city, country, head_coach )
+        gyms ( id, name, slug, city, state, country, head_coach, website )
       `)
       .eq('slug', slug)
       .single();
@@ -137,7 +138,7 @@ router.get('/:slug', async (req, res, next) => {
         .from('fights')
         .select(`
           id, result, method, method_detail, round, time,
-          is_title_fight, fighter1_record_at_fight, fighter2_record_at_fight,
+          is_title_fight, is_interim_title, fighter1_record_at_fight, fighter2_record_at_fight,
           fighter1_sig_str, fighter2_sig_str, fighter1_td, fighter2_td,
           card_position, weight_class_id,
           events ( id, name, slug, date, city, country ),

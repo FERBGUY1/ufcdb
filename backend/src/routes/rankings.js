@@ -33,6 +33,7 @@ router.get('/', async (req, res, next) => {
         fighters!fighter_id (
           id, slug, first_name, last_name, nickname,
           wins, losses, draws, no_contests,
+          pro_wins, pro_losses, pro_draws, pro_nc,
           is_champion, photo_url, status,
           primary_weight_class_id
         )
@@ -71,6 +72,7 @@ router.get('/all', async (req, res, next) => {
         fighters!fighter_id (
           id, slug, first_name, last_name, nickname,
           wins, losses, draws, no_contests,
+          pro_wins, pro_losses, pro_draws, pro_nc,
           is_champion, photo_url, status
         )
       `)
