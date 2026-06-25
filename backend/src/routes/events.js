@@ -48,7 +48,23 @@ router.get('/:slug', async (req, res, next) => {
 
     if (error || !event) return res.status(404).json({ error: 'Event not found' });
 
-    const [{ data: fights }, { data: allWCs }] = await Promise.all([
+    // Adjacent events for prev/next navigation on the detail page, ordered
+    // strictly by date across all events (past → upcoming). prev = nearest
+    // earlier date, next = nearest later date; null at the chronological ends.
+    // Null-date events are excluded since they can't be ordered.
+    const neighbor = (op, ascending) =>
+      event.date
+        ? supabase
+            .from('events')
+            .select('slug, name, date')
+            .not('date', 'is', null)
+            .filter('date', op, event.date)
+            .order('date', { ascending })
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null });
+
+    const [{ data: fights }, { data: allWCs }, { data: prevEvent }, { data: nextEvent }] = await Promise.all([
       supabase
         .from('fights')
         .select(`
@@ -62,6 +78,8 @@ router.get('/:slug', async (req, res, next) => {
         .eq('event_id', event.id)
         .order('bout_order', { ascending: true, nullsFirst: false }),
       supabase.from('weight_classes').select('id, name, slug'),
+      neighbor('lt', false), // prev: latest date before this event
+      neighbor('gt', true),  // next: earliest date after this event
     ]);
 
     const wcById = Object.fromEntries((allWCs || []).map(w => [w.id, w]));
@@ -84,7 +102,7 @@ router.get('/:slug', async (req, res, next) => {
       return (a.bout_order ?? 999) - (b.bout_order ?? 999);
     });
 
-    res.json({ event, fights: sortedFights });
+    res.json({ event, fights: sortedFights, prevEvent: prevEvent || null, nextEvent: nextEvent || null });
   } catch (err) { next(err); }
 });
 

@@ -1,15 +1,35 @@
 ﻿import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { getEvent, formatOdds } from '../lib/api';
 
 export default function EventPage() {
   const { slug } = useParams();
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
     getEvent(slug).then(setData).finally(() => setLoading(false));
   }, [slug]);
+
+  // Arrow-key navigation through adjacent events (works at every viewport width,
+  // including where the on-screen edge arrows are hidden). Ignore keystrokes that
+  // are being typed into a form control.
+  // UI mapping (intentional): left arrow → newer event, right arrow → older event.
+  // The backend keeps prevEvent = nearest older, nextEvent = nearest newer.
+  const older = data?.prevEvent;
+  const newer = data?.nextEvent;
+  useEffect(() => {
+    const onKey = (ev) => {
+      const tag = ev.target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ev.target?.isContentEditable) return;
+      if (ev.key === 'ArrowLeft' && newer) navigate(`/events/${newer.slug}`);
+      else if (ev.key === 'ArrowRight' && older) navigate(`/events/${older.slug}`);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [older, newer, navigate]);
 
   if (loading) return <div className="p-8 text-center text-white/30">Loading event...</div>;
   if (!data) return <div className="p-8 text-center text-white/30">Event not found</div>;
@@ -47,6 +67,10 @@ export default function EventPage() {
   }
 
   return (
+    <>
+      <EventArrow dir="prev" event={newer} onClick={() => newer && navigate(`/events/${newer.slug}`)} />
+      <EventArrow dir="next" event={older} onClick={() => older && navigate(`/events/${older.slug}`)} />
+
     <main className="max-w-5xl mx-auto px-4 py-8">
       <Link to="/events" className="text-white/30 text-sm hover:text-white">&larr; Events</Link>
 
@@ -63,6 +87,34 @@ export default function EventPage() {
         <FightSection key={s.title} title={s.title} fights={s.fights} />
       ))}
     </main>
+    </>
+  );
+}
+
+// Fixed edge arrow for prev/next event navigation. Shown only at xl+ where the
+// max-w-5xl card column leaves gutter at the screen edges (below xl the arrow
+// keys still navigate). Disabled/greyed at the chronological ends — no wrap.
+function EventArrow({ dir, event, onClick }) {
+  const isPrev = dir === 'prev';
+  const disabled = !event;
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={isPrev ? 'Newer event' : 'Older event'}
+      title={event ? event.name : `No ${isPrev ? 'later' : 'earlier'} event`}
+      className={`hidden xl:flex fixed top-1/2 -translate-y-1/2 z-30 items-center justify-center
+        w-12 h-12 rounded-full border shadow-lg transition-colors
+        ${isPrev ? 'left-4' : 'right-4'}
+        ${disabled
+          ? 'bg-white/[0.03] border-white/10 text-white/20 cursor-not-allowed'
+          : 'bg-dark/90 border-white/25 text-white hover:bg-gold hover:text-dark hover:border-gold'}`}
+    >
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        {isPrev ? <polyline points="15 18 9 12 15 6" /> : <polyline points="9 18 15 12 9 6" />}
+      </svg>
+    </button>
   );
 }
 
