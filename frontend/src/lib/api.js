@@ -47,6 +47,19 @@ export const fmtRecord = (w,l,d,nc) => {
   if (nc>0) r+=` (${nc} NC)`;
   return r;
 };
+// Full pro MMA record (from Sherdog) with UFC-record fallback for fighters
+// not yet scraped. Returns the numbers plus which source they came from.
+export const proRecord = (f) => {
+  const hasPro = f?.pro_wins != null &&
+    ((f.pro_wins ?? 0) + (f.pro_losses ?? 0) + (f.pro_draws ?? 0) + (f.pro_nc ?? 0)) > 0;
+  return hasPro
+    ? { wins: f.pro_wins ?? 0, losses: f.pro_losses ?? 0, draws: f.pro_draws ?? 0, nc: f.pro_nc ?? 0, isPro: true }
+    : { wins: f?.wins ?? 0, losses: f?.losses ?? 0, draws: f?.draws ?? 0, nc: f?.no_contests ?? 0, isPro: false };
+};
+export const fmtProRecord = (f) => {
+  const r = proRecord(f);
+  return fmtRecord(r.wins, r.losses, r.draws, r.nc);
+};
 export const fmtOdds = (n) => {
   if (!n && n!==0) return '--';
   return n>0 ? `+${n}` : `${n}`;
@@ -69,6 +82,7 @@ export const countryFlag = (nat) => ({
 
 export const formatOdds       = fmtOdds;
 export const formatRecord     = fmtRecord;
+export const formatProRecord  = fmtProRecord;
 export const heightFromInches = fmtHeight;
 export const getCountryFlag   = countryFlag;
 export const oddsToImplied    = impliedProb;
