@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { search as apiSearch, fmtRecord, fmtHeight, getFighter } from '../lib/api';
+import { search as apiSearch, fmtProRecord, proRecord, fmtHeight, getFighter } from '../lib/api';
 import axios from 'axios';
 
 export default function ComparePage() {
@@ -117,7 +117,7 @@ function FighterCard({ label, selected, onSelect, onClear }) {
               {selected.first_name?.toUpperCase()} {selected.last_name?.toUpperCase()}
             </Link>
             <div className="text-xs text-white/40 mt-0.5">
-              {fmtRecord(selected.wins, selected.losses, selected.draws)}
+              {fmtProRecord(selected)}
               {selected.primary_style && <span className="ml-2 text-gold/60">{selected.primary_style}</span>}
             </div>
           </div>
@@ -176,7 +176,7 @@ function SearchBox({ onSelect }) {
               </div>
               <div className="min-w-0">
                 <div className="text-sm font-medium">{f.first_name} {f.last_name}</div>
-                <div className="text-xs text-white/40">{fmtRecord(f.wins, f.losses, f.draws)} · {f.primary_style || 'Unknown style'}</div>
+                <div className="text-xs text-white/40">{fmtProRecord(f)} · {f.primary_style || 'Unknown style'}</div>
               </div>
               <span className={`ml-auto text-[9px] px-2 py-0.5 rounded-full flex-shrink-0 ${f.status === 'active' ? 'bg-win/10 text-win' : 'bg-white/5 text-white/30'}`}>
                 {f.status}
@@ -229,6 +229,8 @@ function ComparisonResults({ data }) {
 function HeroSection({ f1, f2, rankings1, rankings2 }) {
   const rank1 = f1.is_champion ? 'CHAMPION' : rankings1?.[0]?.rank ? `#${rankings1[0].rank}` : null;
   const rank2 = f2.is_champion ? 'CHAMPION' : rankings2?.[0]?.rank ? `#${rankings2[0].rank}` : null;
+  const r1 = proRecord(f1);
+  const r2 = proRecord(f2);
 
   return (
     <div className="card overflow-hidden">
@@ -253,10 +255,10 @@ function HeroSection({ f1, f2, rankings1, rankings2 }) {
           {f1.nickname && <p className="text-gold/60 italic text-sm mb-2">"{f1.nickname}"</p>}
           <div className="text-xs text-white/40 mb-2">{f1.weight_classes?.name}</div>
           <div className="font-display text-2xl tracking-wider">
-            <span className="text-win">{f1.wins ?? 0}</span>
+            <span className="text-win">{r1.wins}</span>
             <span className="text-white/20 mx-1">-</span>
-            <span className="text-loss">{f1.losses ?? 0}</span>
-            {f1.draws > 0 && <><span className="text-white/20 mx-1">-</span><span className="text-white/40">{f1.draws}</span></>}
+            <span className="text-loss">{r1.losses}</span>
+            {r1.draws > 0 && <><span className="text-white/20 mx-1">-</span><span className="text-white/40">{r1.draws}</span></>}
           </div>
           {f1.primary_style && (
             <span className="inline-block mt-2 text-[10px] bg-dark-4 text-gold/70 px-2.5 py-1 rounded-md border border-white/[0.06]">
@@ -290,10 +292,10 @@ function HeroSection({ f1, f2, rankings1, rankings2 }) {
           {f2.nickname && <p className="text-gold/60 italic text-sm mb-2">"{f2.nickname}"</p>}
           <div className="text-xs text-white/40 mb-2">{f2.weight_classes?.name}</div>
           <div className="font-display text-2xl tracking-wider">
-            <span className="text-win">{f2.wins ?? 0}</span>
+            <span className="text-win">{r2.wins}</span>
             <span className="text-white/20 mx-1">-</span>
-            <span className="text-loss">{f2.losses ?? 0}</span>
-            {f2.draws > 0 && <><span className="text-white/20 mx-1">-</span><span className="text-white/40">{f2.draws}</span></>}
+            <span className="text-loss">{r2.losses}</span>
+            {r2.draws > 0 && <><span className="text-white/20 mx-1">-</span><span className="text-white/40">{r2.draws}</span></>}
           </div>
           {f2.primary_style && (
             <span className="inline-block mt-2 text-[10px] bg-dark-4 text-gold/70 px-2.5 py-1 rounded-md border border-white/[0.06]">
@@ -358,69 +360,57 @@ function HeadToHeadSection({ fights, f1, f2 }) {
 // ── RECORDS SECTION ───────────────────────────────────────
 
 function RecordsSection({ f1, f2 }) {
-  const showCareer = (f) =>
-    f.career_wins > 0 && (f.career_wins !== f.wins || f.career_losses !== f.losses);
-
   return (
     <div className="card p-5">
       <div className="text-[10px] tracking-[0.3em] text-gold uppercase mb-5">Fight Record</div>
       <div className="grid grid-cols-[1fr_1px_1fr] gap-6 items-start">
-        {/* F1 */}
-        <div className="space-y-4">
-          <div>
-            <div className="font-display text-4xl tracking-wider leading-none">
-              <span className="text-win">{f1.wins ?? 0}</span>
-              <span className="text-white/20">-</span>
-              <span className="text-loss">{f1.losses ?? 0}</span>
-              {f1.draws > 0 && <><span className="text-white/20">-</span><span className="text-white/40">{f1.draws}</span></>}
-              {f1.no_contests > 0 && <span className="text-white/20 text-2xl ml-1">({f1.no_contests} NC)</span>}
-            </div>
-            <div className="text-[10px] text-white/25 uppercase tracking-wider mt-1">UFC Record</div>
-          </div>
-          {showCareer(f1) && (
-            <div>
-              <div className="font-display text-xl tracking-wider text-white/40">
-                {f1.career_wins}-{f1.career_losses}{f1.career_draws > 0 ? `-${f1.career_draws}` : ''}
-              </div>
-              <div className="text-[10px] text-white/20 uppercase tracking-wider">Pro Career</div>
-            </div>
-          )}
-          <div className="space-y-1.5">
-            {f1.wins_ko > 0 && <WinMethod label="KO / TKO" count={f1.wins_ko} />}
-            {f1.wins_sub > 0 && <WinMethod label="Submission" count={f1.wins_sub} />}
-            {f1.wins_dec > 0 && <WinMethod label="Decision" count={f1.wins_dec} />}
-          </div>
-        </div>
-
-        {/* Divider */}
+        <RecordColumn f={f1} />
         <div className="bg-white/[0.06] self-stretch" />
+        <RecordColumn f={f2} />
+      </div>
+    </div>
+  );
+}
 
-        {/* F2 */}
-        <div className="space-y-4">
-          <div>
-            <div className="font-display text-4xl tracking-wider leading-none">
-              <span className="text-win">{f2.wins ?? 0}</span>
-              <span className="text-white/20">-</span>
-              <span className="text-loss">{f2.losses ?? 0}</span>
-              {f2.draws > 0 && <><span className="text-white/20">-</span><span className="text-white/40">{f2.draws}</span></>}
-              {f2.no_contests > 0 && <span className="text-white/20 text-2xl ml-1">({f2.no_contests} NC)</span>}
-            </div>
-            <div className="text-[10px] text-white/25 uppercase tracking-wider mt-1">UFC Record</div>
-          </div>
-          {showCareer(f2) && (
-            <div>
-              <div className="font-display text-xl tracking-wider text-white/40">
-                {f2.career_wins}-{f2.career_losses}{f2.career_draws > 0 ? `-${f2.career_draws}` : ''}
-              </div>
-              <div className="text-[10px] text-white/20 uppercase tracking-wider">Pro Career</div>
-            </div>
-          )}
-          <div className="space-y-1.5">
-            {f2.wins_ko > 0 && <WinMethod label="KO / TKO" count={f2.wins_ko} />}
-            {f2.wins_sub > 0 && <WinMethod label="Submission" count={f2.wins_sub} />}
-            {f2.wins_dec > 0 && <WinMethod label="Decision" count={f2.wins_dec} />}
-          </div>
+function RecordColumn({ f }) {
+  const r = proRecord(f);
+  const showCareer = !r.isPro &&
+    f.career_wins > 0 && (f.career_wins !== f.wins || f.career_losses !== f.losses);
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="font-display text-4xl tracking-wider leading-none">
+          <span className="text-win">{r.wins}</span>
+          <span className="text-white/20">-</span>
+          <span className="text-loss">{r.losses}</span>
+          {r.draws > 0 && <><span className="text-white/20">-</span><span className="text-white/40">{r.draws}</span></>}
+          {r.nc > 0 && <span className="text-white/20 text-2xl ml-1">({r.nc} NC)</span>}
         </div>
+        <div className="text-[10px] text-white/25 uppercase tracking-wider mt-1">
+          {r.isPro ? 'Pro Record' : 'UFC Record'}
+        </div>
+      </div>
+      {r.isPro && (
+        <div>
+          <div className="font-display text-xl tracking-wider text-white/40">
+            {f.wins ?? 0}-{f.losses ?? 0}{f.draws > 0 ? `-${f.draws}` : ''}{f.no_contests > 0 ? ` (${f.no_contests} NC)` : ''}
+          </div>
+          <div className="text-[10px] text-white/20 uppercase tracking-wider">UFC Record</div>
+        </div>
+      )}
+      {showCareer && (
+        <div>
+          <div className="font-display text-xl tracking-wider text-white/40">
+            {f.career_wins}-{f.career_losses}{f.career_draws > 0 ? `-${f.career_draws}` : ''}
+          </div>
+          <div className="text-[10px] text-white/20 uppercase tracking-wider">Pro Career</div>
+        </div>
+      )}
+      <div className="space-y-1.5">
+        {f.wins_ko > 0 && <WinMethod label="KO / TKO" count={f.wins_ko} />}
+        {f.wins_sub > 0 && <WinMethod label="Submission" count={f.wins_sub} />}
+        {f.wins_dec > 0 && <WinMethod label="Decision" count={f.wins_dec} />}
       </div>
     </div>
   );
