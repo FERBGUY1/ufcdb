@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { search as apiSearch, fmtProRecord, proRecord, fmtHeight, getFighter } from '../lib/api';
+import { search as apiSearch, fmtProRecord, proRecord, fmtHeight, getFighter, getEvents } from '../lib/api';
 import axios from 'axios';
 
 export default function ComparePage() {
@@ -209,6 +209,7 @@ function ComparisonResults({ data }) {
       <PhysicalSection f1={f1} f2={f2} />
       <FightStatsSection stats={stat_comparison} f1={f1} f2={f2} />
       <RecentFightsSection f1={f1} f2={f2} fights1={recent_fights1} fights2={recent_fights2} />
+      <EventsCompareSection f1={f1} f2={f2} />
       <div className="flex flex-wrap gap-3 justify-center pt-2 pb-4">
         <Link to={`/fighters/${f1.slug}`} className="btn-outline text-xs">
           {f1.first_name} {f1.last_name} Profile
@@ -628,6 +629,82 @@ function RecentFightsList({ fighter, fights }) {
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── EVENTS COMPETED ON ────────────────────────────────────
+
+function EventsCompareSection({ f1, f2 }) {
+  const [events1, setEvents1] = useState(null);
+  const [events2, setEvents2] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    // Reuse the events-page fighter filter (GET /events?fighter=<id>).
+    // upcoming:false → completed events only, consistent with that filter.
+    Promise.all([
+      getEvents({ fighter: f1.id, upcoming: false, limit: 50 }),
+      getEvents({ fighter: f2.id, upcoming: false, limit: 50 }),
+    ]).then(([r1, r2]) => {
+      if (cancelled) return;
+      setEvents1(r1.events || []);
+      setEvents2(r2.events || []);
+    }).catch(() => {
+      if (cancelled) return;
+      setEvents1([]); setEvents2([]);
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [f1.id, f2.id]);
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="px-5 py-4 border-b border-white/[0.06]">
+        <div className="text-[10px] tracking-[0.3em] text-gold uppercase">Events Competed On</div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-white/[0.06]">
+        <EventsList fighter={f1} events={events1} loading={loading} />
+        <EventsList fighter={f2} events={events2} loading={loading} />
+      </div>
+    </div>
+  );
+}
+
+function EventsList({ fighter, events, loading }) {
+  return (
+    <div className="p-5">
+      <div className="flex items-baseline gap-2 mb-4">
+        <span className="text-xs text-white/40 font-medium uppercase tracking-wider">
+          {fighter.first_name} {fighter.last_name}
+        </span>
+        {!loading && events && (
+          <span className="text-[10px] text-white/20">{events.length} {events.length === 1 ? 'event' : 'events'}</span>
+        )}
+      </div>
+      {loading ? (
+        <div className="space-y-1.5">
+          {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-8 rounded bg-white/[0.03] animate-pulse" />)}
+        </div>
+      ) : (!events || events.length === 0) ? (
+        <div className="text-xs text-white/20 py-2">No events on record</div>
+      ) : (
+        <div className="space-y-1">
+          {events.map(e => (
+            <Link
+              key={e.id}
+              to={`/events/${e.slug}`}
+              className="flex items-center gap-3 py-2 border-b border-white/[0.03] last:border-0 hover:text-gold transition-colors group"
+            >
+              <span className="text-[10px] text-gold/70 tabular-nums flex-shrink-0 group-hover:text-gold">{e.date}</span>
+              <span className="text-xs font-medium text-white/80 truncate group-hover:text-gold">{e.name}</span>
+            </Link>
+          ))}
         </div>
       )}
     </div>
