@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { getFighter, formatOdds, formatRecord, heightFromInches, getCountryFlag, oddsToImplied } from '../lib/api';
+import { getFighter, formatOdds, formatProRecord, heightFromInches, getCountryFlag, oddsToImplied } from '../lib/api';
 
 export default function FighterPage() {
   const { slug } = useParams();
@@ -27,10 +27,11 @@ export default function FighterPage() {
   );
 
   const { fighter: f, fights, rankings } = data;
-  const record = formatRecord(f.wins, f.losses, f.draws, f.no_contests);
   const upcomingFight = fights?.find(fight => fight.result === 'upcoming');
   const dbBoutCount = fights?.filter(fight => fight.result !== 'upcoming').length ?? 0;
   const recordTotal = (f.wins || 0) + (f.losses || 0) + (f.draws || 0) + (f.no_contests || 0);
+  const hasProRecord = f.pro_wins != null &&
+    ((f.pro_wins || 0) + (f.pro_losses || 0) + (f.pro_draws || 0) + (f.pro_nc || 0)) > 0;
   // Only inflate bout count from record total when we have at least some fights in DB
   const boutCount = dbBoutCount > 0 ? Math.max(dbBoutCount, recordTotal) : 0;
   const hasMissingHistory = dbBoutCount === 0 && recordTotal > 0;
@@ -77,14 +78,26 @@ export default function FighterPage() {
             <div className="flex gap-5 mt-4 items-end flex-wrap">
               <div>
                 <div className="flex gap-5 items-end">
-                  <RecordStat num={f.wins}   label="Wins"   color="text-win" />
-                  <RecordStat num={f.losses} label="Losses" color="text-loss" />
-                  <RecordStat num={f.draws}  label="Draws"  color="text-white/30" />
-                  {f.no_contests > 0 && <RecordStat num={f.no_contests} label="NC" color="text-white/30" />}
+                  <RecordStat num={hasProRecord ? f.pro_wins : f.wins}     label="Wins"   color="text-win" />
+                  <RecordStat num={hasProRecord ? f.pro_losses : f.losses} label="Losses" color="text-loss" />
+                  <RecordStat num={hasProRecord ? f.pro_draws : f.draws}   label="Draws"  color="text-white/30" />
+                  {(hasProRecord ? f.pro_nc : f.no_contests) > 0 && (
+                    <RecordStat num={hasProRecord ? f.pro_nc : f.no_contests} label="NC" color="text-white/30" />
+                  )}
                 </div>
-                <div className="text-[9px] tracking-[0.2em] text-white/20 uppercase mt-1">UFC Record</div>
+                <div className="text-[9px] tracking-[0.2em] text-white/20 uppercase mt-1">
+                  {hasProRecord ? 'Pro Record' : 'UFC Record'}
+                </div>
               </div>
-              {(f.career_wins > 0 || f.career_losses > 0) &&
+              {hasProRecord && (
+                <div className="pl-4 border-l border-white/10">
+                  <div className="font-display text-2xl tracking-wider text-white/40">
+                    {f.wins}-{f.losses}{f.draws > 0 ? `-${f.draws}` : ''}{f.no_contests > 0 ? ` (${f.no_contests} NC)` : ''}
+                  </div>
+                  <div className="text-[10px] tracking-wider text-white/20 uppercase">UFC Record</div>
+                </div>
+              )}
+              {!hasProRecord && (f.career_wins > 0 || f.career_losses > 0) &&
                (f.career_wins !== f.wins || f.career_losses !== f.losses) && (
                 <div className="pl-4 border-l border-white/10">
                   <div className="font-display text-2xl tracking-wider text-white/40">
@@ -388,6 +401,23 @@ function InfoRow({ label, value, link, to }) {
   );
 }
 
+function BeltIcon({ variant }) {
+  const [main, detail] = variant === 'gold'
+    ? ['#C8A84B', '#8a7133']
+    : ['#94A3B8', '#64748B'];
+  return (
+    <svg viewBox="0 0 26 11" width="18" height="8" style={{ display: 'inline', verticalAlign: 'middle' }}
+      aria-label={variant === 'gold' ? 'Title fight' : 'Interim title fight'}>
+      <title>{variant === 'gold' ? 'Title Fight' : 'Interim Title Fight'}</title>
+      <rect x="0"  y="2" width="7"  height="7" rx="1.5" fill={main} />
+      <rect x="19" y="2" width="7"  height="7" rx="1.5" fill={main} />
+      <rect x="6"  y="0" width="14" height="11" rx="2"  fill={main} />
+      <rect x="9"  y="3" width="8"  height="5"  rx="1"  fill={detail} opacity="0.8" />
+      <circle cx="13" cy="5.5" r="2" fill={main} />
+    </svg>
+  );
+}
+
 function FightRow({ fight, fighterId }) {
   const navigate = useNavigate();
   const isF1 = fight.fighter1?.id === fighterId;
@@ -411,8 +441,10 @@ function FightRow({ fight, fighterId }) {
             {opponent.first_name} {opponent.last_name}
           </Link>
         ) : <span className="text-white/30">Unknown</span>}
-        {fight.is_title_fight && (
-          <span className="ml-1.5 text-[9px] text-gold/80">&#127942;</span>
+        {(fight.is_title_fight || fight.is_interim_title) && (
+          <span className="ml-1.5 inline-flex items-center">
+            <BeltIcon variant={fight.is_interim_title ? 'silver' : 'gold'} />
+          </span>
         )}
       </td>
       <td className="px-4 py-3 text-xs text-white/40 max-w-[140px] truncate">
@@ -462,12 +494,14 @@ function UpcomingFightCard({ fight, fighter }) {
     <div className="border border-gold/20 bg-gold/[0.04] rounded-xl p-5">
       <div className="text-[10px] tracking-[0.3em] text-gold uppercase mb-3">
         Next Fight â€” {fight.events?.name} Â· {fight.events?.date}
-        {fight.is_title_fight && ' Â· Title Fight'}
+        {(fight.is_title_fight || fight.is_interim_title) && (
+          <> · <BeltIcon variant={fight.is_interim_title ? 'silver' : 'gold'} /> {fight.is_interim_title ? 'Interim Title' : 'Title Fight'}</>
+        )}
       </div>
       <div className="flex items-center gap-4 mb-4">
         <div className="flex-1">
           <div className="font-medium">{fighter.first_name} {fighter.last_name}</div>
-          <div className="text-xs text-white/40">{formatRecord(fighter.wins, fighter.losses, fighter.draws, fighter.no_contests)}</div>
+          <div className="text-xs text-white/40">{formatProRecord(fighter)}</div>
         </div>
         <span className="font-display text-loss text-sm">VS</span>
         <div className="flex-1 text-right">
@@ -597,9 +631,3 @@ function ProfileSkeleton() {
     </main>
   );
 }
-
-
-
-
-
-
