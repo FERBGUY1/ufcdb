@@ -392,9 +392,10 @@ async function main() {
           const cells = $(row).find('td');
           if (cells.length < 3) return;
           for (let i = 0; i < Math.min(4, cells.length); i++) {
-            const a = $(cells[i]).find('a[href^="/wiki/"]').first();
+            // Wikipedia serves protocol-relative hrefs (//en.wikipedia.org/wiki/...) since mid-2026
+            const a = $(cells[i]).find('a[href^="/wiki/"], a[href*="//en.wikipedia.org/wiki/"]').first();
             if (!a.length) continue;
-            const href = a.attr('href') || '';
+            const href = (a.attr('href') || '').replace(/^(?:https?:)?\/\/en\.wikipedia\.org/, '');
             if (href === '/wiki/UFC') return;
             if (/List_of|Category:|Template:|Help:|Wikipedia:/i.test(href)) continue;
             if (!/\/wiki\/(UFC|WEC_|The_Ultimate_Fighter|Strikeforce|PRIDE)/i.test(href)) continue;

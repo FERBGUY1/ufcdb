@@ -159,9 +159,10 @@ async function fetchWikiEventList() {
 
       let wikiPath = null, eventName = null;
       for (let i = 0; i < Math.min(4, cells.length); i++) {
-        const a = $(cells[i]).find('a[href^="/wiki/"]').first();
+        // Wikipedia serves protocol-relative hrefs (//en.wikipedia.org/wiki/...) since mid-2026
+        const a = $(cells[i]).find('a[href^="/wiki/"], a[href*="//en.wikipedia.org/wiki/"]').first();
         if (!a.length) continue;
-        const href = a.attr('href') || '';
+        const href = (a.attr('href') || '').replace(/^(?:https?:)?\/\/en\.wikipedia\.org/, '');
         if (href === '/wiki/UFC') return;
         if (/List_of|Category:|Template:|Help:|Wikipedia:/i.test(href)) continue;
         if (!/\/wiki\/(UFC|WEC_|The_Ultimate_Fighter|Strikeforce|PRIDE)/i.test(href)) continue;
@@ -205,7 +206,7 @@ function isFightCard($, table) {
 // Extract clean fighter name from a table cell.
 // Prefers the first Wikipedia-linked name; strips role annotations like "(c)".
 function cellFighterName($, cell) {
-  const a = $(cell).find('a[href^="/wiki/"]').first();
+  const a = $(cell).find('a[href^="/wiki/"], a[href*="//en.wikipedia.org/wiki/"]').first();
   const raw = a.length ? a.text() : $(cell).text();
   return raw.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -288,7 +289,7 @@ async function fetchTitleFights(wikiUrl) {
       // Fallback: collect Wikipedia-linked person names from the row
       if (!f1 || !f2 || f1 === f2 || f1.length < 3 || f2.length < 3) {
         const names = [];
-        $(row).find('a[href^="/wiki/"]').each((_, a) => {
+        $(row).find('a[href^="/wiki/"], a[href*="//en.wikipedia.org/wiki/"]').each((_, a) => {
           const href = $(a).attr('href') || '';
           const text = $(a).text().replace(/\s*\([^)]*\)\s*/g, '').trim();
           if (!text || text.length < 3) return;
