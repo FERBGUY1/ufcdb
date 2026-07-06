@@ -31,3 +31,6 @@ Thumbs.db
 # Tapology scraper run artifacts (progress/output files, run helper)
 tapology-*.json
 *.bat
+
+# ufcstats fight-stats scraper run artifacts (progress/log files)
+ufcstats-*.json
