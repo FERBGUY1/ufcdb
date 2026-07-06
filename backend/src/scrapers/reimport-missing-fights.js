@@ -115,7 +115,11 @@ async function fetchWikiEventList() {
         const href = (a.attr('href') || '').replace(/^(?:https?:)?\/\/en\.wikipedia\.org/, '');
         if (href === '/wiki/UFC') return;
         if (/List_of|Category:|Template:|Help:|Wikipedia:/i.test(href)) continue;
-        if (!/\/wiki\/(UFC|WEC_|The_Ultimate_Fighter|Strikeforce|PRIDE)/i.test(href)) continue;
+        // Events without a dedicated article link into year articles (e.g.
+        // /wiki/2012_in_UFC#UFC_149:_Faber_vs._Barão). The fetched page then
+        // contains several events' result tables; the per-table overlap guard
+        // below keeps only tables matching this event's DB fights.
+        if (!/\/wiki\/(UFC|WEC_|The_Ultimate_Fighter|Strikeforce|PRIDE|\d{4}_in_UFC#)/i.test(href)) continue;
         wikiPath = href;
         eventName = a.text().trim();
         break;
