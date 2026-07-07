@@ -42,6 +42,11 @@ async function detectNewColumns() {
   return !probe.error;
 }
 
+// Columns are NUMERIC(5,2) (max ±999.99). Degenerate fights (seconds-long,
+// near-zero R1 output) can produce legitimate but unstorable values like a
+// -2000% degradation — clamp at write time, keep the engine's math untouched.
+const clamp = v => (v == null ? null : Math.max(-999.99, Math.min(999.99, v)));
+
 const compactForm = s => s && s.stats_fights > 0 ? {
   fights: s.stats_fights, wins: Math.round((s.stats_win_rate || 0) / 100 * s.stats_fights),
   slpm: s.slpm, sapm: s.sapm, str_acc: s.str_acc, str_def: s.str_def,
@@ -90,18 +95,18 @@ async function main() {
     if (s.stats_fights === 0) { skippedNoStats++; continue; }
 
     const patch = {
-      slpm: s.slpm, sapm: s.sapm, str_acc: s.str_acc, str_def: s.str_def,
-      td_avg: s.td_avg, td_acc: s.td_acc, td_def: s.td_def, sub_avg: s.sub_avg,
-      cardio_output_r1: s.cardio.r1, cardio_output_r2: s.cardio.r2, cardio_output_r3: s.cardio.r3,
-      cardio_output_r4: s.cardio.r4, cardio_output_r5: s.cardio.r5,
-      cardio_degradation: s.cardio_degradation,
-      late_finish_rate: s.late_finish_rate, late_loss_rate: s.late_loss_rate,
+      slpm: clamp(s.slpm), sapm: clamp(s.sapm), str_acc: clamp(s.str_acc), str_def: clamp(s.str_def),
+      td_avg: clamp(s.td_avg), td_acc: clamp(s.td_acc), td_def: clamp(s.td_def), sub_avg: clamp(s.sub_avg),
+      cardio_output_r1: clamp(s.cardio.r1), cardio_output_r2: clamp(s.cardio.r2), cardio_output_r3: clamp(s.cardio.r3),
+      cardio_output_r4: clamp(s.cardio.r4), cardio_output_r5: clamp(s.cardio.r5),
+      cardio_degradation: clamp(s.cardio_degradation),
+      late_finish_rate: clamp(s.late_finish_rate), late_loss_rate: clamp(s.late_loss_rate),
       championship_round_record: s.championship_round_record,
     };
     if (hasNewCols) {
       Object.assign(patch, {
-        kd_per15: s.kd_per15, kd_absorbed_per15: s.kd_absorbed_per15, ctrl_pct: s.ctrl_pct,
-        sig_distance_pct: s.sig_distance_pct, sig_clinch_pct: s.sig_clinch_pct, sig_ground_pct: s.sig_ground_pct,
+        kd_per15: clamp(s.kd_per15), kd_absorbed_per15: clamp(s.kd_absorbed_per15), ctrl_pct: clamp(s.ctrl_pct),
+        sig_distance_pct: clamp(s.sig_distance_pct), sig_clinch_pct: clamp(s.sig_clinch_pct), sig_ground_pct: clamp(s.sig_ground_pct),
         stats_fight_count: s.stats_fights, stats_total_seconds: s.stats_seconds,
         recent_form: { last3: compactForm(snapshot(tl, null, 3)), last5: compactForm(snapshot(tl, null, 5)) },
       });
