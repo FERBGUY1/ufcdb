@@ -7,9 +7,13 @@ router.get('/:id', async (req, res, next) => {
     const { data: fight, error } = await supabase
       .from('fights')
       .select(`
-        id, result, method, method_detail, round, time, is_title_fight,
+        id, result, method, method_detail, round, time, is_title_fight, is_interim_title, time_format,
         fighter1_record_at_fight, fighter2_record_at_fight,
         fighter1_sig_str, fighter2_sig_str, fighter1_td, fighter2_td,
+        fighter1_sig_str_pct, fighter2_sig_str_pct, fighter1_total_str, fighter2_total_str,
+        fighter1_td_pct, fighter2_td_pct, fighter1_kd, fighter2_kd,
+        fighter1_sub_att, fighter2_sub_att, fighter1_rev, fighter2_rev,
+        judge1_score, judge2_score, judge3_score, rounds_data,
         fighter1_style_at_fight, fighter2_style_at_fight,
         fighter1:fighters!fighter1_id ( id, slug, first_name, last_name, nickname, photo_url, primary_style ),
         fighter2:fighters!fighter2_id ( id, slug, first_name, last_name, nickname, photo_url, primary_style ),
