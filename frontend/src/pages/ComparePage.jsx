@@ -208,6 +208,8 @@ function ComparisonResults({ data }) {
       <RecordsSection f1={f1} f2={f2} />
       <PhysicalSection f1={f1} f2={f2} />
       <FightStatsSection stats={stat_comparison} f1={f1} f2={f2} />
+      <StyleProfileSection f1={f1} f2={f2} />
+      <RecentFormCompareSection f1={f1} f2={f2} />
       <RecentFightsSection f1={f1} f2={f2} fights1={recent_fights1} fights2={recent_fights2} />
       <EventsCompareSection f1={f1} f2={f2} />
       <div className="flex flex-wrap gap-3 justify-center pt-2 pb-4">
@@ -497,8 +499,42 @@ function PhysicalSection({ f1, f2 }) {
 
 // ── FIGHT STATS SECTION ───────────────────────────────────
 
+// Advantage rows computed client-side from the career-stat columns the compare
+// endpoint already returns (select '*'). These sit alongside the API-built
+// stat_comparison but cover the round-data-derived metrics: knockdown rate,
+// control %, and R1→R3 output degradation.
+function extraStatRows(f1, f2) {
+  const defs = [
+    { key: 'kd_per15',           label: 'Knockdowns / 15 Min',    higher: true },
+    { key: 'kd_absorbed_per15',  label: 'KD Absorbed / 15 Min',   higher: false },
+    { key: 'ctrl_pct',           label: 'Control Time',           higher: true,  is_percent: true },
+    { key: 'cardio_degradation', label: 'Output Drop R1→R3',      higher: false, is_percent: true, no_bar: true,
+      hint: 'Change in strike output from round 1 to round 3. Lower is better — a negative value means output climbs late.' },
+  ];
+  return defs
+    .filter(d => f1[d.key] != null || f2[d.key] != null)
+    .map(d => {
+      let v1 = f1[d.key], v2 = f2[d.key];
+      if (d.key === 'cardio_degradation') {
+        v1 = v1 != null ? Math.round(v1) : null;
+        v2 = v2 != null ? Math.round(v2) : null;
+      }
+      const advantage = v1 == null || v2 == null
+        ? null
+        : v1 === v2 ? 'even'
+        : d.higher ? (v1 > v2 ? 'fighter1' : 'fighter2')
+        : (v1 < v2 ? 'fighter1' : 'fighter2');
+      return {
+        key: d.key, label: d.label, hint: d.hint,
+        fighter1_value: v1, fighter2_value: v2,
+        advantage, is_percent: d.is_percent, no_bar: d.no_bar,
+      };
+    });
+}
+
 function FightStatsSection({ stats, f1, f2 }) {
-  if (!stats?.length) return null;
+  const allStats = [...(stats || []), ...extraStatRows(f1, f2)];
+  if (!allStats.length) return null;
 
   return (
     <div className="card p-5">
@@ -508,7 +544,7 @@ function FightStatsSection({ stats, f1, f2 }) {
         <span>{f2.last_name?.toUpperCase()}</span>
       </div>
       <div className="space-y-5">
-        {stats.map(s => (
+        {allStats.map(s => (
           <StatCompareRow key={s.key} stat={s} />
         ))}
       </div>
@@ -517,7 +553,7 @@ function FightStatsSection({ stats, f1, f2 }) {
 }
 
 function StatCompareRow({ stat }) {
-  const { label, fighter1_value: v1, fighter2_value: v2, advantage, is_percent } = stat;
+  const { label, hint, fighter1_value: v1, fighter2_value: v2, advantage, is_percent, no_bar } = stat;
 
   const fmt = (v) => {
     if (v == null) return '--';
@@ -539,12 +575,14 @@ function StatCompareRow({ stat }) {
         <div className={`text-sm font-medium text-right ${adv1 ? 'text-gold' : 'text-white/50'}`}>
           {fmt(v1)}
         </div>
-        <div className="text-[10px] text-white/30 w-40 text-center">{label}</div>
+        <div className="text-[10px] text-white/30 w-40 text-center" title={hint || undefined}>
+          {label}{hint && <span className="text-white/20 ml-0.5 cursor-help">ⓘ</span>}
+        </div>
         <div className={`text-sm font-medium ${adv2 ? 'text-gold' : 'text-white/50'}`}>
           {fmt(v2)}
         </div>
       </div>
-      {v1 != null && v2 != null && (
+      {!no_bar && v1 != null && v2 != null && (
         <div className="h-1.5 bg-dark-5 rounded-full overflow-hidden flex">
           <div
             className={`h-full rounded-l-full transition-all duration-700 ${adv1 ? 'bg-gold' : 'bg-white/15'}`}
@@ -557,6 +595,184 @@ function StatCompareRow({ stat }) {
         </div>
       )}
     </div>
+  );
+}
+
+// ── STYLE PROFILE ─────────────────────────────────────────
+// Two fighters' striking-position mix side by side. Style isn't better or
+// worse, so — unlike the Fight Statistics bars — nothing is advantage-colored;
+// each position keeps its own fixed hue (shared with FighterPage's Striking Mix).
+
+const STYLE_SEGS = [
+  { key: 'distance', label: 'Distance', field: 'sig_distance_pct', color: '#C8A84B' },
+  { key: 'clinch',   label: 'Clinch',   field: 'sig_clinch_pct',   color: '#5b8aa8' },
+  { key: 'ground',   label: 'Ground',   field: 'sig_ground_pct',   color: '#8a9e5b' },
+];
+
+function styleTotal(f) {
+  return STYLE_SEGS.reduce((s, seg) => s + (f[seg.field] ?? 0), 0);
+}
+
+function StyleProfileSection({ f1, f2 }) {
+  if (styleTotal(f1) <= 0 && styleTotal(f2) <= 0) return null;
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="px-5 py-4 border-b border-white/[0.06]">
+        <div className="text-[10px] tracking-[0.3em] text-gold uppercase">Style Profile</div>
+        <p className="text-[11px] text-white/30 mt-0.5">Where each fighter's significant strikes are thrown from</p>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-white/[0.06]">
+        <StyleColumn f={f1} />
+        <StyleColumn f={f2} />
+      </div>
+    </div>
+  );
+}
+
+function StyleColumn({ f }) {
+  const raw = STYLE_SEGS.map(s => ({ ...s, pct: f[s.field] ?? 0 }));
+  const total = raw.reduce((a, b) => a + b.pct, 0);
+
+  return (
+    <div className="p-5">
+      <div className="text-xs text-white/40 font-medium uppercase tracking-wider mb-4">
+        {f.first_name} {f.last_name}
+      </div>
+      {total <= 0 ? (
+        <div className="text-xs text-white/20 py-2">No striking-position data on record</div>
+      ) : (
+        (() => {
+          const segs = raw.map(s => ({ ...s, share: (s.pct / total) * 100 }));
+          const dominant = segs.reduce((a, b) => (b.pct > a.pct ? b : a));
+          return (
+            <>
+              <div className="flex h-3 rounded-full overflow-hidden bg-dark-5 mb-4">
+                {segs.map(s => s.share > 0 && (
+                  <div key={s.key} style={{ width: `${s.share}%`, backgroundColor: s.color }}
+                       title={`${s.label} ${Math.round(s.pct)}%`} />
+                ))}
+              </div>
+              <div className="space-y-2">
+                {segs.map(s => (
+                  <div key={s.key} className="flex items-center gap-2.5">
+                    <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: s.color }} />
+                    <span className="text-xs text-white/50 flex-1">{s.label}</span>
+                    <span className="text-xs font-medium text-white/80">{Math.round(s.pct)}%</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] text-white/30 mt-4 pt-4 border-t border-white/5">
+                {Math.round(dominant.pct)}% from <span className="text-white/60">{dominant.label.toLowerCase()}</span>
+                {dominant.key === 'distance' ? ' — a range striker' : dominant.key === 'ground' ? ' — ground-and-pound heavy' : ' — a clinch fighter'}.
+              </p>
+            </>
+          );
+        })()
+      )}
+    </div>
+  );
+}
+
+// ── RECENT FORM (deltas vs. career) ───────────────────────
+// Side-by-side mini-tables: each fighter's recent-window output with a
+// direction-aware delta vs. their own UFC career average. A single window
+// toggle drives both columns so the comparison stays apples-to-apples.
+
+const RF_ROWS = [
+  ['Strikes Landed / Min',   'slpm',     true,  ''],
+  ['Strikes Absorbed / Min', 'sapm',     false, ''],
+  ['Striking Accuracy',      'str_acc',  true,  '%'],
+  ['Striking Defense',       'str_def',  true,  '%'],
+  ['Takedowns / 15 Min',     'td_avg',   true,  ''],
+  ['Takedown Defense',       'td_def',   true,  '%'],
+  ['Control Time',           'ctrl_pct', true,  '%'],
+  ['Knockdowns / 15 Min',    'kd_per15', true,  ''],
+];
+
+function RecentFormCompareSection({ f1, f2 }) {
+  const rf1 = f1.recent_form || {};
+  const rf2 = f2.recent_form || {};
+  const windows = [];
+  if (rf1.last5 || rf2.last5) windows.push({ key: 'last5', label: 'Last 5' });
+  if (rf1.last3 || rf2.last3) windows.push({ key: 'last3', label: 'Last 3' });
+  const [active, setActive] = useState(windows[0]?.key ?? 'last5');
+  if (windows.length === 0) return null;
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="px-5 py-4 border-b border-white/[0.06] flex items-baseline justify-between gap-3 flex-wrap">
+        <div>
+          <div className="text-[10px] tracking-[0.3em] text-gold uppercase">Recent Form</div>
+          <p className="text-[11px] text-white/30 mt-0.5">Recent output · delta vs. each fighter's UFC career average</p>
+        </div>
+        {windows.length > 1 && (
+          <div className="flex gap-1">
+            {windows.map(win => (
+              <button key={win.key} onClick={() => setActive(win.key)}
+                className={`text-[10px] tracking-[0.15em] uppercase px-2.5 py-1 rounded-md transition-colors ${
+                  active === win.key ? 'bg-gold/15 text-gold' : 'text-white/30 hover:text-white/60'
+                }`}>
+                {win.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-white/[0.06]">
+        <RecentFormColumn f={f1} activeWindow={active} />
+        <RecentFormColumn f={f2} activeWindow={active} />
+      </div>
+    </div>
+  );
+}
+
+function RecentFormColumn({ f, activeWindow }) {
+  const rf = f.recent_form || {};
+  const w = rf[activeWindow] || rf.last5 || rf.last3;
+
+  return (
+    <div className="p-5">
+      <div className="flex items-baseline justify-between gap-2 mb-4">
+        <span className="text-xs text-white/40 font-medium uppercase tracking-wider truncate">
+          {f.first_name} {f.last_name}
+        </span>
+        {w && (
+          <span className="text-[10px] text-white/25 flex-shrink-0">
+            {w.wins} win{w.wins !== 1 ? 's' : ''} in last {w.fights}
+          </span>
+        )}
+      </div>
+      {!w ? (
+        <div className="text-xs text-white/20 py-2">No recent-form data on record</div>
+      ) : (
+        <div className="space-y-0.5">
+          {RF_ROWS.map(([label, key, higher, suffix]) => (
+            <div key={key} className="flex items-center justify-between gap-3 py-1.5 border-b border-white/[0.04] last:border-0">
+              <span className="text-xs text-white/50 flex-1 min-w-0 truncate">{label}</span>
+              <span className="text-xs font-medium text-right w-14 tabular-nums">
+                {w[key] != null ? `${w[key]}${suffix}` : '--'}
+              </span>
+              <span className="w-16 text-right">
+                <Delta recent={w[key]} career={f[key]} higherBetter={higher} suffix={suffix} />
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Delta({ recent, career, higherBetter, suffix }) {
+  if (recent == null || career == null) return <span className="text-[11px] text-white/20">--</span>;
+  const diff = Math.round((recent - career) * 100) / 100;
+  if (diff === 0) return <span className="text-[11px] text-white/30">—</span>;
+  const good = higherBetter ? diff > 0 : diff < 0;
+  return (
+    <span className={`text-[11px] font-medium tabular-nums ${good ? 'text-win' : 'text-loss'}`}>
+      {diff > 0 ? '▲' : '▼'} {diff > 0 ? '+' : ''}{diff}{suffix}
+    </span>
   );
 }
 
