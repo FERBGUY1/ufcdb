@@ -175,20 +175,8 @@ export default function FighterPage() {
             {/* Upcoming Fight */}
             {upcomingFight && <UpcomingFightCard fight={upcomingFight} fighter={f} />}
 
-            {/* Fight Stats */}
-            <section className="card p-5">
-              <h2 className="font-display text-base tracking-[0.2em] text-gold uppercase mb-4">Fight Stats</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <StatBar label="Strikes Landed / Min"  value={f.slpm}    max={10}  />
-                <StatBar label="Strikes Absorbed / Min" value={f.sapm}   max={10}  colorClass="bg-loss" />
-                <StatBar label="Striking Accuracy"      value={f.str_acc} max={100} suffix="%" colorClass="bg-win" />
-                <StatBar label="Striking Defense"       value={f.str_def} max={100} suffix="%" colorClass="bg-win" />
-                <StatBar label="Takedowns / 15 Min"     value={f.td_avg}  max={10}  />
-                <StatBar label="Takedown Accuracy"      value={f.td_acc}  max={100} suffix="%" colorClass="bg-win" />
-                <StatBar label="Takedown Defense"       value={f.td_def}  max={100} suffix="%" colorClass="bg-win" />
-                <StatBar label="Submission Avg"         value={f.sub_avg} max={5}   />
-              </div>
-            </section>
+            {/* Career Statistics suite (striking/grappling · cardio · style mix · recent form) */}
+            <CareerStats f={f} />
 
             {/* Strengths & Weaknesses */}
             {(f.strengths?.length > 0 || f.weaknesses?.length > 0) && (
@@ -369,6 +357,249 @@ function StatBar({ label, value, max, suffix = '', colorClass = 'bg-gold' }) {
         <div className={`stat-bar-fill ${colorClass}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
+  );
+}
+
+// ── CAREER STATISTICS SUITE ──────────────────────────────────────
+// Everything below is fed by the computed columns filled by
+// src/ml/computeCareerStats.js. The whole suite is gated on
+// stats_fight_count > 0, so pre-stats-era fighters (no rounds_data)
+// degrade to nothing rather than a wall of zeroes / dashes.
+
+function CareerStats({ f }) {
+  if (!(f.stats_fight_count > 0)) return null;
+
+  const cardio = [f.cardio_output_r1, f.cardio_output_r2, f.cardio_output_r3, f.cardio_output_r4, f.cardio_output_r5];
+  const hasCardio = cardio.some(v => v != null);
+  const styleDen = (f.sig_distance_pct ?? 0) + (f.sig_clinch_pct ?? 0) + (f.sig_ground_pct ?? 0);
+  const hasStyle = styleDen > 0;
+  const rf = f.recent_form || {};
+  const hasRecent = !!(rf.last3 || rf.last5);
+  const cageMin = Math.round((f.stats_total_seconds || 0) / 60);
+
+  return (
+    <>
+      {/* Grouped striking / grappling */}
+      <section className="card p-5">
+        <div className="flex items-baseline justify-between gap-3 mb-4 flex-wrap">
+          <h2 className="font-display text-base tracking-[0.2em] text-gold uppercase">UFC Career Statistics</h2>
+          <span className="text-[10px] tracking-[0.15em] text-white/25 uppercase"
+                title="Aggregated from UFC bouts with round-by-round data only. Excludes non-UFC fights (e.g. PRIDE, K-1), so totals can differ from the all-promotions career page on ufcstats.com.">
+            Computed from {f.stats_fight_count} UFC fight{f.stats_fight_count !== 1 ? 's' : ''}{cageMin > 0 ? ` · ${cageMin} min` : ''}
+          </span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-5">
+          <div>
+            <p className="text-[10px] tracking-[0.15em] text-white/30 uppercase mb-3">UFC Striking</p>
+            <div className="space-y-3">
+              <StatBar label="Strikes Landed / Min"       value={f.slpm}             max={10}  />
+              <StatBar label="Strikes Absorbed / Min"     value={f.sapm}             max={10}  colorClass="bg-loss" />
+              <StatBar label="Striking Accuracy"          value={f.str_acc}          max={100} suffix="%" colorClass="bg-win" />
+              <StatBar label="Striking Defense"           value={f.str_def}          max={100} suffix="%" colorClass="bg-win" />
+              <StatBar label="Knockdowns / 15 Min"        value={f.kd_per15}         max={2}   />
+              <StatBar label="Knockdowns Absorbed / 15"   value={f.kd_absorbed_per15} max={2}  colorClass="bg-loss" />
+            </div>
+          </div>
+          <div>
+            <p className="text-[10px] tracking-[0.15em] text-white/30 uppercase mb-3">UFC Grappling</p>
+            <div className="space-y-3">
+              <StatBar label="Takedowns / 15 Min"         value={f.td_avg}   max={5}   />
+              <StatBar label="Takedown Accuracy"          value={f.td_acc}   max={100} suffix="%" colorClass="bg-win" />
+              <StatBar label="Takedown Defense"           value={f.td_def}   max={100} suffix="%" colorClass="bg-win" />
+              <StatBar label="Submission Att. / 15 Min"   value={f.sub_avg}  max={3}   />
+              <StatBar label="Control Time"               value={f.ctrl_pct} max={100} suffix="%" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Cardio + style mix side by side */}
+      {(hasCardio || hasStyle) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {hasCardio && <CardioCard f={f} cardio={cardio} />}
+          {hasStyle && <StyleMixCard f={f} />}
+        </div>
+      )}
+
+      {/* Recent form with direction-aware deltas */}
+      {hasRecent && <RecentFormCard f={f} />}
+    </>
+  );
+}
+
+function CardioCard({ f, cardio }) {
+  const bars = cardio
+    .map((v, i) => ({ r: i + 1, v }))
+    .filter(b => b.v != null);
+  const max = Math.max(...bars.map(b => b.v), 0.01);
+
+  const deg = f.cardio_degradation; // (r1 - r3) / r1 * 100 → positive = pace fades
+  let degText = null, degTone = 'gold';
+  if (deg != null) {
+    const mag = Math.abs(Math.round(deg));
+    if (deg >= 8)      { degText = `Output drops ${mag}% from round 1 to round 3 — fades in deep water`; degTone = 'loss'; }
+    else if (deg <= -8){ degText = `Output climbs ${mag}% from round 1 to round 3 — pushes a harder pace late`; degTone = 'win'; }
+    else               { degText = `Holds a steady pace into the championship rounds (${deg > 0 ? '−' : '+'}${mag}% by R3)`; degTone = 'gold'; }
+  }
+  const toneClass = { win: 'text-win border-win/20 bg-win/[0.06]', loss: 'text-loss border-loss/20 bg-loss/[0.06]', gold: 'text-gold border-gold/20 bg-gold/[0.05]' }[degTone];
+
+  return (
+    <section className="card p-5">
+      <h2 className="font-display text-base tracking-[0.2em] text-gold uppercase mb-1">Cardio</h2>
+      <p className="text-[11px] text-white/30 mb-4">Significant strikes attempted per minute, by round</p>
+
+      <div className="flex items-end gap-2 h-32">
+        {bars.map(({ r, v }) => (
+          <div key={r} className="flex-1 flex flex-col items-center justify-end h-full">
+            <span className="text-[11px] font-medium text-white/70 mb-1">{v}</span>
+            <div className="w-full rounded-t bg-gradient-to-t from-gold-dim to-gold transition-all duration-700"
+                 style={{ height: `${Math.max(4, (v / max) * 100)}%` }} />
+            <span className="text-[10px] tracking-wider text-white/30 uppercase mt-1.5">R{r}</span>
+          </div>
+        ))}
+        {/* keep the axis width stable when a fighter has fewer than 5 charted rounds */}
+        {Array.from({ length: 5 - bars.length }).map((_, i) => (
+          <div key={`pad-${i}`} className="flex-1 flex flex-col items-center justify-end h-full opacity-30">
+            <div className="w-full rounded-t bg-dark-5" style={{ height: '4%' }} />
+            <span className="text-[10px] tracking-wider text-white/15 uppercase mt-1.5">R{bars.length + i + 1}</span>
+          </div>
+        ))}
+      </div>
+
+      {degText && (
+        <div className={`mt-4 text-[11px] leading-relaxed rounded-lg border px-3 py-2 ${toneClass}`}>
+          {degText}
+        </div>
+      )}
+
+      {(f.championship_round_record || f.late_finish_rate != null) && (
+        <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t border-white/5">
+          {f.championship_round_record && (
+            <div>
+              <div className="font-display text-xl tracking-wider text-white/80">{f.championship_round_record}</div>
+              <div className="text-[9px] tracking-[0.15em] text-white/30 uppercase">Champ. Rounds (R4+)</div>
+            </div>
+          )}
+          {f.late_finish_rate != null && (
+            <div>
+              <div className="font-display text-xl tracking-wider text-white/80">{Math.round(f.late_finish_rate)}%</div>
+              <div className="text-[9px] tracking-[0.15em] text-white/30 uppercase">Wins Finished in R3+</div>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function StyleMixCard({ f }) {
+  const raw = [
+    { key: 'distance', label: 'Distance', pct: f.sig_distance_pct ?? 0, color: '#C8A84B' },
+    { key: 'clinch',   label: 'Clinch',   pct: f.sig_clinch_pct ?? 0,   color: '#5b8aa8' },
+    { key: 'ground',   label: 'Ground',   pct: f.sig_ground_pct ?? 0,   color: '#8a9e5b' },
+  ];
+  const total = raw.reduce((s, x) => s + x.pct, 0) || 1;
+  const segs = raw.map(x => ({ ...x, share: (x.pct / total) * 100 }));
+  const dominant = segs.reduce((a, b) => (b.pct > a.pct ? b : a));
+
+  return (
+    <section className="card p-5">
+      <h2 className="font-display text-base tracking-[0.2em] text-gold uppercase mb-1">Striking Mix</h2>
+      <p className="text-[11px] text-white/30 mb-4">Where significant strikes are thrown from</p>
+
+      <div className="flex h-3 rounded-full overflow-hidden bg-dark-5 mb-4">
+        {segs.map(s => s.share > 0 && (
+          <div key={s.key} style={{ width: `${s.share}%`, backgroundColor: s.color }} title={`${s.label} ${Math.round(s.pct)}%`} />
+        ))}
+      </div>
+
+      <div className="space-y-2">
+        {segs.map(s => (
+          <div key={s.key} className="flex items-center gap-2.5">
+            <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: s.color }} />
+            <span className="text-xs text-white/50 flex-1">{s.label}</span>
+            <span className="text-xs font-medium text-white/80">{Math.round(s.pct)}%</span>
+          </div>
+        ))}
+      </div>
+
+      <p className="text-[11px] text-white/30 mt-4 pt-4 border-t border-white/5">
+        {Math.round(dominant.pct)}% of strikes come from <span className="text-white/60">{dominant.label.toLowerCase()}</span>
+        {dominant.key === 'distance' ? ' — a range striker' : dominant.key === 'ground' ? ' — ground-and-pound heavy' : ' — a clinch fighter'}.
+      </p>
+    </section>
+  );
+}
+
+function RecentFormCard({ f }) {
+  const rf = f.recent_form || {};
+  const windows = [
+    rf.last5 && { key: 'last5', label: 'Last 5' },
+    rf.last3 && { key: 'last3', label: 'Last 3' },
+  ].filter(Boolean);
+  const [active, setActive] = useState(windows[0]?.key);
+  const w = rf[active] || rf.last5 || rf.last3;
+  if (!w) return null;
+
+  // [label, recent value, career value, higher-is-better?, suffix]
+  const rows = [
+    ['Strikes Landed / Min',   w.slpm,     f.slpm,     true,  ''],
+    ['Strikes Absorbed / Min', w.sapm,     f.sapm,     false, ''],
+    ['Striking Accuracy',      w.str_acc,  f.str_acc,  true,  '%'],
+    ['Striking Defense',       w.str_def,  f.str_def,  true,  '%'],
+    ['Takedowns / 15 Min',     w.td_avg,   f.td_avg,   true,  ''],
+    ['Takedown Defense',       w.td_def,   f.td_def,   true,  '%'],
+    ['Control Time',           w.ctrl_pct, f.ctrl_pct, true,  '%'],
+    ['Knockdowns / 15 Min',    w.kd_per15, f.kd_per15, true,  ''],
+  ];
+
+  return (
+    <section className="card p-5">
+      <div className="flex items-baseline justify-between gap-3 mb-1 flex-wrap">
+        <h2 className="font-display text-base tracking-[0.2em] text-gold uppercase">Recent Form</h2>
+        {windows.length > 1 && (
+          <div className="flex gap-1">
+            {windows.map(win => (
+              <button key={win.key} onClick={() => setActive(win.key)}
+                className={`text-[10px] tracking-[0.15em] uppercase px-2.5 py-1 rounded-md transition-colors ${
+                  active === win.key ? 'bg-gold/15 text-gold' : 'text-white/30 hover:text-white/60'
+                }`}>
+                {win.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <p className="text-[11px] text-white/30 mb-4">
+        {w.wins} win{w.wins !== 1 ? 's' : ''} in last {w.fights} · deltas vs. UFC career average
+      </p>
+
+      <div className="space-y-2">
+        {rows.map(([label, recent, career, higherBetter, suffix]) => (
+          <div key={label} className="flex items-center justify-between gap-3 py-1.5 border-b border-white/[0.04] last:border-0">
+            <span className="text-xs text-white/50 flex-1 min-w-0 truncate">{label}</span>
+            <span className="text-xs font-medium text-right w-16 tabular-nums">
+              {recent != null ? `${recent}${suffix}` : '--'}
+            </span>
+            <span className="w-20 text-right">
+              <Delta recent={recent} career={career} higherBetter={higherBetter} suffix={suffix} />
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Delta({ recent, career, higherBetter, suffix }) {
+  if (recent == null || career == null) return <span className="text-[11px] text-white/20">--</span>;
+  const diff = Math.round((recent - career) * 100) / 100;
+  if (diff === 0) return <span className="text-[11px] text-white/30">—</span>;
+  const good = higherBetter ? diff > 0 : diff < 0;
+  return (
+    <span className={`text-[11px] font-medium tabular-nums ${good ? 'text-win' : 'text-loss'}`}>
+      {diff > 0 ? '▲' : '▼'} {diff > 0 ? '+' : ''}{diff}{suffix}
+    </span>
   );
 }
 
