@@ -242,6 +242,42 @@ function MethodBar({ label, pct, color }) {
   );
 }
 
+// Key factors arrive from the engine as one string per edge, shaped
+// "{stat} — edge {leader} (~{N} pts of win probability)". Split it so the
+// stat reads as plain white text and the edge becomes a gold chip on the right.
+function KeyFactorRow({ rank, factor }) {
+  const m = factor.match(/^(.*?)\s*[—–-]\s*edge\s+(.*)$/i);
+  const stat = m ? m[1].trim() : factor;
+  const edge = m ? m[2].trim() : null;
+
+  // stat is "label: detail" — surface the label as a small kicker
+  const ci = stat.indexOf(':');
+  const label = ci > -1 ? stat.slice(0, ci).trim() : null;
+  const detail = ci > -1 ? stat.slice(ci + 1).trim() : stat;
+
+  // edge is "{leader} (~{N} pts of win probability)" — pull out leader + points
+  const em = edge && edge.match(/^(.*?)\s*\(~\s*(\d+)\s*pts/i);
+  const leader = em ? em[1].trim() : edge;
+  const pts = em ? em[2] : null;
+
+  return (
+    <div className="flex items-center gap-3 py-3">
+      <span className="font-display text-base text-gold/70 w-5 flex-shrink-0 text-center leading-none">{rank}</span>
+      <div className="flex-1 min-w-0">
+        {label && (
+          <div className="text-[10px] tracking-[0.15em] text-white/35 uppercase mb-0.5">{label}</div>
+        )}
+        <div className="text-sm text-white/90 leading-snug">{detail}</div>
+      </div>
+      {edge && (
+        <span className="flex-shrink-0 text-[10px] tracking-wide bg-gold/10 text-gold border border-gold/25 rounded-full px-2.5 py-1 whitespace-nowrap">
+          {leader}{pts ? ` · +${pts} pts` : ''}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function PredictionResult({ prediction: p, f1Name, f2Name }) {
   const f1 = p.fighter1 || f1Name;
   const f2 = p.fighter2 || f2Name;
@@ -278,6 +314,10 @@ function PredictionResult({ prediction: p, f1Name, f2Name }) {
           <span className="text-xs text-gold">{f1?.last_name}</span>
           <span className="text-xs text-red-400">{f2?.last_name}</span>
         </div>
+        <p className="text-[10px] text-white/25 leading-relaxed mt-4 pt-3 border-t border-white/[0.04] text-center">
+          Win probability from the UFCDB logistic model (v{p.model_version}), trained on per-fight UFC statistics —
+          striking volume &amp; accuracy, takedowns, control time, cardio, and recent form. Generated {new Date(p.generated_at).toLocaleDateString()}.
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -301,33 +341,45 @@ function PredictionResult({ prediction: p, f1Name, f2Name }) {
 
       {p.round_projections?.length > 0 && (
         <div className="card p-5">
-          <div className="text-[10px] tracking-[0.2em] text-white/30 uppercase mb-4">Round by Round Projection</div>
-          <div className="space-y-2.5">
-            {p.round_projections.map(r => (
-              <div key={r.round} className="grid grid-cols-[auto_1fr_auto] gap-3 items-center">
-                <span className="text-xs text-white/30 w-12">Round {r.round}</span>
-                <div className="relative h-2 bg-dark-5 rounded-full overflow-hidden">
-                  <div className="absolute left-0 top-0 h-full bg-gold/60 rounded-full" style={{ width: `${r.f1_control_pct}%` }} />
-                </div>
-                <span className="text-xs text-white/40 text-right w-24 truncate">{r.projected_control}</span>
-              </div>
-            ))}
+          <div className="text-[10px] tracking-[0.2em] text-white/30 uppercase mb-1">Round by Round Projection</div>
+          <p className="text-[11px] text-white/30 mb-4">Projected significant strikes landed per minute</p>
+          <div className="grid grid-cols-[3.5rem_1fr_3.5rem] gap-3 mb-3">
+            <span className="text-[10px] tracking-wider text-gold uppercase text-right truncate">{f1?.last_name}</span>
+            <span />
+            <span className="text-[10px] tracking-wider text-red-400 uppercase truncate">{f2?.last_name}</span>
           </div>
-          <div className="flex justify-between mt-3 text-[10px] text-white/20">
-            <span>{f1?.last_name} ←</span><span>→ {f2?.last_name}</span>
+          <div className="space-y-3">
+            {p.round_projections.map(r => {
+              const o1 = parseFloat(r.f1_output), o2 = parseFloat(r.f2_output);
+              return (
+                <div key={r.round} className="grid grid-cols-[3.5rem_1fr_3.5rem] gap-3 items-center">
+                  <span className={`text-sm tabular-nums text-right ${o1 >= o2 ? 'text-white font-semibold' : 'text-white/40'}`}>
+                    {r.f1_output}
+                  </span>
+                  <div>
+                    <div className="flex h-2 rounded-full overflow-hidden bg-dark-5">
+                      <div className="bg-gold/70 transition-all duration-500" style={{ width: `${r.f1_control_pct}%` }} />
+                      <div className="bg-red-700/60 transition-all duration-500" style={{ width: `${100 - r.f1_control_pct}%` }} />
+                    </div>
+                    <div className="text-[9px] tracking-wider text-white/25 uppercase text-center mt-1">Round {r.round}</div>
+                  </div>
+                  <span className={`text-sm tabular-nums ${o2 > o1 ? 'text-white font-semibold' : 'text-white/40'}`}>
+                    {r.f2_output}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
       {p.key_factors?.length > 0 && (
         <div className="card p-5">
-          <div className="text-[10px] tracking-[0.2em] text-white/30 uppercase mb-4">Key Factors</div>
-          <div className="space-y-2">
+          <div className="text-[10px] tracking-[0.2em] text-white/30 uppercase mb-1">The Model's Evidence</div>
+          <p className="text-[11px] text-white/30 mb-4">The statistical edges driving this probability, largest contribution first</p>
+          <div className="divide-y divide-white/[0.04]">
             {p.key_factors.map((factor, i) => (
-              <div key={i} className="flex gap-3 text-sm text-white/70 leading-relaxed">
-                <span className="text-gold font-display text-base flex-shrink-0 mt-0.5">#{i+1}</span>
-                <span>{factor}</span>
-              </div>
+              <KeyFactorRow key={i} rank={i + 1} factor={factor} />
             ))}
           </div>
         </div>
