@@ -1,7 +1,14 @@
 /**
- * ufcstats-fight-stats.js — Per-fight and per-round statistics from ufcstats.com
+ * ufcstats-fight-stats.js — Per-fight results, totals and per-round stats from ufcstats.com
  *
  * Fills, for every completed fight matched to a ufcstats fight page:
+ *   - result (only with --write-results): winner_id, result ('win'/'draw'/
+ *     'no_contest'), method, round, time — read from the EVENT page fight rows
+ *     (col 0 flag = winner, who is listed first; cols 7/8/9 = method/round/time).
+ *     Orientation A: on a win, fighter1_id/fighter2_id are swapped when the DB
+ *     has the loser as fighter1, so fighter1_id is always the winner (DB
+ *     convention); the rounds_data f1/f2 mapping is aligned to the same
+ *     winner-first order in the same write.
  *   - fight totals: fighter1/2 kd, sig_str ("x of y"), sig_str_pct, total_str,
  *     td, td_pct, sub_att, rev
  *   - judge scorecards (judge1/2/3_score) and time_format
@@ -24,6 +31,10 @@
  *
  * Flags:
  *   --dry-run          parse everything, write nothing to the DB
+ *   --write-results    also read + write result/winner/method/round/time from the
+ *                      event page (orientation A). OFF by default, so results are
+ *                      never written until explicitly enabled; it also makes
+ *                      fights that still lack a result eligible targets.
  *   --limit N          process at most N events
  *   --offset N         skip the first N target events
  *   --event "substr"   only events whose DB name contains substr
@@ -45,6 +56,7 @@ const supabase = require('../db/client');
 const DRY    = process.argv.includes('--dry-run');
 const FORCE  = process.argv.includes('--force');
 const RESET  = process.argv.includes('--reset-progress');
+const WRITE_RESULTS = process.argv.includes('--write-results');
 const LIMIT  = (() => { const i = process.argv.indexOf('--limit');  return i > -1 ? parseInt(process.argv[i + 1]) : Infinity; })();
 const OFFSET = (() => { const i = process.argv.indexOf('--offset'); return i > -1 ? parseInt(process.argv[i + 1]) : 0; })();
 const EVARG  = (() => { const i = process.argv.indexOf('--event');  return i > -1 ? process.argv[i + 1] : null; })();
@@ -116,6 +128,35 @@ const ctrlSec = t => {
   return m ? +m[1] * 60 + +m[2] : null;
 };
 const cleanPct = t => { const m = (t || '').match(/\d+%/); return m ? m[0] : null; };
+
+// Map a ufcstats method label onto the DB method vocabulary (CLAUDE.md).
+// Unrecognized labels pass through unchanged so they surface rather than being
+// silently coerced (the run log flags anything outside the known set).
+function mapMethod(raw) {
+  const m = (raw || '').trim();
+  const U = m.toUpperCase();
+  if (U === 'KO/TKO') return 'KO/TKO';
+  if (U === 'SUB' || U === 'SUBMISSION') return 'SUB';
+  if (U === 'U-DEC') return 'U-DEC';
+  if (U === 'S-DEC') return 'S-DEC';
+  if (U === 'M-DEC') return 'M-DEC';
+  if (U === 'DEC') return 'DEC';
+  if (U === 'DQ') return 'DQ';
+  if (U === 'OVERTURNED') return 'Overturned';
+  if (U === 'CNC' || /COULD NOT CONTINUE/.test(U)) return 'CNC';
+  if (U === 'DRAW') return 'Draw';
+  return m || null;
+}
+
+// Result type from the event-row flag(s). ufcstats lists the winner first, so a
+// 'win' flag attributes to the first-listed fighter; draws/NCs have no winner.
+function resultFromFlags(flags) {
+  const s = new Set(flags);
+  if (s.has('win')) return 'win';
+  if (s.has('draw')) return 'draw';
+  if (s.has('nc')) return 'no_contest';
+  return null;
+}
 
 // Every stats-table cell holds two <p>: index 0 = first page fighter, 1 = second.
 function cellPair($, td) {
@@ -293,7 +334,7 @@ function saveProgress(p) {
 
 // ── Main ────────────────────────────────────────────────────────────────────
 async function main() {
-  console.log(`ufcstats fight-stats scraper ${DRY ? '*** DRY RUN ***' : '*** APPLY ***'}\n`);
+  console.log(`ufcstats fight-stats scraper ${DRY ? '*** DRY RUN ***' : '*** APPLY ***'}${WRITE_RESULTS ? '  [+result-reader]' : ''}\n`);
 
   const events = await loadAll('events', 'id, ufc_id, name, date');
   const fighters = await loadAll('fighters', 'id, ufc_id, first_name, last_name');
@@ -309,8 +350,12 @@ async function main() {
   fights.forEach(f => { (fightsByEvent[f.event_id] = fightsByEvent[f.event_id] || []).push(f); });
 
   const progress = loadProgress();
-  const needsStats = f => f.result && f.result !== 'upcoming' &&
-    (FORCE || (!f.rounds_data && !progress.noStatsFights[f.id]));
+  // With --write-results, fights that still lack a result become eligible too
+  // (that's the point — nothing else writes results for 2026+ events). Without
+  // it, targeting is exactly as before (needs a result already set + no stats).
+  const needsResult = f => WRITE_RESULTS && (!f.result || f.result === 'upcoming');
+  const needsStats = f => needsResult(f) ||
+    (f.result && f.result !== 'upcoming' && (FORCE || (!f.rounds_data && !progress.noStatsFights[f.id])));
 
   let targets = events
     .filter(e => e.ufc_id && e.date < TODAY)
@@ -326,7 +371,7 @@ async function main() {
   await solveGate();
 
   const log = { updated: [], noStats: [], unmatched: [], errors: [], samplePayloads: [] };
-  let processed = 0, totalUpdated = 0, totalNoStats = 0;
+  let processed = 0, totalUpdated = 0, totalNoStats = 0, totalResults = 0;
 
   for (const ev of targets) {
     processed++;
@@ -340,11 +385,21 @@ async function main() {
 
     const $ = cheerio.load(evHtml);
     const pageRows = $('tr[data-link*="/fight-details/"]').map((_, tr) => {
+      const cols = $(tr).find('td');
       const fids = $(tr).find('a[href*="/fighter-details/"]').map((_, a) => ({
         ufcId: ($(a).attr('href') || '').split('/').pop(),
         name: $(a).text().trim(),
       })).get();
-      return { fightId: ($(tr).attr('data-link') || '').split('/').pop(), fighters: fids.slice(0, 2) };
+      const colP = i => $(cols[i]).find('p').map((_, x) => $(x).text().replace(/\s+/g, ' ').trim()).get();
+      return {
+        fightId: ($(tr).attr('data-link') || '').split('/').pop(),
+        fighters: fids.slice(0, 2),
+        // result columns on the event page: 0 flag | 7 method | 8 round | 9 time
+        flags: $(cols[0]).find('.b-flag__text').map((_, x) => $(x).text().trim().toLowerCase()).get(),
+        methodRaw: (colP(7)[0] || '').trim(),
+        round: parseInt((colP(8)[0] || '').trim(), 10) || null,
+        time: (colP(9)[0] || '').trim() || null,
+      };
     }).get().filter(r => r.fightId && r.fighters.length === 2);
 
     // index DB fights by ufc_id pair and by normalized-name pair (consume on match)
@@ -367,29 +422,80 @@ async function main() {
 
     for (const row of pageRows) {
       const dbf = findDbFight(row);
-      if (!dbf) { evUnmatched++; log.unmatched.push(`${evLabel}: ${row.fighters[0].name} vs ${row.fighters[1].name} (${row.fightId})`); continue; }
+      if (!dbf) {
+        evUnmatched++;
+        log.unmatched.push(`${evLabel}: ${row.fighters[0].name} vs ${row.fighters[1].name} (${row.fightId})`);
+        if (DRY) console.log(`    ! unmatched source row (no DB fight): ${row.fighters[0].name} vs ${row.fighters[1].name}`);
+        continue;
+      }
       matched.add(dbf.id);
+
+      // ── result parsed from the event-page row (winner is listed first) ──
+      const rowResult = resultFromFlags(row.flags);
+      let winnerId = null;
+      if (rowResult === 'win') {
+        const w = row.fighters[0];
+        winnerId = [dbf.fighter1_id, dbf.fighter2_id].find(id => fighterById[id]?.ufc_id && fighterById[id].ufc_id === w.ufcId)
+                || [dbf.fighter1_id, dbf.fighter2_id].find(id => norm(fname(id)) === norm(w.name)) || null;
+      }
+      // Orientation A: on a win, fighter1_id must be the winner — swap when the
+      // DB has the loser as fighter1. Only reorder when actually writing results,
+      // so with the flag off the stats mapping is identical to before.
+      const swap = WRITE_RESULTS && rowResult === 'win' && winnerId && winnerId !== dbf.fighter1_id;
+      const desiredF1 = swap ? winnerId : dbf.fighter1_id;
+      const desiredF2 = swap ? dbf.fighter1_id : dbf.fighter2_id;
+      const resultFields = {};
+      if (WRITE_RESULTS && rowResult) {
+        if (swap) { resultFields.fighter1_id = desiredF1; resultFields.fighter2_id = desiredF2; }
+        resultFields.result = rowResult;
+        resultFields.winner_id = rowResult === 'win' ? winnerId : null;
+        if (row.methodRaw) resultFields.method = mapMethod(row.methodRaw);
+        if (row.round) resultFields.round = row.round;
+        if (row.time) resultFields.time = row.time;
+      }
+      const label = `${fname(desiredF1)} vs ${fname(desiredF2)}`;
+      const methodOut = mapMethod(row.methodRaw);
+      const swapNote = swap ? '  [orientation-A SWAP: winner was DB fighter2]' : '';
+      const methodKnown = /^(KO\/TKO|SUB|U-DEC|S-DEC|M-DEC|DEC|DQ|Overturned|CNC|Draw)$/.test(methodOut || '');
+      const flagNote = (rowResult && rowResult !== 'win') ? `  [${rowResult.toUpperCase()} — no winner]`
+                     : (rowResult === 'win' && !methodKnown) ? `  [unmapped method: "${row.methodRaw}"]` : '';
+      const logPlanned = kind => {
+        if (!(DRY && WRITE_RESULTS && rowResult)) return;
+        const verdict = rowResult === 'win'
+          ? `${fname(desiredF1)} def. ${fname(desiredF2)} by ${methodOut} R${row.round} ${row.time}`
+          : `${label} — ${rowResult}`;
+        console.log(`    · ${verdict}  (${kind})${swapNote}${flagNote}`);
+      };
 
       await sleep(DELAY);
       let parsed;
       try { parsed = parseFightPage(await get(`${BASE}/fight-details/${row.fightId}`)); }
       catch (e) { evErrors++; log.errors.push(`${evLabel}: fight ${row.fightId} failed (${e.message})`); continue; }
 
+      // No per-round stats posted: still write the result read off the event page.
       if (!parsed || !parsed.totals) {
         evNoStats++; totalNoStats++;
         progress.noStatsFights[dbf.id] = row.fightId;
-        log.noStats.push(`${evLabel}: ${row.fighters[0].name} vs ${row.fighters[1].name}`);
+        log.noStats.push(`${evLabel}: ${label}`);
+        if (WRITE_RESULTS && rowResult) {
+          if (!DRY) {
+            const { error } = await supabase.from('fights').update(resultFields).eq('id', dbf.id);
+            if (error) { evErrors++; log.errors.push(`${evLabel}: result-only update ${label} failed: ${error.message}`); continue; }
+          }
+          totalResults++;
+          logPlanned('result-only, no stats');
+          log.updated.push(`${evLabel}: ${label} — result-only ${rowResult}/${methodOut}/R${row.round} ${row.time}`);
+        }
         continue;
       }
 
-      // map page fighter order onto DB fighter1/fighter2
-      const f1 = fighterById[dbf.fighter1_id];
-      let idx1 = parsed.pageFighters.findIndex(p => f1?.ufc_id && p.ufcId === f1.ufc_id);
-      if (idx1 === -1) idx1 = parsed.pageFighters.findIndex(p => norm(p.name) === norm(fname(dbf.fighter1_id)));
+      // map page fighters onto the DESIRED fighter1 (= winner on wins)
+      const wantF1 = fighterById[desiredF1];
+      let idx1 = parsed.pageFighters.findIndex(p => wantF1?.ufc_id && p.ufcId === wantF1.ufc_id);
+      if (idx1 === -1) idx1 = parsed.pageFighters.findIndex(p => norm(p.name) === norm(fname(desiredF1)));
       if (idx1 === -1) { evErrors++; log.errors.push(`${evLabel}: cannot map fighter1 for ${row.fightId}`); continue; }
 
-      const payload = buildPayload(parsed, idx1);
-      const label = `${fname(dbf.fighter1_id)} vs ${fname(dbf.fighter2_id)}`;
+      const payload = { ...buildPayload(parsed, idx1), ...resultFields };
       if (log.samplePayloads.length < 3) log.samplePayloads.push({ fight: label, event: evLabel, payload });
 
       if (!DRY) {
@@ -397,7 +503,9 @@ async function main() {
         if (error) { evErrors++; log.errors.push(`${evLabel}: update ${label} failed: ${error.message}`); continue; }
       }
       evUpdated++; totalUpdated++;
-      log.updated.push(`${evLabel}: ${label} — ${payload.rounds_data.length} rounds${payload.judge1_score ? ', scorecards' : ''}`);
+      if (WRITE_RESULTS && rowResult) totalResults++;
+      logPlanned('stats+result');
+      log.updated.push(`${evLabel}: ${label} — ${payload.rounds_data.length} rounds${payload.judge1_score ? ', scorecards' : ''}${WRITE_RESULTS && rowResult ? `, ${rowResult}/${methodOut}` : ''}`);
     }
 
     if (!DRY && !evErrors && evUnmatched === 0) {
@@ -411,6 +519,7 @@ async function main() {
   console.log('\n================ SUMMARY ================');
   console.log(`Events processed: ${processed}`);
   console.log(`Fights ${DRY ? 'parsed (would update)' : 'updated'}: ${totalUpdated}`);
+  console.log(`Results ${DRY ? 'parsed (would write)' : 'written'}: ${totalResults}${WRITE_RESULTS ? '' : '  (--write-results not set)'}`);
   console.log(`Fights with no stats on ufcstats: ${totalNoStats}`);
   console.log(`Unmatched page rows: ${log.unmatched.length}`);
   console.log(`Errors: ${log.errors.length}`);
