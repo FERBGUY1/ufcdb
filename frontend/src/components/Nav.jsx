@@ -8,6 +8,7 @@ export default function Nav() {
   const [q, setQ] = useState('');
   const [results, setResults] = useState(null);
   const [open, setOpen]       = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const ref = useRef(null);
   const timer = useRef(null);
 
@@ -44,6 +45,9 @@ export default function Nav() {
     return () => document.removeEventListener('mousedown', h);
   }, []);
 
+  // close the mobile menu whenever the route changes
+  useEffect(() => { setMenuOpen(false); }, [location.pathname]);
+
   return (
     <nav className="bg-dark-DEFAULT/95 backdrop-blur border-b border-white/[0.06] sticky top-0 z-50">
       <div className="max-w-screen-2xl mx-auto px-4 h-14 flex items-center gap-4">
@@ -59,6 +63,23 @@ export default function Nav() {
             </Link>
           ))}
         </div>
+
+        {/* mobile hamburger — desktop tab row above is lg-only, so show below lg */}
+        <button
+          className="lg:hidden order-last shrink-0 p-2 -mr-2 text-white/70 hover:text-white transition-colors"
+          onClick={() => setMenuOpen(o => !o)}
+          aria-label="Toggle navigation menu"
+          aria-expanded={menuOpen}>
+          {menuOpen ? (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          ) : (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          )}
+        </button>
 
         <div className="flex-1 lg:flex-none flex justify-end" ref={ref}>
           <div className="relative w-full max-w-xs">
@@ -96,6 +117,21 @@ export default function Nav() {
           </div>
         </div>
       </div>
+
+      {/* mobile nav drawer */}
+      {menuOpen && (
+        <div className="lg:hidden border-t border-white/[0.06] bg-dark-DEFAULT/95 backdrop-blur">
+          {links.map(l => (
+            <Link key={l.to} to={l.to}
+              onClick={() => setMenuOpen(false)}
+              className={`block px-4 py-3 text-xs border-b border-white/[0.04] transition-colors ${
+                active(l.to) ? 'text-gold bg-white/[0.03]' : 'text-white/70 hover:text-white hover:bg-white/[0.03]'
+              }`}>
+              {l.label}
+            </Link>
+          ))}
+        </div>
+      )}
     </nav>
   );
 }
