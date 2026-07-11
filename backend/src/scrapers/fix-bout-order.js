@@ -289,10 +289,13 @@ async function fetchWikiFightOrder(wikiUrl) {
           }
         });
 
+        // Strip 1-2 letter parenthetical markers: (c) champion, (ic) interim champion, etc.
+        // NOTE: the old /\([ic]\)/ char class matched only (i) or (c), never (ic) —
+        // interim-champ headliners went unmatched and were never seated at bout_order 0.
         const f1raw = $(cells[f1Idx]).text()
-          .replace(/\([ic]\)/gi, '').replace(/\[\w+\]/g, '').trim();
+          .replace(/\([a-z]{1,2}\)/gi, '').replace(/\[\w+\]/g, '').trim();
         const f2raw = $(cells[f2Idx]).text()
-          .replace(/\([ic]\)/gi, '').replace(/\[\w+\]/g, '').trim();
+          .replace(/\([a-z]{1,2}\)/gi, '').replace(/\[\w+\]/g, '').trim();
         if (!f1raw || !f2raw || f1raw.length > 60 || f2raw.length > 60) return;
 
         tableFights.push({ f1: f1raw, f2: f2raw });

@@ -131,8 +131,9 @@ async function fetchWikiFightOrder(wikiUrl) {
             f1i = ci - 1; f2i = ci + 1;
           }
         });
-        const f1 = $(cells[f1i]).text().replace(/\([ic]\)/gi, '').replace(/\[\w+\]/g, '').trim();
-        const f2 = $(cells[f2i]).text().replace(/\([ic]\)/gi, '').replace(/\[\w+\]/g, '').trim();
+        // (c)/(ic)/etc. champion markers — [a-z]{1,2} so interim (ic) strips too
+        const f1 = $(cells[f1i]).text().replace(/\([a-z]{1,2}\)/gi, '').replace(/\[\w+\]/g, '').trim();
+        const f2 = $(cells[f2i]).text().replace(/\([a-z]{1,2}\)/gi, '').replace(/\[\w+\]/g, '').trim();
         if (!f1 || !f2 || f1.length > 60 || f2.length > 60) return;
         buckets[section].push({ f1, f2 });
       });

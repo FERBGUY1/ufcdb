@@ -157,8 +157,9 @@ async function fetchWikiResults(wikiUrl) {
         if (verbIdx === -1 || winnerIdx < 0 || loserIdx >= cells.length) return;
 
         const verb    = $(cells[verbIdx]).text().trim().toLowerCase();
-        const f1raw   = $(cells[winnerIdx]).text().replace(/\([ic]\)/gi,'').replace(/\[\w+\]/g,'').trim();
-        const f2raw   = $(cells[loserIdx]).text().replace(/\([ic]\)/gi,'').replace(/\[\w+\]/g,'').trim();
+        // (c)/(ic)/etc. champion markers — [a-z]{1,2} so interim (ic) strips too
+        const f1raw   = $(cells[winnerIdx]).text().replace(/\([a-z]{1,2}\)/gi,'').replace(/\[\w+\]/g,'').trim();
+        const f2raw   = $(cells[loserIdx]).text().replace(/\([a-z]{1,2}\)/gi,'').replace(/\[\w+\]/g,'').trim();
         if (!f1raw || !f2raw || f1raw.length > 60 || f2raw.length > 60) return;
 
         // Method, round, time — scan remaining cells
