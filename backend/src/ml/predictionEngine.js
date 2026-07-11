@@ -102,41 +102,122 @@ function predictProb(diffs) {
 
 // ── FACTOR EXPLANATIONS (real numbers, computed values) ───────────────────
 const fmt = (v, dp = 1) => (v == null ? '?' : (+v).toFixed(dp));
-const FACTOR_TEXT = {
-  slpm: (A, B, a, b) => `striking volume: ${A} lands ${fmt(a.slpm, 2)} sig strikes/min vs ${B}'s ${fmt(b.slpm, 2)}`,
-  sapm: (A, B, a, b) => `damage absorbed: ${A} eats ${fmt(a.sapm, 2)} sig strikes/min vs ${B}'s ${fmt(b.sapm, 2)}`,
-  str_acc: (A, B, a, b) => `striking accuracy: ${A} ${fmt(a.str_acc)}% vs ${B} ${fmt(b.str_acc)}%`,
-  str_def: (A, B, a, b) => `striking defense: ${A} avoids ${fmt(a.str_def)}% of strikes vs ${B}'s ${fmt(b.str_def)}%`,
-  td_avg: (A, B, a, b) => `takedown output: ${A} lands ${fmt(a.td_avg, 2)} TD/15min vs ${B}'s ${fmt(b.td_avg, 2)}`,
-  td_acc: (A, B, a, b) => `takedown accuracy: ${A} ${fmt(a.td_acc)}% vs ${B} ${fmt(b.td_acc)}%`,
-  td_def: (A, B, a, b) => `takedown defense: ${A} stuffs ${fmt(a.td_def)}% vs ${B}'s ${fmt(b.td_def)}%`,
-  sub_avg: (A, B, a, b) => `submission threat: ${A} ${fmt(a.sub_avg, 2)} attempts/15min vs ${B} ${fmt(b.sub_avg, 2)}`,
-  kd_per15: (A, B, a, b) => `knockdown power: ${A} scores ${fmt(a.kd_per15, 2)} KD/15min vs ${B}'s ${fmt(b.kd_per15, 2)}`,
-  kd_absorbed_per15: (A, B, a, b) => `durability: ${A} absorbs ${fmt(a.kd_absorbed_per15, 2)} KD/15min vs ${B}'s ${fmt(b.kd_absorbed_per15, 2)}`,
-  ctrl_pct: (A, B, a, b) => `control time: ${A} controls ${fmt(a.ctrl_pct)}% of cage time vs ${B}'s ${fmt(b.ctrl_pct)}%`,
-  cardio_degradation: (A, B, a, b) => `cardio: ${A}'s output ${(a.cardio_degradation ?? 0) <= 0 ? 'rises' : 'drops'} ${fmt(Math.abs(a.cardio_degradation ?? 0))}% R1->R3 vs ${B}'s ${(b.cardio_degradation ?? 0) <= 0 ? 'rise' : 'drop'} of ${fmt(Math.abs(b.cardio_degradation ?? 0))}%`,
-  experience: (A, B, a, b) => `experience: ${A} has ${a.experience} UFC fights vs ${B}'s ${b.experience}`,
-  win_rate: (A, B, a, b) => `career win rate: ${A} ${fmt(a.win_rate)}% vs ${B} ${fmt(b.win_rate)}%`,
-  recent_win_rate: (A, B, a, b) => `recent form: ${A} won ${fmt(a.recent_win_rate, 0)}% of last 3 vs ${B}'s ${fmt(b.recent_win_rate, 0)}%`,
-  form_trend: (A, B, a, b) => `output trend: ${A}'s recent striking is ${(a.form_trend ?? 0) >= 0 ? 'up' : 'down'} ${fmt(Math.abs(a.form_trend ?? 0), 2)}/min on career avg vs ${B} ${(b.form_trend ?? 0) >= 0 ? 'up' : 'down'} ${fmt(Math.abs(b.form_trend ?? 0), 2)}`,
-  age: (A, B, a, b) => `age: ${A} is ${fmt(a.age, 0)} vs ${B} at ${fmt(b.age, 0)}`,
-  reach: (A, B, a, b) => `reach: ${A} ${fmt(a.reach, 0)}" vs ${B} ${fmt(b.reach, 0)}"`,
-  height: (A, B, a, b) => `height: ${A} ${fmt(a.height, 0)}" vs ${B} ${fmt(b.height, 0)}"`,
-  layoff_days: (A, B, a, b) => `activity: ${A} last fought ${fmt(a.layoff_days, 0)} days ago vs ${B}'s ${fmt(b.layoff_days, 0)}`,
+// Every factor leads with the ADVANTAGED fighter (L = the fighter the model's
+// contribution favors) so "who's favored" is unambiguous. The clause is chosen
+// from the ACTUAL values, never from an assumed "good direction" — several model
+// weights are counterintuitive (e.g. height and cardio_degradation favor the
+// shorter / faster-fading fighter), so when the leader sits on the intuitively
+// WORSE raw side we say so ("is favored despite …") instead of inventing an
+// advantage that contradicts the printed numbers.
+//   meta: sfx (per-number suffix, e.g. '%'), desc (trailing descriptor shown
+//         once), dp (decimals), hib (higher-is-intuitively-better),
+//         adv/despite = row clause when the leader is on the better / worse raw
+//         side; advP/despiteP = the same as a bare noun phrase for prose.
+const FACTOR_META = {
+  slpm:              { sfx: '',  desc: 'sig strikes/min',         dp: 2, hib: true,  adv: 'lands the greater striking volume', despite: 'grades ahead despite lower volume',       advP: 'more striking volume',       despiteP: 'lower striking volume' },
+  sapm:              { sfx: '',  desc: 'sig strikes/min absorbed',dp: 2, hib: false, adv: 'absorbs less damage',               despite: 'grades ahead despite absorbing more',     advP: 'less damage absorbed',       despiteP: 'more damage absorbed' },
+  str_acc:           { sfx: '%', desc: '',                        dp: 1, hib: true,  adv: 'is the more accurate striker',      despite: 'grades ahead despite lower accuracy',     advP: 'better striking accuracy',   despiteP: 'lower striking accuracy' },
+  str_def:           { sfx: '%', desc: '',                        dp: 1, hib: true,  adv: 'has the better striking defense',   despite: 'grades ahead despite weaker defense',     advP: 'better striking defense',    despiteP: 'weaker striking defense' },
+  td_avg:            { sfx: '',  desc: 'TD/15min',                dp: 2, hib: true,  adv: 'holds the takedown-volume edge',    despite: 'grades ahead despite fewer takedowns',    advP: 'more takedown volume',       despiteP: 'fewer takedowns' },
+  td_acc:            { sfx: '%', desc: '',                        dp: 1, hib: true,  adv: 'is more accurate on takedowns',     despite: 'grades ahead despite lower TD accuracy',  advP: 'better takedown accuracy',   despiteP: 'lower takedown accuracy' },
+  td_def:            { sfx: '%', desc: '',                        dp: 1, hib: true,  adv: 'defends takedowns better',          despite: 'grades ahead despite weaker TD defense',  advP: 'better takedown defense',    despiteP: 'weaker takedown defense' },
+  sub_avg:           { sfx: '',  desc: 'sub attempts/15min',      dp: 2, hib: true,  adv: 'is the bigger submission threat',   despite: 'grades ahead despite fewer sub attempts', advP: 'a bigger submission threat', despiteP: 'fewer submission attempts' },
+  kd_per15:          { sfx: '',  desc: 'KD/15min',                dp: 2, hib: true,  adv: 'carries more knockdown power',      despite: 'grades ahead despite fewer knockdowns',   advP: 'more knockdown power',       despiteP: 'fewer knockdowns' },
+  kd_absorbed_per15: { sfx: '',  desc: 'KD absorbed/15min',       dp: 2, hib: false, adv: 'is dropped less often',             despite: 'grades ahead despite being dropped more', advP: 'a sturdier chin',            despiteP: 'being dropped more often' },
+  cardio_degradation:{ sfx: '%', desc: 'output drop R1→R3',       dp: 1, hib: false, adv: 'fades less into round 3',           despite: 'grades ahead despite fading more late',   advP: 'better late-round cardio',   despiteP: 'more fade late' },
+  experience:        { sfx: '',  desc: 'UFC fights',              dp: 0, hib: true,  adv: 'is the more experienced fighter',   despite: 'grades ahead despite less experience',    advP: 'more UFC experience',        despiteP: 'less UFC experience' },
+  win_rate:          { sfx: '%', desc: '',                        dp: 1, hib: true,  adv: 'has the stronger career win rate',  despite: 'grades ahead despite a lower win rate',   advP: 'a stronger career win rate', despiteP: 'a lower career win rate' },
+  recent_win_rate:   { sfx: '%', desc: 'over last 3',             dp: 0, hib: true,  adv: 'is in better recent form',          despite: 'grades ahead despite cooler form',        advP: 'better recent form',         despiteP: 'cooler recent form' },
+  form_trend:        { sfx: '',  desc: 'SLpM vs career avg',      dp: 2, hib: true,  adv: 'has rising output momentum',        despite: 'grades ahead despite fading output',      advP: 'rising output momentum',     despiteP: 'fading output' },
+  age:               { sfx: '',  desc: 'yrs',                     dp: 0, hib: false, adv: 'is the younger fighter',            despite: 'grades ahead despite being older',        advP: 'a youth edge',               despiteP: 'an age disadvantage' },
+  layoff_days:       { sfx: '',  desc: 'days since last fight',   dp: 0, hib: false, adv: 'comes in with less ring rust',      despite: 'grades ahead despite a longer layoff',    advP: 'less ring rust',             despiteP: 'a longer layoff' },
+  // reach & height read as an inch advantage when the leader is the bigger one.
+  reach:             { dp: 0, dim: 'reach' },
+  height:            { dp: 0, dim: 'height' },
 };
 
-function buildKeyFactors(nameA, nameB, valsA, valsB, contributions) {
+function factorText(feature, L, lv, tv) {
+  const meta = FACTOR_META[feature];
+  const a = lv[feature], b = tv[feature];
+  const av = fmt(a, meta.dp), bv = fmt(b, meta.dp);
+  if (meta.dim) {
+    const d = fmt(Math.abs(a - b), 0);
+    return a >= b
+      ? `${L} has a ${d}-inch ${meta.dim} advantage (${av}" vs ${bv}")`
+      : `${L} is favored despite giving up ${d} inches of ${meta.dim} (${av}" vs ${bv}")`;
+  }
+  const leaderOnBetterSide = meta.hib ? a >= b : a <= b;
+  const clause = leaderOnBetterSide ? meta.adv : meta.despite;
+  const nums = `${av}${meta.sfx} vs ${bv}${meta.sfx}${meta.desc ? ' ' + meta.desc : ''}`;
+  return `${L} ${clause} (${nums})`;
+}
+
+// Top-5 model contributions as structured factors. Each carries the finished
+// evidence `row` string plus fields the prose fallback reuses (leader, whether
+// the leader sits on the intuitively better side, a bare noun `phrase`, `nums`).
+function computeFactors(nameA, nameB, valsA, valsB, contributions) {
   return contributions
     .map((c, j) => ({ feature: FEATURES[j], c }))
     .filter(({ feature, c }) => Math.abs(c) > 0.01 && valsA[feature] != null && valsB[feature] != null)
     .sort((a, b) => Math.abs(b.c) - Math.abs(a.c))
     .slice(0, 5)
     .map(({ feature, c }) => {
-      const text = FACTOR_TEXT[feature](nameA, nameB, valsA, valsB);
-      const leader = c > 0 ? nameA : nameB;
-      const pts = Math.abs(c * 25); // rough logit->probability-points at p~0.5
-      return `${text} — edge ${leader} (~${pts.toFixed(0)} pts of win probability)`;
+      // c > 0 means the feature favors fighter A; phrase from the favored side.
+      const leaderIsA = c > 0;
+      const leader = leaderIsA ? nameA : nameB;
+      const lv = leaderIsA ? valsA : valsB;
+      const tv = leaderIsA ? valsB : valsA;
+      const meta = FACTOR_META[feature];
+      const a = lv[feature], b = tv[feature];
+      const leaderBetter = meta.dim ? a >= b : (meta.hib ? a >= b : a <= b);
+      const pts = Math.max(1, Math.round(Math.abs(c * 25))); // rough logit->prob-points at p~0.5
+      const av = fmt(a, meta.dp), bv = fmt(b, meta.dp);
+      const nums = meta.dim
+        ? `${av}" vs ${bv}"`
+        : `${av}${meta.sfx} vs ${bv}${meta.sfx}${meta.desc ? ' ' + meta.desc : ''}`;
+      const phrase = meta.dim
+        ? `a ${fmt(Math.abs(a - b), 0)}-inch ${meta.dim} ${a >= b ? 'advantage' : 'disadvantage'}`
+        : (leaderBetter ? meta.advP : meta.despiteP);
+      return {
+        feature, leader, leaderBetter, pts, phrase, nums,
+        row: `${factorText(feature, leader, lv, tv)} (~${pts} pts of win probability)`,
+      };
     });
+}
+
+// Join a list into readable prose: "a", "a and b", "a, b, and c".
+function proseList(items) {
+  if (items.length <= 1) return items[0] || '';
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+}
+
+// No-API-key fallback narrative: natural prose from the same structured factors.
+// Only intuitive-direction edges are woven into "the case" / "the path" so the
+// prose never reads backwards; counterintuitive factors still show as evidence
+// rows but are omitted here. Purely factual — pick, probability, and numbers.
+function fallbackNarrative(name1, name2, f1Pct, f2Pct, factors) {
+  const favIsF1 = f1Pct >= f2Pct;
+  const favName = favIsF1 ? name1 : name2;
+  const dogName = favIsF1 ? name2 : name1;
+  const favPct = favIsF1 ? f1Pct : f2Pct;
+  const dogPct = favIsF1 ? f2Pct : f1Pct;
+  const item = f => `${f.phrase} (${f.nums})`;
+  const favSup = factors.filter(f => f.leader === favName && f.leaderBetter);
+  const dogSup = factors.filter(f => f.leader === dogName && f.leaderBetter);
+
+  const s1 = `The model makes ${favName} the pick at ${favPct.toFixed(1)}% to ${dogName}'s ${dogPct.toFixed(1)}%.`;
+  const s2 = favSup.length
+    ? `Its case is built on ${proseList(favSup.map(item))}.`
+    : `Its edge is thin and rests on small statistical margins rather than any one dominant advantage.`;
+  const s3 = dogSup.length
+    ? ` ${dogName}'s path runs through ${proseList(dogSup.slice(0, 2).map(item))}.`
+    : '';
+  const margin = favPct - dogPct;
+  const s4 = margin >= 25 ? ` The model reads this as a clear edge for ${favName}.`
+           : margin >= 12 ? ` On balance it gives ${favName} the nod.`
+           : ` It rates the matchup close, with ${favName} a slight favorite.`;
+  return s1 + ' ' + s2 + s3 + s4;
 }
 
 // ── METHOD BREAKDOWN (empirical finish rates, not ratings) ─────────────────
@@ -161,9 +242,23 @@ function computeMethodBreakdown(tlWinner, tlLoser, winProb) {
 }
 
 // ── ROUND PROJECTIONS (real per-round cardio curves) ───────────────────────
-function computeRoundProjections(f1, f2, snap1, snap2) {
+// Scheduled rounds for a hypothetical matchup, derived from what the prediction
+// already knows: the two fighters' SHARED bout history in the loaded timelines.
+// Each timeline entry carries scheduledRounds (5 when time_format is "5 Rnd",
+// else 3) and an isTitle flag. A title bout in their history -> 5; otherwise the
+// max scheduled rounds across their shared bouts (captures 5-round main events).
+// Never-fought pairings have no reliable signal -> default 3 (never 5).
+function scheduledRoundsForMatchup(tl1, id2) {
+  const shared = (tl1 || []).filter(e => e.oppId === id2);
+  if (!shared.length) return 3;
+  return shared.some(e => e.isTitle)
+    ? 5
+    : Math.max(...shared.map(e => e.scheduledRounds || 3));
+}
+
+function computeRoundProjections(f1, f2, snap1, snap2, scheduledRounds = 3) {
   const rounds = [];
-  for (let r = 1; r <= 5; r++) {
+  for (let r = 1; r <= scheduledRounds; r++) {
     const o1 = snap1.cardio['r' + r] ?? snap1.slpm ?? 4;
     const o2 = snap2.cardio['r' + r] ?? snap2.slpm ?? 4;
     const share = o1 / (o1 + o2 || 1);
@@ -243,12 +338,14 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   const f2WinProb = 1 - f1WinProb;
 
   const name1 = `${f1.first_name} ${f1.last_name}`, name2 = `${f2.first_name} ${f2.last_name}`;
-  const keyFactors = buildKeyFactors(name1, name2, vals1, vals2, contributions);
+  const factors = computeFactors(name1, name2, vals1, vals2, contributions);
+  const keyFactors = factors.map(f => f.row);
   const lowData = snap1.stats_fights < 2 || snap2.stats_fights < 2;
 
   const f1Methods = computeMethodBreakdown(tl1, tl2, f1WinProb);
   const f2Methods = computeMethodBreakdown(tl2, tl1, f2WinProb);
-  const roundProjections = computeRoundProjections(f1, f2, snap1, snap2);
+  const scheduledRounds = scheduledRoundsForMatchup(tl1, fighter2Id);
+  const roundProjections = computeRoundProjections(f1, f2, snap1, snap2, scheduledRounds);
   const stats = { f1WinPct: (f1WinProb * 100).toFixed(1), f2WinPct: (f2WinProb * 100).toFixed(1) };
   const methodLine = `${f1.last_name}: KO ${f1Methods.ko}% / SUB ${f1Methods.sub}% / DEC ${f1Methods.dec}% — ${f2.last_name}: KO ${f2Methods.ko}% / SUB ${f2Methods.sub}% / DEC ${f2Methods.dec}%`;
 
@@ -258,7 +355,7 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
       aiBreakdown = await generateNarrative(f1, f2, stats, keyFactors, methodLine);
     } catch (e) {
       console.error('AI narrative failed:', e.message);
-      aiBreakdown = `${name1} vs ${name2}: the model gives ${f1.first_name} a ${stats.f1WinPct}% win probability based on ${keyFactors.length} statistical edges: ${keyFactors.join('; ')}.`;
+      aiBreakdown = fallbackNarrative(name1, name2, parseFloat(stats.f1WinPct), parseFloat(stats.f2WinPct), factors);
     }
   }
 

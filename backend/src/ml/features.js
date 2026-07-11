@@ -19,7 +19,6 @@ const FEATURES = [
   'sub_avg',            // submission attempts / 15 min
   'kd_per15',           // knockdowns scored / 15 min
   'kd_absorbed_per15',  // knockdowns absorbed / 15 min
-  'ctrl_pct',           // control time %
   'cardio_degradation', // output drop R1->R3 % (negative = increases)
   'experience',         // completed UFC fights
   'win_rate',           // career win % (of decided fights)
@@ -45,7 +44,7 @@ function sideValues(snap, snapRecent, fighter, asOfDate) {
     slpm: snap.slpm, sapm: snap.sapm, str_acc: snap.str_acc, str_def: snap.str_def,
     td_avg: snap.td_avg, td_acc: snap.td_acc, td_def: snap.td_def, sub_avg: snap.sub_avg,
     kd_per15: snap.kd_per15, kd_absorbed_per15: snap.kd_absorbed_per15,
-    ctrl_pct: snap.ctrl_pct, cardio_degradation: snap.cardio_degradation,
+    cardio_degradation: snap.cardio_degradation,
     experience: snap.total_fights,
     win_rate: decided > 0 ? (snap.record.wins / decided) * 100 : null,
     recent_win_rate: snapRecent.stats_win_rate,
