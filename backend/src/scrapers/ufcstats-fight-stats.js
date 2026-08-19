@@ -38,6 +38,9 @@
  *   --limit N          process at most N events
  *   --offset N         skip the first N target events
  *   --event "substr"   only events whose DB name contains substr
+ *   --ufc-id ID        only the event with this exact ufcstats event id (safest
+ *                      targeting — --event is a substring over DB names and can
+ *                      silently hit an older event when combined with --limit)
  *   --force            re-scrape fights even if rounds_data already set
  *   --reset-progress   ignore + overwrite the progress file
  *   --delay MS         per-request delay (default 1200)
@@ -60,6 +63,7 @@ const WRITE_RESULTS = process.argv.includes('--write-results');
 const LIMIT  = (() => { const i = process.argv.indexOf('--limit');  return i > -1 ? parseInt(process.argv[i + 1]) : Infinity; })();
 const OFFSET = (() => { const i = process.argv.indexOf('--offset'); return i > -1 ? parseInt(process.argv[i + 1]) : 0; })();
 const EVARG  = (() => { const i = process.argv.indexOf('--event');  return i > -1 ? process.argv[i + 1] : null; })();
+const UFCID  = (() => { const i = process.argv.indexOf('--ufc-id'); return i > -1 ? process.argv[i + 1] : null; })();
 const DELAY  = (() => { const i = process.argv.indexOf('--delay');  return i > -1 ? parseInt(process.argv[i + 1]) : 1200; })();
 const LOGFILE = (() => { const i = process.argv.indexOf('--log');   return i > -1 ? process.argv[i + 1] : 'ufcstats-stats-log.json'; })();
 
@@ -359,6 +363,7 @@ async function main() {
 
   let targets = events
     .filter(e => e.ufc_id && e.date < TODAY)
+    .filter(e => !UFCID || e.ufc_id === UFCID)
     .filter(e => (fightsByEvent[e.id] || []).some(needsStats))
     .filter(e => !EVARG || e.name.toLowerCase().includes(EVARG.toLowerCase()))
     .filter(e => FORCE || !progress.completedEvents[e.ufc_id])
