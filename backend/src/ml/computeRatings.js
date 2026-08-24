@@ -1,14 +1,27 @@
 /**
  * Compute contextual performance ratings for all fighters.
  * Run after importing fight data: node src/ml/computeRatings.js
+ *
+ * Flags:
+ *   --ids "uuid,uuid,..."  restrict to specific fighter ids (e.g. one event's
+ *                          card) instead of the default all-fighters sweep.
+ *                          Keep batches <= 100 ids — .in() URLs get too long.
  */
 require('dotenv').config();
 const supabase = require('../db/client');
 const { computeResumeStrength, detectCareerArc } = require('./qualityEngine');
 
+const IDS = (() => {
+  const i = process.argv.indexOf('--ids');
+  return i > -1 ? process.argv[i + 1].split(',').map(s => s.trim()).filter(Boolean) : null;
+})();
+
 async function main() {
-  console.log('Computing fighter ratings...');
-  const { data: fighters } = await supabase.from('fighters').select('id, wins, losses, slpm, sapm, td_avg, td_def, wins_ko, wins_sub').limit(2000);
+  console.log(`Computing fighter ratings...${IDS ? `  (scoped to ${IDS.length} ids)` : ''}`);
+  const cols = 'id, wins, losses, slpm, sapm, td_avg, td_def, wins_ko, wins_sub';
+  const { data: fighters } = IDS
+    ? await supabase.from('fighters').select(cols).in('id', IDS)
+    : await supabase.from('fighters').select(cols).limit(2000);
   if (!fighters) return;
   let updated = 0;
   for (const f of fighters) {
