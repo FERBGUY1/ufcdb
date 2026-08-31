@@ -74,11 +74,18 @@ async function main() {
   const existingFights = new Set(); // "event_id:f1_id:f2_id"
   const { data: allFights } = await supabase
     .from('fights')
-    .select('event_id, fighter1_id, fighter2_id')
+    .select('id, event_id, fighter1_id, fighter2_id')
     .in('event_id', events.map(e => e.id));
+  const unresolvedFights = [];
   for (const f of allFights || []) {
+    // A null id interpolates as the literal "null", so bouts with a name-only
+    // participant share a key and one of them stops suppressing its own insert.
+    if (!f.fighter1_id || !f.fighter2_id) { unresolvedFights.push(f); continue; }
     existingFights.add(`${f.event_id}:${f.fighter1_id}:${f.fighter2_id}`);
     existingFights.add(`${f.event_id}:${f.fighter2_id}:${f.fighter1_id}`);
+  }
+  if (unresolvedFights.length) {
+    console.log(`  *** ${unresolvedFights.length} existing fight(s) have a null fighter id and cannot suppress a duplicate insert: ${unresolvedFights.map(f => f.id.slice(0, 8)).join(', ')}`);
   }
 
   let newFighters = 0, newFights = 0, eventCount = 0;

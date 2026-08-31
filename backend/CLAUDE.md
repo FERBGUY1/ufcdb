@@ -169,3 +169,25 @@ Run `node src/validate.js` to check for:
 - `bout_order` conflicts (same order value within same event + card_position)
 - Fighter record mismatches (stored wins/losses vs recalculated from fights)
 - Fighters appearing twice at same modern (post-1999) event
+- Decided fights with a null `fighter1_id`/`fighter2_id` (check 6)
+
+### Check 6 — decided fights with a null participant
+
+An **upcoming** bout may legitimately hold a null fighter id (booked, but the fighter
+row does not exist yet). A **decided** one may not: `result` is set but one side has no
+id. Such a row cannot be scored by fighter, cannot be matched by id, and is invisible
+to every pair-keyed map in the scrapers.
+
+`join()` renders null as an empty string and object keys stringify it as `"null"`, so
+two placeholder bouts on one card collapse onto a shared key. Every id-keyed map in the
+scrapers and in checks 1 and 5 therefore **excludes** null-participant rows and check 6
+reports them on their own terms. `validate.js` and `fix-fighter-records.js` use
+identical null-safe arithmetic — a bout with one known participant counts for that
+fighter and skips the missing side. If the two ever diverge, check 4 reports a mismatch
+that `fix-fighter-records.js` can never resolve.
+
+When `result = 'win'` and both `winner_id` and `fighter1_id` are null, who won is
+unknowable from the row; both files credit nobody rather than guess.
+
+`backfill-event.js` never auto-deletes a null-participant row (it is unmatchable by id,
+so it always classifies as stale even when it is on the source card).

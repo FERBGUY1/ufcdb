@@ -24,6 +24,7 @@ async function main() {
   let page = 0;
   const PAGE = 1000;
   let total = 0;
+  let undecidable = 0;
 
   while (true) {
     const { data: rows, error } = await supabase
@@ -38,30 +39,40 @@ async function main() {
 
     for (const r of rows) {
       const { fighter1_id: f1, fighter2_id: f2, winner_id, result, method } = r;
-      if (!f1 || !f2) continue;
-      if (!records[f1]) records[f1] = init();
-      if (!records[f2]) records[f2] = init();
+      // A bout with one name-only participant still happened for the KNOWN fighter:
+      // count their side and skip only the missing one. Dropping the whole row (the
+      // old `if (!f1 || !f2) continue`) left the known fighter's record permanently
+      // one short, and disagreed with validate.js, which counts the same row.
+      if (!f1 && !f2) continue;
+      if (f1 && !records[f1]) records[f1] = init();
+      if (f2 && !records[f2]) records[f2] = init();
+      const bump = (id, field) => {
+        if (!id) return;
+        if (!records[id]) records[id] = init();
+        records[id][field]++;
+      };
 
       if (result === 'win') {
         // Use winner_id when set (API-Sports fights may have winner as either fighter1 or fighter2).
-        // Fall back to fighter1=winner for legacy ufcstats data (winner always listed first).
+        // Fall back to fighter1=winner for legacy ufcstats data (winner always listed first) --
+        // but only when fighter1 is actually known. With both winner_id and fighter1_id null
+        // there is no way to tell who won, so credit nobody rather than guessing.
         const winnerId = winner_id || f1;
+        if (!winnerId) { undecidable++; continue; }
         const loserId  = winnerId === f1 ? f2 : f1;
-        if (!records[winnerId]) records[winnerId] = init();
-        if (!records[loserId])  records[loserId]  = init();
-        records[winnerId].wins++;
-        records[loserId].losses++;
+        bump(winnerId, 'wins');
+        bump(loserId, 'losses');
         const bucket = splitBucket(method);
         if (bucket) {
-          records[winnerId]['wins_' + bucket]++;
-          records[loserId]['losses_' + bucket]++;
+          bump(winnerId, 'wins_' + bucket);
+          bump(loserId, 'losses_' + bucket);
         }
       } else if (result === 'draw') {
-        records[f1].draws++;
-        records[f2].draws++;
+        bump(f1, 'draws');
+        bump(f2, 'draws');
       } else if (result === 'no_contest') {
-        records[f1].no_contests++;
-        records[f2].no_contests++;
+        bump(f1, 'no_contests');
+        bump(f2, 'no_contests');
       }
     }
 
@@ -73,6 +84,9 @@ async function main() {
   const fighterIds = Object.keys(records);
   console.log(`  Processed ${total} fight rows`);
   console.log(`  Calculated records for ${fighterIds.length} fighters`);
+  if (undecidable) {
+    console.log(`  *** ${undecidable} decided bout(s) skipped: result='win' with both winner_id and fighter1_id null — winner unknowable. Run validate.js check 6. ***`);
+  }
 
   const RECORD_COLS = ['wins', 'losses', 'draws', 'no_contests',
     'wins_ko', 'wins_sub', 'wins_dec', 'losses_ko', 'losses_sub', 'losses_dec'];

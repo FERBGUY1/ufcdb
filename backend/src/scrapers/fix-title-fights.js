@@ -603,11 +603,21 @@ async function main() {
   console.log('Loading fights...');
   const fightRows = await loadAll('fights', 'id, event_id, fighter1_id, fighter2_id, is_title_fight, is_interim_title');
   const fightMap  = {};
+  // join() renders null as an empty string, so bouts holding a name-only participant
+  // collapse onto a shared key and last-write-wins here -- which would let a title
+  // flag be written to the wrong bout of the colliding pair. Key resolved bouts only.
+  const unresolvedRows = fightRows.filter(f => !f.fighter1_id || !f.fighter2_id);
   for (const f of fightRows) {
+    if (!f.fighter1_id || !f.fighter2_id) continue;
     const key = `${f.event_id}:${[f.fighter1_id, f.fighter2_id].sort().join(':')}`;
     fightMap[key] = f;
   }
   console.log(`  ${fightRows.length} fights loaded\n`);
+  if (unresolvedRows.length) {
+    console.log(`  *** ${unresolvedRows.length} fight(s) with a null fighter id excluded from the match map — their title flags will not be set:`);
+    unresolvedRows.forEach(f => console.log(`      ${f.id} (event ${f.event_id})`));
+    console.log('');
+  }
 
   let wiki = { found: 0, updated: 0, alreadySet: 0, noMatch: 0 };
   let api  = { found: 0, updated: 0, alreadySet: 0, noMatch: 0 };

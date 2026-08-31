@@ -70,9 +70,18 @@ async function main() {
   console.log('  ' + fighters.length + ' fighters');
 
   // Load existing fight pairs to avoid duplicates
-  const fightRefs = await loadAll('fights', 'event_id, fighter1_id, fighter2_id');
-  const fightSet = new Set(fightRefs.map(f => f.event_id + ':' + f.fighter1_id + ':' + f.fighter2_id));
+  const fightRefs = await loadAll('fights', 'id, event_id, fighter1_id, fighter2_id');
+  // A null id interpolates as the literal "null", so two bouts on one card each
+  // holding a name-only participant produce the same key and one stops suppressing
+  // its own insert. Only fully-resolved pairs belong in this set.
+  const unresolvedRefs = fightRefs.filter(f => !f.fighter1_id || !f.fighter2_id);
+  const fightSet = new Set(fightRefs
+    .filter(f => f.fighter1_id && f.fighter2_id)
+    .map(f => f.event_id + ':' + f.fighter1_id + ':' + f.fighter2_id));
   console.log('  ' + fightRefs.length + ' existing fights');
+  if (unresolvedRefs.length) {
+    console.log(`  *** ${unresolvedRefs.length} with a null fighter id, excluded from the duplicate guard: ${unresolvedRefs.map(f => f.id.slice(0, 8)).join(', ')}`);
+  }
 
   // Load events
   const events = await loadAll('events', 'id, name, date');

@@ -218,7 +218,13 @@ async function main() {
 
   const fighterById = Object.fromEntries(fighters.map(f => [f.id, f]));
   const fullName = f => `${f.first_name} ${f.last_name}`;
-  const fname = id => fighterById[id] ? fullName(fighterById[id]) : '<missing>';
+  // A null id (name-only participant) and a dangling id are different problems and
+  // must not share a sentinel: both feed norm()/tokenKey() into pair keys, where one
+  // shared value silently collides unrelated bouts.
+  const fname = id => {
+    if (!id) return '<no fighter row>';
+    return fighterById[id] ? fullName(fighterById[id]) : '<missing>';
+  };
 
   // global name indexes for fighter resolution
   const byNorm = {}, byToken = {};
@@ -383,6 +389,19 @@ async function main() {
 
     const dbFights = fightsByEvent[ev.id] || [];
 
+    // Every match pass below keys off fighter NAMES resolved through fname(), so a
+    // bout with a name-only participant (null fighter id) resolves to a sentinel: it
+    // can never match its own Wikipedia row, gets classified MISSING, and is
+    // re-inserted as a duplicate alongside the row that already exists. That is the
+    // exact failure that cost ~17 duplicate fights on the first apply. Until the bout
+    // carries fighter1_name/fighter2_name to match on, skip the whole event rather
+    // than guess.
+    const unresolvedDb = dbFights.filter(f => !f.fighter1_id || !f.fighter2_id);
+    if (unresolvedDb.length) {
+      log.errors.push(`${evLabel}: SKIPPED — ${unresolvedDb.length} DB bout(s) have a null fighter id (${unresolvedDb.map(f => f.id.slice(0, 8)).join(', ')}); re-importing would duplicate them.`);
+      continue;
+    }
+
     // Per-table overlap guard: some minor events were merged into combined
     // series articles, so a fetched page can contain other events' result
     // tables. Keep only tables where at least one row matches a DB fight of
@@ -393,6 +412,7 @@ async function main() {
       // sibling event in the same combined article (Means/Salas, 2012).
       const pairSet = new Set(), tokenSet = new Set();
       for (const f of dbFights) {
+        if (!f.fighter1_id || !f.fighter2_id) continue; // sentinel name would collide
         const a = norm(fname(f.fighter1_id)), b = norm(fname(f.fighter2_id));
         pairSet.add([a, b].sort().join(':'));
         tokenSet.add([tokenKey(fname(f.fighter1_id)), tokenKey(fname(f.fighter2_id))].sort().join(':'));
@@ -416,6 +436,7 @@ async function main() {
     }
     const dbByPair = {}, dbByTokenPair = {};
     for (const f of dbFights) {
+      if (!f.fighter1_id || !f.fighter2_id) continue; // sentinel name would collide
       const k = [norm(fname(f.fighter1_id)), norm(fname(f.fighter2_id))].sort().join(':');
       (dbByPair[k] = dbByPair[k] || []).push(f);
       const tk = [tokenKey(fname(f.fighter1_id)), tokenKey(fname(f.fighter2_id))].sort().join(':');
@@ -473,7 +494,9 @@ async function main() {
       }
       if (dbf) {
         matchedDb.add(dbf.id);
-        seenPairs.add([dbf.fighter1_id, dbf.fighter2_id].sort().join(':'));
+        // join() renders null as '', so a null side would make this key match any
+        // other single-fighter bout. Only record fully-resolved pairs.
+        if (dbf.fighter1_id && dbf.fighter2_id) seenPairs.add([dbf.fighter1_id, dbf.fighter2_id].sort().join(':'));
         rowMatch.push({ wr, dbf });
         continue;
       }

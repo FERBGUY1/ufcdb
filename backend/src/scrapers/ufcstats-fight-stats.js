@@ -435,6 +435,18 @@ async function main() {
       }
       matched.add(dbf.id);
 
+      // A bout with a name-only participant cannot take a result here. The swap below
+      // would set desiredF2 = dbf.fighter1_id, writing the null into fighter2_id while
+      // stamping result='win' -- manufacturing a COMPLETED fight with a null side, the
+      // one row shape fix-fighter-records.js and validate.js cannot score. Leave the
+      // row alone until both fighters resolve.
+      if (!dbf.fighter1_id || !dbf.fighter2_id) {
+        evUnmatched++;
+        log.unmatched.push(`${evLabel}: ${row.fighters[0].name} vs ${row.fighters[1].name} — DB fight ${dbf.id.slice(0, 8)} has a null fighter id, skipped`);
+        if (DRY) console.log(`    ! null participant on DB fight ${dbf.id.slice(0, 8)} — result NOT written`);
+        continue;
+      }
+
       // ── result parsed from the event-page row (winner is listed first) ──
       const rowResult = resultFromFlags(row.flags);
       let winnerId = null;

@@ -238,7 +238,14 @@ async function main() {
   const wcByNorm = {}; (wcs || []).forEach(w => { wcByNorm[norm(w.name)] = w; });
   const fighterById = Object.fromEntries(fighters.map(f => [f.id, f]));
   const fighterByUfcId = {}; fighters.forEach(f => { if (f.ufc_id) fighterByUfcId[f.ufc_id] = f; });
-  const fname = id => { const f = fighterById[id]; return f ? `${f.first_name} ${f.last_name}` : String(id); };
+  // Two different failure modes, kept distinct in the review output: a null id is a
+  // name-only participant (the bout is booked, the fighter row does not exist yet); a
+  // non-null id with no row is a dangling FK. Neither may print as a bare "null".
+  const fname = id => {
+    if (!id) return '*** NO FIGHTER ROW ***';
+    const f = fighterById[id];
+    return f ? `${f.first_name} ${f.last_name}` : `*** DANGLING ${id.slice(0, 8)} ***`;
+  };
 
   // ── phase 1: event row ────────────────────────────────────────────────────
   console.log('━━━━ PHASE 1 — EVENT ROW ━━━━');
@@ -366,6 +373,14 @@ async function main() {
     if (f.result && f.result !== 'upcoming') bad.push(`result="${f.result}"`);
     if (f.winner_id) bad.push('winner_id set');
     if (f.rounds_data) bad.push('rounds_data set');
+    // A bout with a name-only participant scores 0 in scoreFighter (fighterById[null]
+    // is undefined), so it can never pair in either matching pass and always lands
+    // here -- even when it IS on the source card. The other three conditions do not
+    // catch it: an upcoming placeholder has no result, no winner_id and no
+    // rounds_data, so without this the guard reads it as safe and the row, its odds,
+    // its bout_order/card_position and its id are all destroyed. Never delete these;
+    // stop and let a human decide.
+    if (!f.fighter1_id || !f.fighter2_id) bad.push('null participant — unmatchable by id, never auto-deletable');
     console.log(`  DELETE ${f.id}  ${fname(f.fighter1_id)} vs ${fname(f.fighter2_id)}  result=${JSON.stringify(f.result)} winner=${JSON.stringify(f.winner_id)}  ${bad.length ? '*** HAS REAL DATA: ' + bad.join(', ') + ' ***' : 'safe'}`);
     if (bad.length) deleteBlocked = true;
   }
@@ -496,9 +511,12 @@ async function main() {
 
   // 3. deletes (re-guarded row by row)
   for (const f of stale) {
-    const { data: pre } = await supabase.from('fights').select('result, winner_id, rounds_data').eq('id', f.id).single();
+    const { data: pre } = await supabase.from('fights').select('result, winner_id, rounds_data, fighter1_id, fighter2_id').eq('id', f.id).single();
     if (pre && ((pre.result && pre.result !== 'upcoming') || pre.winner_id || pre.rounds_data)) {
       console.error(`  *** ${f.id} now carries real data — ABORT ***`); process.exit(1);
+    }
+    if (pre && (!pre.fighter1_id || !pre.fighter2_id)) {
+      console.error(`  *** ${f.id} has a null participant — never auto-deletable, ABORT ***`); process.exit(1);
     }
     const { error } = await supabase.from('fights').delete().eq('id', f.id);
     console.log(`  [3] delete ${f.id.slice(0, 8)}: ${error ? 'ERROR ' + error.message : 'ok'}`);

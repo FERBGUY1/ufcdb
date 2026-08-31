@@ -76,6 +76,10 @@ async function checkDuplicateFights(fights, events) {
 
     const seen = new Set();
     evFights.forEach(f => {
+      // join() renders null as an empty string, so [null,null] collapses to "|" and
+      // [id,null] to "id|" — two placeholder bouts on one card would report as a
+      // duplicate pair. They cannot be compared by id at all; check 6 reports them.
+      if (!f.fighter1_id || !f.fighter2_id) return;
       const key = [f.fighter1_id, f.fighter2_id].sort().join('|');
       if (seen.has(key)) {
         issues.push({
@@ -147,27 +151,40 @@ async function checkBoutOrderConflicts(fights, events) {
  */
 async function checkFighterRecords(fights, fighters) {
   const calc = {};
+  // Null-safe throughout, and deliberately identical to the arithmetic in
+  // scrapers/fix-fighter-records.js: a bout with one name-only participant counts
+  // for the KNOWN fighter and skips the missing side. If the two files disagree,
+  // this check reports a mismatch that fix-fighter-records.js can never resolve.
   const ensure = id => {
-    if (!calc[id]) calc[id] = { wins: 0, losses: 0, draws: 0, no_contests: 0 };
+    if (id && !calc[id]) calc[id] = { wins: 0, losses: 0, draws: 0, no_contests: 0 };
+  };
+  const bump = (id, field) => {
+    if (!id) return;
+    ensure(id);
+    calc[id][field]++;
   };
 
   fights.forEach(f => {
     if (!f.result || f.result === 'upcoming') return;
+    if (!f.fighter1_id && !f.fighter2_id) return;
     ensure(f.fighter1_id);
     ensure(f.fighter2_id);
     if (f.result === 'win') {
+      // The legacy "fighter1 is the winner" fallback only applies when fighter1 is
+      // known. With both winner_id and fighter1_id null the old code compared
+      // null === null, resolved loserId to fighter2_id, and credited the one real
+      // participant with a loss whether or not they had won. Credit nobody instead.
       const winnerId = f.winner_id || f.fighter1_id;
+      if (!winnerId) return;
       const loserId  = winnerId === f.fighter1_id ? f.fighter2_id : f.fighter1_id;
-      ensure(winnerId);
-      ensure(loserId);
-      calc[winnerId].wins++;
-      calc[loserId].losses++;
+      bump(winnerId, 'wins');
+      bump(loserId, 'losses');
     } else if (f.result === 'draw') {
-      calc[f.fighter1_id].draws++;
-      calc[f.fighter2_id].draws++;
+      bump(f.fighter1_id, 'draws');
+      bump(f.fighter2_id, 'draws');
     } else if (f.result === 'no_contest') {
-      calc[f.fighter1_id].no_contests++;
-      calc[f.fighter2_id].no_contests++;
+      bump(f.fighter1_id, 'no_contests');
+      bump(f.fighter2_id, 'no_contests');
     }
   });
 
@@ -210,7 +227,10 @@ async function checkFighterDoubleBooked(fights, fighters, events) {
 
     const fighterFights = {};
     evFights.forEach(f => {
-      [f.fighter1_id, f.fighter2_id].forEach(fid => {
+      // A null id becomes the object key "null", so every placeholder slot on the card
+      // piles into one bucket and reports as a fighter booked twice. Skip the nulls;
+      // check 6 reports them on their own terms.
+      [f.fighter1_id, f.fighter2_id].filter(Boolean).forEach(fid => {
         if (!fighterFights[fid]) fighterFights[fid] = [];
         fighterFights[fid].push(f.id);
       });
@@ -232,6 +252,34 @@ async function checkFighterDoubleBooked(fights, fighters, events) {
   return issues;
 }
 
+/**
+ * 6. Decided fights with a name-only participant.
+ *    fighter1_id / fighter2_id are nullable so an UPCOMING bout can hold a
+ *    participant name before the fighter row exists. Once a bout has a result the
+ *    null must be resolved: a decided fight with a null side cannot be scored into
+ *    a fighter record, cannot be matched by any scraper, and — when winner_id is
+ *    also null — makes the winner unknowable. Upcoming bouts are expected here and
+ *    are not reported.
+ */
+async function checkNullParticipants(fights, fighters, events) {
+  return fights
+    .filter(f => f.result && f.result !== 'upcoming' && (!f.fighter1_id || !f.fighter2_id))
+    .map(f => ({
+      fight_id: f.id,
+      event: events[f.event_id]?.name ?? f.event_id,
+      date: events[f.event_id]?.date,
+      missing: !f.fighter1_id && !f.fighter2_id ? 'both'
+             : !f.fighter1_id ? 'fighter1_id' : 'fighter2_id',
+      known: (() => {
+        const id = f.fighter1_id || f.fighter2_id;
+        const k = id && fighters[id];
+        return k ? `${k.first_name} ${k.last_name}` : (id || '—');
+      })(),
+      result: f.result,
+      winner_unknowable: f.result === 'win' && !f.winner_id && !f.fighter1_id,
+    }));
+}
+
 // ── report ────────────────────────────────────────────────────────────────────
 
 function section(title, count, ok = 'none') {
@@ -251,7 +299,7 @@ async function main() {
 
   // Collect IDs we need
   const eventIds  = [...new Set(fights.map(f => f.event_id))];
-  const fighterIds = [...new Set(fights.flatMap(f => [f.fighter1_id, f.fighter2_id]))];
+  const fighterIds = [...new Set(fights.flatMap(f => [f.fighter1_id, f.fighter2_id]).filter(Boolean))];
 
   const events   = await getEventNames(eventIds);
   const fighters = await getFighterNames(fighterIds);
@@ -303,9 +351,20 @@ async function main() {
     if (doubleBooked.length > 20) console.log(`  ... and ${doubleBooked.length - 20} more`);
   }
 
+  // ── 6. Decided fights with a null participant ─────────────────────────────
+  const nullParts = await checkNullParticipants(fights, fighters, events);
+  section('6. Decided fights with a null fighter id', nullParts.length, 'every decided fight has both fighters');
+  if (nullParts.length) {
+    nullParts.slice(0, 20).forEach(d =>
+      console.log(`  [${d.date}] ${d.event}\n    ${d.missing} is NULL · known side: ${d.known} · result=${d.result}  (${d.fight_id})${d.winner_unknowable ? '\n    *** winner_id is also NULL — who won cannot be determined ***' : ''}`)
+    );
+    if (nullParts.length > 20) console.log(`  ... and ${nullParts.length - 20} more`);
+    console.log('\n  Upcoming bouts may hold a null participant; decided ones may not.');
+  }
+
   // ── summary ───────────────────────────────────────────────────────────────
   const total = dupes.length + nullWins.length + boConflicts.length +
-                recMismatches.length + doubleBooked.length;
+                recMismatches.length + doubleBooked.length + nullParts.length;
   console.log(`\n${'═'.repeat(60)}`);
   if (total === 0) {
     console.log('  All checks passed — no issues found.');
@@ -316,6 +375,7 @@ async function main() {
     console.log(`    bout_order conflicts:    ${boConflicts.length}`);
     console.log(`    Record mismatches:       ${recMismatches.length}`);
     console.log(`    Double-booked fighters:  ${doubleBooked.length}`);
+    console.log(`    Null participant (decided): ${nullParts.length}`);
   }
   console.log('═'.repeat(60));
 }

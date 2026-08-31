@@ -182,11 +182,22 @@ async function main() {
   console.log('Loading fights...');
   const fightRefs = await loadAll('fights', 'id, event_id, fighter1_id, fighter2_id');
   const fightMap = {};
+  // join() renders null as an empty string, so two bouts on one card each holding a
+  // name-only participant collapse to the same key and the second silently overwrites
+  // the first in this map -- which then reads as "already exists" for one of them and
+  // "new" for the other. Key only fully-resolved bouts; report the rest.
+  const unresolvedRefs = fightRefs.filter(f => !f.fighter1_id || !f.fighter2_id);
   for (const f of fightRefs) {
+    if (!f.fighter1_id || !f.fighter2_id) continue;
     const key = f.event_id + ':' + [f.fighter1_id, f.fighter2_id].sort().join(':');
     fightMap[key] = f;
   }
   console.log(`  ${fightRefs.length} fights\n`);
+  if (unresolvedRefs.length) {
+    console.log(`  *** ${unresolvedRefs.length} fight(s) have a null fighter id and are NOT in the existence map:`);
+    unresolvedRefs.forEach(f => console.log(`      ${f.id} (event ${f.event_id})`));
+    console.log('      A source bout matching one of these will be inserted as a NEW row. Resolve them first.\n');
+  }
 
   // Determine seasons
   const seasonIdx  = process.argv.indexOf('--season');
