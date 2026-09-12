@@ -265,7 +265,45 @@ function KeyFactorRow({ rank, factor }) {
   );
 }
 
-function PredictionResult({ prediction: p, f1Name, f2Name }) {
+// The API returns its numbers under fighter1_*/fighter2_* prefixes and the
+// fighter objects alongside them. Those agree on a freshly computed prediction,
+// but a cached row can arrive in the opposite orientation, so verify that
+// fighter1.id really is fighter1_id rather than assuming the prefix.
+//
+// Mirrored when they disagree: the id pair, the win/ko/sub/dec percentages, and
+// the per-round f1/f2 outputs. f1_control_pct is fighter1's SHARE, so it
+// mirrors as 100 - x. Left alone: key_factors, ai_breakdown and
+// projected_control, which are rendered text naming the fighters explicitly and
+// are already correct in either ordering.
+function orientToFighters(p) {
+  const flipped = !!(p.fighter1?.id && p.fighter1_id && p.fighter1.id !== p.fighter1_id);
+  if (!flipped) return { p, flipped };
+  return {
+    flipped,
+    p: {
+      ...p,
+      fighter1_id:      p.fighter2_id,      fighter2_id:      p.fighter1_id,
+      fighter1_win_pct: p.fighter2_win_pct, fighter2_win_pct: p.fighter1_win_pct,
+      fighter1_ko_pct:  p.fighter2_ko_pct,  fighter2_ko_pct:  p.fighter1_ko_pct,
+      fighter1_sub_pct: p.fighter2_sub_pct, fighter2_sub_pct: p.fighter1_sub_pct,
+      fighter1_dec_pct: p.fighter2_dec_pct, fighter2_dec_pct: p.fighter1_dec_pct,
+      round_projections: Array.isArray(p.round_projections)
+        ? p.round_projections.map(r => ({
+            ...r,
+            f1_output: r.f2_output,
+            f2_output: r.f1_output,
+            f1_control_pct: r.f1_control_pct == null ? r.f1_control_pct : 100 - parseFloat(r.f1_control_pct),
+          }))
+        : p.round_projections,
+    },
+  };
+}
+
+function PredictionResult({ prediction, f1Name, f2Name }) {
+  const { p, flipped } = orientToFighters(prediction);
+  if (flipped) {
+    console.warn('[predict] payload arrived mirrored (fighter1_id !== fighter1.id) — corrected client-side; check the API cache orientation');
+  }
   const f1 = p.fighter1 || f1Name;
   const f2 = p.fighter2 || f2Name;
   const f1WinPct = parseFloat(p.fighter1_win_pct);

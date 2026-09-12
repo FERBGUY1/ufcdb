@@ -302,6 +302,57 @@ async function generateNarrative(f1, f2, stats, keyFactors, methodLine) {
   return message.content[0].text;
 }
 
+// ── CACHE ORIENTATION ──────────────────────────────────────────────────────
+// fight_predictions is keyed UNIQUE(fighter1_id, fighter2_id, weight_class_id),
+// so (A,B) and (B,A) are DIFFERENT rows — but the cache lookup matches either
+// ordering. A row stored as (A,B) and served to a (B,A) request carries A's
+// numbers under the fighter1_* prefix while the caller reads fighter1 as B, so
+// the payload contradicts itself: fighter1_id !== fighter1.id.
+//
+// Orientation-DEPENDENT, mirrored below: the id pair, the win/ko/sub/dec
+// percentages, and the per-round f1/f2 outputs. f1_control_pct is fighter1's
+// SHARE of projected output, so mirroring it is 100 - x, not a swap.
+//
+// Orientation-INDEPENDENT, deliberately left untouched: draw_pct and confidence
+// (both symmetric), weight_class_id, and — critically — key_factors,
+// ai_breakdown and round_projections[].projected_control. Those three are
+// RENDERED TEXT with the fighter names already interpolated at generation time;
+// they read correctly in either ordering and swapping them would corrupt
+// strings that are already right.
+function mirrorPrediction(row) {
+  const mirrorShare = v => (v == null ? v : (100 - parseFloat(v)).toFixed(0));
+  return {
+    ...row,
+    fighter1_id:      row.fighter2_id,      fighter2_id:      row.fighter1_id,
+    fighter1_win_pct: row.fighter2_win_pct, fighter2_win_pct: row.fighter1_win_pct,
+    fighter1_ko_pct:  row.fighter2_ko_pct,  fighter2_ko_pct:  row.fighter1_ko_pct,
+    fighter1_sub_pct: row.fighter2_sub_pct, fighter2_sub_pct: row.fighter1_sub_pct,
+    fighter1_dec_pct: row.fighter2_dec_pct, fighter2_dec_pct: row.fighter1_dec_pct,
+    round_projections: Array.isArray(row.round_projections)
+      ? row.round_projections.map(r => ({
+          ...r,
+          f1_output: r.f2_output,
+          f2_output: r.f1_output,
+          f1_control_pct: mirrorShare(r.f1_control_pct),
+          // projected_control stays as-is: it is a rendered fighter name.
+        }))
+      : row.round_projections,
+  };
+}
+
+// Pick a cached row and return it oriented so fighter1_* refers to wantF1Id.
+// Both orderings can legitimately exist as separate rows under the ordered
+// unique key, so this never uses .maybeSingle() — that errors on >1 row.
+// Prefer a row already in the requested orientation; otherwise mirror the
+// reverse one. A row not involving wantF1Id at all is treated as a miss.
+function pickCached(rows, wantF1Id) {
+  if (!rows || !rows.length) return null;
+  const row = rows.find(r => r.fighter1_id === wantF1Id) || rows[0];
+  if (row.fighter1_id === wantF1Id) return row;
+  if (row.fighter2_id === wantF1Id) return mirrorPrediction(row);
+  return null;
+}
+
 // ── MAIN ───────────────────────────────────────────────────────────────────
 async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = {}) {
   const [{ data: f1 }, { data: f2 }] = await Promise.all([
@@ -317,12 +368,19 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
 
   if (!opts.skipCache) {
     const cacheFilter = 'and(fighter1_id.eq.' + fighter1Id + ',fighter2_id.eq.' + fighter2Id + '),and(fighter1_id.eq.' + fighter2Id + ',fighter2_id.eq.' + fighter1Id + ')';
-    const { data: cached } = await supabase
+    let query = supabase
       .from('fight_predictions').select('*')
       .or(cacheFilter)
       .eq('model_version', 'v3')
-      .gt('expires_at', new Date().toISOString())
-      .maybeSingle();
+      .gt('expires_at', new Date().toISOString());
+    // weight_class_id is part of the upsert conflict target, so it has to be
+    // part of the read too — without it a lookup can straddle two weight
+    // classes and return a row that was computed for a different one.
+    query = weightClassId == null
+      ? query.is('weight_class_id', null)
+      : query.eq('weight_class_id', weightClassId);
+    const { data: rows } = await query;
+    const cached = pickCached(rows, fighter1Id);
     if (cached) return { ...cached, fighter1: f1, fighter2: f2, weight_class_context: weightClassContext };
   }
 
@@ -392,4 +450,4 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   return { ...prediction, fighter1: f1, fighter2: f2, weight_class_context: weightClassContext };
 }
 
-module.exports = { generatePrediction };
+module.exports = { generatePrediction, pickCached, mirrorPrediction };
