@@ -745,4 +745,23 @@ async function main() {
   if (DRY) console.log('\n(Dry run — no writes made)');
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+// Only run when invoked directly. Requiring this file (fix-bout-order-conflicts.js
+// imports the Wikipedia parser below) must not kick off a full global run.
+if (require.main === module) {
+  main().catch(e => { console.error(e); process.exit(1); });
+}
+
+/**
+ * The Wikipedia section/order parser, exported so other scripts use THIS copy
+ * rather than keeping their own. fix-bout-order-conflicts.js previously carried
+ * duplicates that still had the pre-fix logic — row-0-only section detection, no
+ * "Fight card"/"Main event" handling, and an inline 5/10 position heuristic — so
+ * its phase 1 would overwrite corrected card_position values with stale ones.
+ * Import from here; do not re-implement.
+ */
+module.exports = {
+  sectionFromText,
+  rowSectionHeader,
+  detectTableSection,
+  fetchWikiFightOrder,
+};

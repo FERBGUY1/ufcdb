@@ -32,10 +32,9 @@ const ONLY2   = process.argv.includes('--phase2');
 const RUN1    = !ONLY2;
 const RUN2    = !ONLY1;
 
-const DELAY   = 1300;
 const WIKI    = 'https://en.wikipedia.org';
 const http    = axios.create({ timeout: 20000, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; UFCDBBot/1.0)' } });
-const sleep   = ms => new Promise(r => setTimeout(r, ms));
+// (request pacing lives in the imported fetchWikiFightOrder)
 
 // ── helpers shared with fix-bout-order.js ─────────────────────────────────────
 
@@ -77,87 +76,14 @@ function lookupFighter(raw, byName) {
   return null;
 }
 
-function detectSection($, table) {
-  const hdr = $(table).find('tr').first().find('th[colspan]').first().text().toLowerCase();
-  if (/early.?prelim/i.test(hdr)) return 'early_prelim';
-  if (/prelim/i.test(hdr))        return 'prelim';
-  if (/main.?card/i.test(hdr))    return 'main_card';
-  const cap = $(table).find('caption').text().toLowerCase();
-  if (/early.?prelim/i.test(cap)) return 'early_prelim';
-  if (/prelim/i.test(cap))        return 'prelim';
-  if (/main.?card/i.test(cap))    return 'main_card';
-  let el = $(table).prev();
-  for (let i = 0; i < 12 && el.length; i++) {
-    const tag = (el.get(0) || {}).tagName || '';
-    let txt = null;
-    if (/^h[2-4]$/.test(tag)) txt = el.text().toLowerCase();
-    else if (tag === 'div') { const h = el.find('h2,h3,h4').first(); if (h.length) txt = h.text().toLowerCase(); }
-    if (txt !== null) {
-      if (/early.?prelim/i.test(txt)) return 'early_prelim';
-      if (/prelim/i.test(txt))        return 'prelim';
-      if (/main.?card/i.test(txt))    return 'main_card';
-      break;
-    }
-    el = el.prev();
-  }
-  return null;
-}
-
-function isFightCard($, table) {
-  const ths = $(table).find('th').map((_, th) => $(th).text().toLowerCase().trim()).get().join('|');
-  if (/title fights in \d{4}/i.test(ths) || /current.*champions/i.test(ths)) return false;
-  if ($(table).find('tr').filter((_, tr) => $(tr).find('td').length > 0).length > 30) return false;
-  return (ths.includes('weight') || ths.includes('class')) &&
-         (ths.includes('method') || (ths.includes('round') && ths.includes('time')));
-}
-
-async function fetchWikiFightOrder(wikiUrl) {
-  await sleep(DELAY);
-  try {
-    const { data } = await http.get(wikiUrl);
-    const $ = cheerio.load(data);
-    const buckets = { main_card: [], prelim: [], early_prelim: [], unknown: [] };
-
-    $('table.toccolours, table.wikitable').each((_, table) => {
-      if (!isFightCard($, table)) return;
-      const section = detectSection($, table) || 'unknown';
-      $(table).find('tr').each((_, row) => {
-        const cells = $(row).find('td');
-        if (cells.length < 5) return;
-        let f1i = 1, f2i = 3;
-        cells.each((ci, cell) => {
-          const t = $(cell).text().trim().toLowerCase();
-          if ((t === 'def.' || t === 'drew' || t === 'vs.') && ci > 0 && f1i === 1) {
-            f1i = ci - 1; f2i = ci + 1;
-          }
-        });
-        // (c)/(ic)/etc. champion markers — [a-z]{1,2} so interim (ic) strips too
-        const f1 = $(cells[f1i]).text().replace(/\([a-z]{1,2}\)/gi, '').replace(/\[\w+\]/g, '').trim();
-        const f2 = $(cells[f2i]).text().replace(/\([a-z]{1,2}\)/gi, '').replace(/\[\w+\]/g, '').trim();
-        if (!f1 || !f2 || f1.length > 60 || f2.length > 60) return;
-        buckets[section].push({ f1, f2 });
-      });
-    });
-
-    const ordered = [...buckets.main_card, ...buckets.prelim, ...buckets.early_prelim, ...buckets.unknown];
-    if (!ordered.length) return [];
-    const mLen = buckets.main_card.length, pLen = buckets.prelim.length;
-    const eLen = buckets.early_prelim.length;
-    const hasExplicit = pLen > 0 || eLen > 0;
-    return ordered.map((f, i) => {
-      let cp;
-      if (!hasExplicit) cp = i < 5 ? 'main_card' : i < 10 ? 'prelim' : 'early_prelim';
-      else if (i < mLen) cp = 'main_card';
-      else if (i < mLen + pLen) cp = 'prelim';
-      else if (i < mLen + pLen + eLen) cp = 'early_prelim';
-      else cp = 'unknown';
-      return { f1: f.f1, f2: f.f2, boutOrder: i, cardPosition: cp };
-    });
-  } catch (e) {
-    console.error(`  Error fetching ${wikiUrl}: ${e.message}`);
-    return [];
-  }
-}
+// Wikipedia section/order parsing is imported from fix-bout-order.js rather than
+// duplicated here. The copies that used to live at this spot had drifted: they
+// detected a section from row 0 of a table only, did not recognise the "Fight
+// card" / "Main event" headers, ignored in-table section header rows, and
+// carried their own inline 5/10 position heuristic. Phase 1 writes card_position
+// alongside bout_order, so those stale values would silently revert corrections
+// made by fix-bout-order.js. Keep exactly one implementation.
+const { fetchWikiFightOrder } = require('./fix-bout-order');
 
 async function loadAll(table, cols) {
   const all = [];
