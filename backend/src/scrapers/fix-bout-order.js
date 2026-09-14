@@ -65,6 +65,33 @@ function norm(s) {
     .replace(/[^a-z0-9]/g, '');
 }
 
+// ── Wikipedia event-name aliases ──────────────────────────────────────────────
+/**
+ * DB event name -> Wikipedia article name, for cards whose stored name cannot be
+ * reached by the norm() / strip-leading-"ufc" matching in main().
+ *
+ * Noche UFC is the standing case. ufcstats titles these cards "Noche UFC: X vs. Y"
+ * and Wikipedia files them under "UFC Fight Night: X vs. Y", so norm() never lines
+ * up: "nocheufcsilvavsdelgado" vs "ufcfightnightsilvavsdelgado". The strip-"ufc"
+ * fallback cannot bridge it either — the DB name starts "noche", so nothing is
+ * stripped.
+ *
+ * This is an alias rather than a rename of events.name because backfill-event.js
+ * phase 1 syncs events.name to the ufcstats name on every run (backfill-event.js:264),
+ * which would silently revert a rename the next time that event is backfilled.
+ *
+ * To add a future Noche card: one line, DB name on the left, Wikipedia name on the
+ * right, both exactly as they appear (norm() handles case/punctuation).
+ */
+const WIKI_NAME_ALIASES = {
+  'Noche UFC: Silva vs. Delgado': 'UFC Fight Night: Silva vs. Delgado',
+};
+
+// normalised DB name -> normalised Wikipedia name, built once at load
+const wikiAliasByNorm = Object.fromEntries(
+  Object.entries(WIKI_NAME_ALIASES).map(([dbName, wikiName]) => [norm(dbName), norm(wikiName)])
+);
+
 function toSlug(name) {
   return (name || '')
     .toLowerCase()
@@ -194,25 +221,83 @@ async function fetchWikiEventList() {
 }
 
 /**
+ * Map a section label to a card_position, or null when it names no section.
+ *
+ * `inTableHeader` additionally accepts two main-card spellings that appear only
+ * as in-table headers:
+ *   - "Fight card", used by recent pages ("Fight card (Paramount+)" above the
+ *     first bout, "Preliminary card (Paramount+)" partway down the same table).
+ *   - "Main event", used by single-bout broadcast cards. UFC on Fox 1 aired only
+ *     Velasquez vs dos Santos on Fox, so its table reads "Main event (Fox)" over
+ *     one bout and "Preliminary card (Facebook)" over the other nine. Without
+ *     this the headliner — a heavyweight title fight — inherits 'prelim'.
+ * Neither is honoured for page headings or captions, where "Fight card" routinely
+ * titles the whole results section rather than the main card specifically;
+ * treating that as main_card would mislabel every prelim on such a page.
+ */
+function sectionFromText(txt, inTableHeader = false) {
+  const t = (txt || '').toLowerCase().trim();
+  if (!t) return null;
+  if (/early.?prelim/.test(t)) return 'early_prelim';
+  if (/prelim/.test(t))        return 'prelim';
+  if (/main.?card/.test(t))    return 'main_card';
+  if (inTableHeader && /\b(?:fight card|main event)\b/.test(t)) return 'main_card';
+  return null;
+}
+
+/**
+ * A section-header row inside a fight table: a lone <th> spanning the columns,
+ * e.g. <tr><th colspan="8">Preliminary card (ESPN+)</th></tr>.
+ * Returns its card_position, or null when the row is not such a header.
+ *
+ * The colspan>=2 and single-<th> guards keep the column-header row (Weight class |
+ * Method | Round | Time | ...) — which carries one colspan="1" <th> per column —
+ * from ever being read as a section header.
+ */
+function rowSectionHeader($, row) {
+  const ths = $(row).find('th');
+  if (ths.length !== 1) return null;
+  if ($(row).find('td').length) return null;
+  const span = parseInt(ths.first().attr('colspan') || '1', 10);
+  if (!(span >= 2)) return null;
+  return sectionFromText(ths.first().text(), true);
+}
+
+/**
  * Detect which card section a fight table belongs to.
  * Returns 'main_card', 'prelim', 'early_prelim', or null.
+ *
+ * This is only the table-level DEFAULT — the section in force before any in-table
+ * header is seen. fetchWikiFightOrder re-reads headers per row, so a single table
+ * holding several sections is split at the right rows rather than collapsing to
+ * one label.
  *
  * Handles both old-style Wikipedia (bare h3) and new-style
  * (<div class="mw-heading"><h3>...</h3></div> wrappers).
  */
 function detectTableSection($, table) {
-  // 1) First row colspan header (common in UFC fight tables):
+  // 1) First section-header row anywhere in the table:
   //    <tr><th colspan="7">Main card</th></tr>
-  const firstRowSpan = $(table).find('tr').first().find('th[colspan]').first().text().toLowerCase().trim();
-  if (/early.?prelim/i.test(firstRowSpan)) return 'early_prelim';
-  if (/prelim/i.test(firstRowSpan))        return 'prelim';
-  if (/main.?card/i.test(firstRowSpan))    return 'main_card';
+  //
+  //    This deliberately scans the WHOLE table rather than stopping at the first
+  //    bout row. Bouts that sit above the first recognised header — e.g. UFC 9,
+  //    where "Superfight Championship" heads the title bout and "Main Card" only
+  //    appears below it — must inherit this default. Letting them fall through to
+  //    'unknown' instead drops them into the unknown bucket, which combine()
+  //    appends LAST, moving the main event to the bottom of the card and
+  //    renumbering bout_order from 0 to N. Inheriting a later label is a wrong
+  //    label on one row; falling through reorders the entire event.
+  let fromRow = null;
+  $(table).find('tr').each((_, row) => {
+    if (fromRow) return;
+    const s = rowSectionHeader($, row);
+    if (s) fromRow = s;
+  });
+  if (fromRow) return fromRow;
 
   // 2) Table caption
-  const caption = $(table).find('caption').text().toLowerCase();
-  if (/early.?prelim/i.test(caption)) return 'early_prelim';
-  if (/prelim/i.test(caption))        return 'prelim';
-  if (/main.?card/i.test(caption))    return 'main_card';
+  const fromCaption = sectionFromText($(table).find('caption').text());
+  if (fromCaption) return fromCaption;
 
   // 3) Walk backwards through siblings to find the nearest heading.
   //    Handles two Wikipedia formats:
@@ -232,9 +317,8 @@ function detectTableSection($, table) {
   for (let i = 0; i < 12 && el.length; i++) {
     const txt = headingText(el);
     if (txt !== null) {
-      if (/early.?prelim/i.test(txt)) return 'early_prelim';
-      if (/prelim/i.test(txt))        return 'prelim';
-      if (/main.?card/i.test(txt))    return 'main_card';
+      const s = sectionFromText(txt);
+      if (s) return s;
       // Hit a heading that doesn't match — stop looking further
       break;
     }
@@ -266,16 +350,38 @@ async function fetchWikiFightOrder(wikiUrl) {
     const { data } = await http.get(wikiUrl);
     const $       = cheerio.load(data);
 
+    // Wikipedia merged the standalone articles for many 2012-2013 "UFC on Fox /
+    // on FX / on Fuel TV" cards into year summaries ("2012 in UFC"), which hold
+    // every event of that year in one article. Parsing one attributes five other
+    // cards' bouts to this event — UFC on Fuel TV: Sanchez vs. Ellenberger pulled
+    // in 45 foreign bouts. There is nothing to alias to: every candidate title
+    // (UFC on FOX 2, UFC on Fuel TV 1, UFC on FX 7, UFC on FOX 7) is either
+    // missing or redirects to the same year page. So take no Wikipedia data and
+    // leave the event's stored card_position alone. Detected from the rendered
+    // title rather than a hardcoded event list, so future merges are caught too.
+    const pageTitle = $('h1').first().text().replace(/\s+/g, ' ').trim();
+    if (/^\d{4} in UFC$/.test(pageTitle)) {
+      console.log(`  ! ${wikiUrl}`);
+      console.log(`      redirects to the year summary "${pageTitle}" (no per-event article) — skipping`);
+      return [];
+    }
+
     // Bucket fights by section; Wikipedia tables list fights main-event-first
     const buckets = { main_card: [], prelim: [], early_prelim: [], unknown: [] };
 
     $('table.toccolours, table.wikitable').each((_, table) => {
       if (!isFightCard($, table)) return;
 
-      const section    = detectTableSection($, table) || 'unknown';
-      const tableFights = [];
+      // Table-level default, then re-read section headers as we walk the rows, so
+      // one table holding "Fight card" + "Preliminary card" is split at the right
+      // row instead of collapsing into a single section (or into 'unknown', which
+      // silently hands every bout to the deriveCardPosition position guess).
+      let currentSection = detectTableSection($, table) || 'unknown';
 
       $(table).find('tr').each((_, row) => {
+        const rowSection = rowSectionHeader($, row);
+        if (rowSection) { currentSection = rowSection; return; }
+
         const cells = $(row).find('td');
         if (cells.length < 5) return;
 
@@ -298,10 +404,8 @@ async function fetchWikiFightOrder(wikiUrl) {
           .replace(/\([a-z]{1,2}\)/gi, '').replace(/\[\w+\]/g, '').trim();
         if (!f1raw || !f2raw || f1raw.length > 60 || f2raw.length > 60) return;
 
-        tableFights.push({ f1: f1raw, f2: f2raw });
+        buckets[currentSection].push({ f1: f1raw, f2: f2raw });
       });
-
-      buckets[section].push(...tableFights);
     });
 
     // Combine: main_card → prelim → early_prelim → unknown
@@ -577,6 +681,8 @@ async function main() {
     if (!APIONLY) {
       const dbNorm = norm(event.name);
       wikiEntry    = wikiByNorm[dbNorm];
+      // Explicit alias wins over the fuzzy strip-"ufc" fallback below.
+      if (!wikiEntry && wikiAliasByNorm[dbNorm]) wikiEntry = wikiByNorm[wikiAliasByNorm[dbNorm]];
       if (!wikiEntry) {
         const short = dbNorm.replace(/^ufc/, '');
         for (const [wn, we] of Object.entries(wikiByNorm)) {
