@@ -9,9 +9,10 @@
  *   --ids "uuid,uuid,..."  restrict to specific fighter ids (e.g. one event's
  *                          card) instead of the default all-fighters sweep.
  *                          Keep batches <= 100 ids — .in() URLs get too long.
- *   --with-fights          skip fighters with no fight history (their ratings
- *                          are computed from null stats and mean nothing);
- *                          also avoids a resume-strength query per empty row.
+ *   --all-fighters         also rate fighters with no fight history. Their
+ *                          ratings are computed from null stats and mean
+ *                          nothing, so the default skips them; this is the
+ *                          explicit opt-in to the old full-table behaviour.
  *   --sample "name,name"   extra fighters to show before/after rows for
  *
  * Run: node -r dotenv/config src/ml/computeRatings.js --apply
@@ -21,7 +22,7 @@ const supabase = require('../db/client');
 const { computeResumeStrength, detectCareerArc } = require('./qualityEngine');
 
 const APPLY = process.argv.includes('--apply');
-const WITH_FIGHTS = process.argv.includes('--with-fights');
+const ALL_FIGHTERS = process.argv.includes('--all-fighters');
 const IDS = (() => {
   const i = process.argv.indexOf('--ids');
   return i > -1 ? process.argv[i + 1].split(',').map(s => s.trim()).filter(Boolean) : null;
@@ -102,8 +103,10 @@ async function main() {
   const withFights = loaded.filter(hasHistory);
   console.log(`\n  fighters loaded: ${loaded.length}   (with fight history: ${withFights.length})`);
 
-  const fighters = WITH_FIGHTS ? withFights : loaded;
-  if (WITH_FIGHTS) console.log(`  --with-fights: scoped to ${fighters.length}, skipping ${loaded.length - fighters.length} with no fight history`);
+  const fighters = ALL_FIGHTERS ? loaded : withFights;
+  console.log(ALL_FIGHTERS
+    ? `  --all-fighters: rating all ${fighters.length}, including ${loaded.length - withFights.length} with no fight history`
+    : `  scoped to ${fighters.length} with fight history, skipping ${loaded.length - withFights.length} without (--all-fighters to include them)`);
 
   const computed = fighters.map(f => ({ f, r: ratingsFor(f) }));
 
