@@ -85,7 +85,13 @@ router.get('/fighters', async (req, res, next) => {
       .from('fighters')
       .select('id, slug, first_name, last_name, wins, losses, draws, primary_style, secondary_style, rating_overall, resume_strength_score, status')
       .eq('primary_style', style)
-      .order('resume_strength_score', { ascending: false })
+      // An unrated fighter has no place on a strength-ranked list. Filtering on
+      // the score itself rather than on stats_fight_count keeps early-era
+      // fighters who have real bouts but no per-round stats rows.
+      .not('resume_strength_score', 'is', null)
+      // Postgres sorts DESC as NULLS FIRST, so any null that slips past the
+      // filter would otherwise head the leaderboard.
+      .order('resume_strength_score', { ascending: false, nullsFirst: false })
       .limit(parseInt(limit));
 
     if (error) throw error;
