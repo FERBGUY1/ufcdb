@@ -31,9 +31,12 @@ const SAMPLE = (() => {
   return i > -1 ? process.argv[i + 1].toLowerCase().split(',').map(s => s.trim()).filter(Boolean) : [];
 })();
 
+// str_acc / td_acc are real columns on fighters and are read by the rating
+// math below — omitting them from this list silently fed the || 50 fallback
+// into every striking and wrestling rating.
 const COLS = [
   'id', 'first_name', 'last_name', 'wins', 'losses',
-  'slpm', 'sapm', 'td_avg', 'td_def',
+  'slpm', 'sapm', 'str_acc', 'td_avg', 'td_acc', 'td_def',
   'wins_ko', 'wins_sub', 'stats_fight_count',
   'rating_striking', 'rating_wrestling', 'rating_grappling',
   'rating_cardio', 'rating_overall', 'resume_strength_score',
