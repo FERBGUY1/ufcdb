@@ -14,7 +14,7 @@
     "scrape:sherdog": "node src/scrapers/sherdog.js",
     "scrape:tapology": "node src/scrapers/tapology.js",
     "scrape:odds": "node src/scrapers/odds.js",
-    "compute:ratings": "node src/ml/computeRatings.js",
+    "compute:ratings": "node src/ml/computeRatings.js --apply",
     "compute:styles": "node src/ml/computeStyles.js",
     "compute:cardio": "node src/ml/computeCardio.js",
     "scrape:fix-fights": "node src/scrapers/fix-fight-data.js",
