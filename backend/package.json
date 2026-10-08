@@ -22,7 +22,8 @@
     "scrape:tapology-history": "node src/scrapers/tapology-scraper.js",
     "scrape:tapology-history:dry": "node src/scrapers/tapology-scraper.js --dry-run --limit 20",
     "scrape:import-opponents": "node src/scrapers/import-missing-opponents.js",
-    "scrape:import-opponents:dry": "node src/scrapers/import-missing-opponents.js --dry-run"
+    "scrape:import-opponents:dry": "node src/scrapers/import-missing-opponents.js --dry-run",
+    "weekly": "node -r dotenv/config src/scrapers/weekly-update.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.20.0",

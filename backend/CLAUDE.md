@@ -69,6 +69,18 @@ Run `fix-fighter-records.js` after any bulk fight insert/delete to resync UFC re
 - **Does NOT provide**: method, round, time (those stay null and are filled by fix-fight-methods.js)
 - **Flag**: `--season YEAR` · `--dry-run`
 
+### `src/scrapers/weekly-update.js` — Weekly post-event refresh (`npm run weekly`)
+- **Finds** completed ufcstats events dated after the latest `is_complete` DB event (and before today)
+- **Per event, oldest first**: dry-runs `backfill-event.js`; applies only if clean (no abort/identity conflict, count matches, no VARIANT match, no suspect near-match on a fighter create, no interim title), with `--title` from ufcstats UFC title bouts; otherwise stops and reports
+- **Then**: fills null `card_position` from agreeing neighbours, and (if anything was applied) runs rankings.js → computeCareerStats.js → computeRatings.js (scoped to the applied cards) → fix-fighter-records.js → validate.js
+- **Output**: one line per step; full child output in a temp-dir log. Exits 1 on any stop/failure
+- **Flags**: `--dry-run` · `--since YYYY-MM-DD`
+- A namesake stop is resolved by running `backfill-event.js --ufc-id <event> --new-fighter <fighter ufc_id>` by hand, then re-running weekly
+
+### `src/scrapers/backfill-event.js` — Single-event backfill from ufcstats
+- **Flags**: `--ufc-id ID` · `--apply` · `--title "0,3"` · `--new-fighter ID[,ID]` (create a verified same-name namesake; slug gets `-2`, `-3`, ...) · `--summary-json PATH` · `--skip-results`
+- ufcstats shows belt icons on TUF / Road to UFC tournament finals too; the dry run reads each belt bout's page title and only counts "UFC … Title Bout"
+
 ### `src/scrapers/fix-bout-order.js` — Bout order + card position
 - **Source**: Wikipedia (all events) → API-Sports fallback (2022+ not yet on Wikipedia)
 - **Sets**: `bout_order` (0=main event) and `card_position` for every fight

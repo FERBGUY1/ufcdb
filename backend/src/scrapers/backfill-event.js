@@ -35,6 +35,15 @@
  *   --ufc-id ID     (required) ufcstats event id, e.g. 681d07e328798ec0
  *   --apply         execute; default is dry-run (prints full plan, writes nothing)
  *   --title "0,3"   bout_order values (final card order) to flag is_title_fight
+ *                   (the dry run also prints which bouts ufcstats marks as UFC title,
+ *                   interim title, or tournament-final bouts)
+ *   --new-fighter ID  ufcstats fighter id(s), comma-separated, to CREATE as a new
+ *                   fighter even though a DB row with the same full name carries a
+ *                   different ufc_id (a verified namesake, e.g. the two Anthony
+ *                   Romeros). The new row gets the next free slug (name-2, name-3).
+ *                   Without it that case still aborts for manual review.
+ *   --summary-json PATH  write a machine-readable plan/outcome to PATH on exit
+ *                   (used by weekly-update.js to decide whether a dry run is clean)
  *   --skip-results  stop after phase 5 (no results scraper, no bout-order fix)
  *   --delay MS      per-request delay for ufcstats fetches (default 1200)
  *
@@ -53,15 +62,41 @@ const UFCID  = (() => { const i = process.argv.indexOf('--ufc-id'); return i > -
 const APPLY  = process.argv.includes('--apply');
 const SKIP_RESULTS = process.argv.includes('--skip-results');
 const DELAY  = (() => { const i = process.argv.indexOf('--delay'); return i > -1 ? parseInt(process.argv[i + 1]) : 1200; })();
+const NEW_FIGHTERS = (() => {
+  const i = process.argv.indexOf('--new-fighter');
+  return i > -1 ? process.argv[i + 1].split(',').map(s => s.trim()).filter(Boolean) : [];
+})();
+const SUMMARY_PATH = (() => { const i = process.argv.indexOf('--summary-json'); return i > -1 ? process.argv[i + 1] : null; })();
 const TITLE_BOS = (() => {
   const i = process.argv.indexOf('--title');
   return i > -1 ? process.argv[i + 1].split(',').map(s => parseInt(s.trim(), 10)).filter(n => !Number.isNaN(n)) : [];
 })();
 
-if (!UFCID || !/^[0-9a-f]{16}$/.test(UFCID)) {
-  console.error('Usage: backfill-event.js --ufc-id <16-hex ufcstats event id> [--apply]');
+if (!UFCID || !/^[0-9a-f]{16}$/.test(UFCID) || NEW_FIGHTERS.some(id => !/^[0-9a-f]{16}$/.test(id))) {
+  console.error('Usage: backfill-event.js --ufc-id <16-hex ufcstats event id> [--apply] [--new-fighter <16-hex fighter id>,...]');
   process.exit(1);
 }
+
+// Plan/outcome for --summary-json. Filled in as phases run and written on any exit,
+// including the process.exit(1) aborts, so a caller always learns why a run stopped.
+const summary = {
+  ufcId: UFCID, apply: APPLY, ok: false, abort: null,
+  event: null, sourceCount: null, finalCount: null, titleBouts: [],
+  matched: 0, variants: [], stale: [], creates: [], ufcIdBackfills: [],
+  conflicts: [], nullCardPosition: [], unresolved: [], isComplete: false,
+};
+const _consoleError = console.error;
+console.error = (...a) => {
+  const msg = a.join(' ');
+  if (/ABORT/.test(msg) && !summary.abort) summary.abort = msg.replace(/^\s*ABORT:\s*/, '').trim();
+  _consoleError(...a);
+};
+process.on('exit', code => {
+  if (!SUMMARY_PATH) return;
+  summary.exitCode = code;
+  if (code !== 0 && !summary.abort) summary.abort = `exited ${code}`;
+  try { require('fs').writeFileSync(SUMMARY_PATH, JSON.stringify(summary, null, 2)); } catch (_) { /* best effort */ }
+});
 
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -154,6 +189,7 @@ async function fetchSourceCard() {
     return {
       fightId: ($(tr).attr('data-link') || '').split('/').pop(),
       fighters: fids.slice(0, 2),
+      title: $(tr).find('img[src*="belt.png"]').length > 0,
       flags: $(cols[0]).find('.b-flag__text').map((_, x) => $(x).text().trim().toLowerCase()).get(),
       wc: (colP(6)[0] || '').trim(),
       methodRaw: (colP(7)[0] || '').trim(),
@@ -231,6 +267,24 @@ async function main() {
   const card = await fetchSourceCard();
   console.log(`SOURCE CARD : ${card.length} bouts\n`);
   if (!card.length) { console.error('ABORT: event page has no fight rows.'); process.exit(1); }
+  summary.event = { name: src.name, date: src.date, location: src.location };
+  summary.sourceCount = card.length;
+  // ufcstats puts the belt icon on TUF / Road to UFC tournament finals too, so a belt
+  // only counts once the bout page title reads "UFC ... Title Bout" (no "Tournament").
+  // Interim belts are reported separately: this script sets is_title_fight only.
+  summary.interimBouts = []; summary.tournamentBouts = [];
+  for (let i = 0; i < card.length; i++) {
+    if (!card[i].title) continue;
+    await sleep(DELAY);
+    const $f = cheerio.load(await get(`${BASE}/fight-details/${card[i].fightId}`));
+    const label = $f('.b-fight-details__fight-title').first().text().replace(/\s+/g, ' ').trim();
+    const kind = /tournament/i.test(label) || !/^UFC\b.*Title Bout$/i.test(label) ? 'tournament'
+      : /interim/i.test(label) ? 'interim' : 'title';
+    console.log(`  belt on bo${i}: "${label}" -> ${kind}`);
+    (kind === 'title' ? summary.titleBouts : kind === 'interim' ? summary.interimBouts : summary.tournamentBouts).push(i);
+  }
+  const unusedNew = NEW_FIGHTERS.filter(id => !card.some(r => r.fighters.some(f => f.ufcId === id)));
+  if (unusedNew.length) { console.error(`ABORT: --new-fighter id(s) not on this card: ${unusedNew.join(', ')}`); process.exit(1); }
 
   const events = await loadAll('events', 'id, ufc_id, name, slug, date, is_complete');
   const fighters = await loadAll('fighters', 'id, ufc_id, first_name, last_name, nickname, slug, wins, losses, draws, no_contests, career_wins, career_losses, pro_wins, pro_losses, status, date_of_birth');
@@ -363,6 +417,10 @@ async function main() {
     }
     console.log(`    ${f.id.slice(0, 8)}  bo=${f.bout_order}  ${fname(f.fighter1_id)} vs ${fname(f.fighter2_id)}  [${reasons.length ? reasons.join('; ') : 'neither fighter on card — cancelled'}]`);
   }
+  summary.matched = pairing.filter(p => p.kind === 'MATCHED').length;
+  summary.variants = pairing.filter(p => p.kind === 'VARIANT').map(p =>
+    `${p.row.fighters[0].name} vs ${p.row.fighters[1].name} -> DB ${fname(p.dbf.fighter1_id)} vs ${fname(p.dbf.fighter2_id)}`);
+  summary.stale = stale.map(f => `bo${f.bout_order} ${fname(f.fighter1_id)} vs ${fname(f.fighter2_id)}`);
   console.log(`\n  summary: matched=${pairing.filter(p => p.kind === 'MATCHED').length}  variant=${pairing.filter(p => p.kind === 'VARIANT').length}  missing=${pairing.filter(p => p.kind === 'MISSING').length}  stale=${stale.length}`);
 
   // ── phase 3 plan: delete guard ────────────────────────────────────────────
@@ -407,8 +465,12 @@ async function main() {
         console.log(`  ${sf.name.padEnd(26)} -> existing ${exact.id.slice(0, 8)} (exact name, ufc_id null -> backfill ${sf.ufcId})`);
         continue;
       }
-      if (exact && exact.ufc_id && exact.ufc_id !== sf.ufcId) {
+      const namesake = exact && exact.ufc_id && exact.ufc_id !== sf.ufcId;
+      if (namesake && NEW_FIGHTERS.includes(sf.ufcId)) {
+        console.log(`  ${sf.name.padEnd(26)} exact-name row ${exact.id.slice(0, 8)} carries ufc_id ${exact.ufc_id} — --new-fighter: creating a separate namesake row`);
+      } else if (namesake) {
         console.log(`  ${sf.name.padEnd(26)} *** exact-name row ${exact.id.slice(0, 8)} carries DIFFERENT ufc_id ${exact.ufc_id} — namesake or bad id. STOP for manual review. ***`);
+        summary.conflicts.push(`${sf.name} (${sf.ufcId}): exact-name row ${exact.id.slice(0, 8)} has ufc_id ${exact.ufc_id} — namesake (use --new-fighter ${sf.ufcId}) or bad id`);
         createBlocked = true; continue;
       }
       // variant within a matched pair: adopt the DB fighter from that pair
@@ -422,20 +484,26 @@ async function main() {
           const dbF = fighterById[cand.id];
           console.log(`  ${sf.name.padEnd(26)} -> existing ${cand.id.slice(0, 8)} "${dbF.first_name} ${dbF.last_name}" (VARIANT spelling${dbF.ufc_id ? '' : `; ufc_id null -> backfill ${sf.ufcId}`})`);
           if (!dbF.ufc_id) ufcIdBackfill.push({ dbId: cand.id, ufcId: sf.ufcId, name: sf.name });
-          else if (dbF.ufc_id !== sf.ufcId) { console.log(`     *** variant row has DIFFERENT ufc_id ${dbF.ufc_id} — STOP for manual review ***`); createBlocked = true; }
+          else if (dbF.ufc_id !== sf.ufcId) { console.log(`     *** variant row has DIFFERENT ufc_id ${dbF.ufc_id} — STOP for manual review ***`); summary.conflicts.push(`${sf.name} (${sf.ufcId}): variant row ${cand.id.slice(0, 8)} "${dbF.first_name} ${dbF.last_name}" has ufc_id ${dbF.ufc_id}`); createBlocked = true; }
           continue;
         }
       }
       // genuinely unresolved -> near-match report, then create
       const [first, ...rest] = sf.name.split(' ');
       const nLast = norm(rest.join(' ')), nFirst = norm(first);
-      const near = fighters.filter(f => {
-        const dLast = norm(f.last_name || ''), dFirst = norm(f.first_name || '');
-        return dLast === nLast && (dFirst[0] === nFirst[0] || lev(dFirst, nFirst) <= 2 ||
-          nFirst.length <= 3 || dFirst.length <= 3 || true); // surname-only included
+      const near = fighters.filter(f => norm(f.last_name || '') === nLast); // surname-only included
+      // A near-match is SUSPECT (plausibly the same person) when the first names are
+      // close: same initial, lev<=2, or either is a short nickname-like form (RJ).
+      // The exact full-name row only reaches here via --new-fighter and is excluded.
+      const suspect = near.filter(f => {
+        const dFirst = norm(f.first_name || '');
+        if (dFirst === nFirst) return false;
+        return dFirst[0] === nFirst[0] || lev(dFirst, nFirst) <= 2 || nFirst.length <= 3 || dFirst.length <= 3;
       });
-      console.log(`  ${sf.name.padEnd(26)} -> CREATE (ufcstats ${sf.ufcId}); near-matches (${near.length}):`);
-      near.slice(0, 8).forEach(f => console.log(`       ${f.id.slice(0, 8)}  ${f.first_name} ${f.last_name}  UFC ${f.wins}-${f.losses}-${f.draws}  pro ${f.pro_wins}-${f.pro_losses}  ufc_id=${f.ufc_id}`));
+      console.log(`  ${sf.name.padEnd(26)} -> CREATE (ufcstats ${sf.ufcId}); near-matches (${near.length}, suspect ${suspect.length}):`);
+      near.slice(0, 8).forEach(f => console.log(`       ${f.id.slice(0, 8)}  ${f.first_name} ${f.last_name}  UFC ${f.wins}-${f.losses}-${f.draws}  pro ${f.pro_wins}-${f.pro_losses}  ufc_id=${f.ufc_id}${suspect.includes(f) ? '  <- SUSPECT' : ''}`));
+      summary.creates.push({ name: sf.name, ufcId: sf.ufcId, namesake: !!namesake,
+        suspect: suspect.map(f => `${f.first_name} ${f.last_name} (${f.id.slice(0, 8)})`) });
       if (near.length > 8) console.log(`       ... ${near.length - 8} more (surname-only)`);
       toCreate.push(sf);
       resolvedId[sf.name] = null; // placeholder, filled on apply
@@ -443,15 +511,26 @@ async function main() {
   }
   if (createBlocked) { console.error('\nABORT: fighter identity conflict above — nothing written.'); process.exit(1); }
 
-  // slug collision check for creations
+  // slug collision check for creations. A --new-fighter namesake takes the next
+  // free suffix (anthony-romero -> anthony-romero-2); anyone else aborts as before.
+  const plannedSlug = {};
+  const takenSlugs = new Set(fighters.map(f => f.slug));
   for (const sf of toCreate) {
-    const slug = slugify(sf.name);
-    const holder = fighters.find(f => f.slug === slug);
-    if (holder) {
-      console.error(`ABORT: fighter slug "${slug}" already held by ${holder.id} (${holder.first_name} ${holder.last_name}) — resolve by hand.`);
-      process.exit(1);
+    const base = slugify(sf.name);
+    let slug = base;
+    if (takenSlugs.has(slug)) {
+      if (!NEW_FIGHTERS.includes(sf.ufcId)) {
+        const holder = fighters.find(f => f.slug === slug);
+        console.error(`ABORT: fighter slug "${slug}" already held by ${holder.id} (${holder.first_name} ${holder.last_name}) — resolve by hand.`);
+        process.exit(1);
+      }
+      for (let n = 2; takenSlugs.has(slug); n++) slug = `${base}-${n}`;
+      console.log(`  slug "${base}" taken -> ${sf.name} gets "${slug}"`);
     }
+    takenSlugs.add(slug);
+    plannedSlug[sf.ufcId] = slug;
   }
+  summary.ufcIdBackfills = ufcIdBackfill.map(b => `${b.name} <- ${b.ufcId}`);
 
   // ── phase 5 plan: inserts + reorder ───────────────────────────────────────
   console.log('\n━━━━ PHASE 5 — BOUT INSERTS + REORDER ━━━━');
@@ -472,7 +551,10 @@ async function main() {
     titleUpdates.forEach(p => console.log(`    ${p.dbf.id.slice(0, 8)}  bo=${p.pageIdx}  is_title_fight -> true`));
   }
   if (TITLE_BOS.length) console.log(`  --title bout_orders: ${TITLE_BOS.join(', ')}`);
+  const bos = a => (a.length ? a.map(i => 'bo' + i).join(', ') : 'none');
+  console.log(`  ufcstats UFC title bouts: ${bos(summary.titleBouts)}  |  interim: ${bos(summary.interimBouts)}  |  tournament finals (not flagged): ${bos(summary.tournamentBouts)}`);
   const finalCount = dbFights.length - stale.length + inserts.length;
+  summary.finalCount = finalCount;
   console.log(`  final card: ${dbFights.length} - ${stale.length} + ${inserts.length} = ${finalCount} rows, bout_order 0..${card.length - 1}${finalCount !== card.length ? '  *** MISMATCH vs source ' + card.length + ' ***' : ''}`);
 
   // ── phases 6-8 preview ────────────────────────────────────────────────────
@@ -492,6 +574,7 @@ async function main() {
     console.log(`  [ ] title bouts flagged (--title) match the real card`);
     console.log(`  [ ] final count ${finalCount} === source ${card.length}`);
     console.log('\nDry run complete — nothing written. Re-run with --apply to execute.');
+    summary.ok = true;
     return;
   }
 
@@ -537,7 +620,7 @@ async function main() {
     const id = crypto.randomUUID();
     const row = {
       id, ufc_id: sf.ufcId, first_name: first, last_name: rest.join(' '),
-      nickname: pg.nickname || null, slug: slugify(sf.name),
+      nickname: pg.nickname || null, slug: plannedSlug[sf.ufcId],
       primary_weight_class_id: wc ? wc.id : null, status: 'active',
       is_champion: false, is_interim_champ: false,
       height_inches: pg.height_inches, reach_inches: pg.reach_inches,
@@ -580,7 +663,7 @@ async function main() {
     console.log(`  [5] title flag bo=${p.pageIdx}: ${error ? 'ERROR ' + error.message : 'ok'}`);
   }
 
-  if (SKIP_RESULTS) { console.log('\n--skip-results set — stopping after phase 5.'); return; }
+  if (SKIP_RESULTS) { console.log('\n--skip-results set — stopping after phase 5.'); summary.ok = true; return; }
 
   // 6-7. child scripts
   runChild('results scraper', ['src/scrapers/ufcstats-fight-stats.js', '--write-results', '--ufc-id', UFCID]);
@@ -600,13 +683,20 @@ async function main() {
   console.log(`  without result: ${unresolved.length}${unresolved.length ? '  *** ' + unresolved.map(f => 'bo' + f.bout_order).join(',') + ' ***' : ''}`);
   console.log(`  orientation-A violations: ${badOrient.length}${badOrient.length ? '  *** ' + badOrient.map(f => 'bo' + f.bout_order).join(',') + ' ***' : ''}`);
   console.log(`  null card_position: ${nullPos.length}${nullPos.length ? '  -> MANUAL: ' + nullPos.map(f => `bo${f.bout_order} (${fname(f.fighter1_id)} vs ${fname(f.fighter2_id)})`).join(', ') : ''}`);
+  summary.eventId = EVENT_DB_ID;
+  summary.finalCount = finalFights.length;
+  summary.nullCardPosition = nullPos.map(f => f.bout_order);
+  summary.unresolved = unresolved.map(f => f.bout_order);
+  summary.orientationViolations = badOrient.map(f => f.bout_order);
   if (!unresolved.length && finalFights.length === card.length) {
     const { error } = await supabase.from('events').update({ is_complete: true }).eq('id', EVENT_DB_ID);
     console.log(`  [8] is_complete -> true: ${error ? 'ERROR ' + error.message : 'ok'}`);
+    summary.isComplete = !error;
   } else {
     console.log('  [8] is_complete NOT set — unresolved fights or count mismatch above.');
   }
   console.log('\nDeferred (run once after the batch): fix-fighter-records.js, computeCareerStats.js, computeRatings.js, validate.js.');
+  summary.ok = true;
 }
 
 main().catch(e => { console.error('Fatal:', e); process.exit(1); });
