@@ -28,7 +28,8 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const supabase = require('../db/client');
-const { buildTimelines, computePriors } = require('./statsEngine');
+const { buildTimelines, computePriors, annotateOpponentPriors } = require('./statsEngine');
+const { computeElo } = require('./eloEngine');
 const { FEATURES, DEFAULT_CONFIG, sideFeatures, ufcResultsOnOrAfter, diffVector, standardize } = require('./features');
 
 const SPLIT_DATE = '2024-01-01';
@@ -36,13 +37,22 @@ const MIN_PRIOR_STATS_FIGHTS = 2;   // harness default (Phase-0 comparability)
 const PRIOR_CUTOFF = '2019-01-01'; // league priors use only fights before the first evaluation fold
 const MODEL_PATH = path.join(__dirname, 'model-v4.json');
 
-// What the SHIPPED model is trained with (Phase 1, chosen with evaluate.js on
-// 2026-10-12: pooled logloss 0.6482 -> 0.6417 on the min-prior-2 subset).
-// Training includes debutants (min prior 0) so the model is calibrated on the
-// population the Predict page actually serves. stats_minutes failed the gate.
-const TRAIN_CONFIG = { ...DEFAULT_CONFIG, shrinkMinutes: 30, halfLifeDays: 1095, layoffCapDays: 730, winShrinkFights: 2, clipZ: 3 };
+// What the SHIPPED model is trained with (Phases 1+2, chosen with evaluate.js
+// on 2026-10-12: pooled logloss 0.6482 -> 0.6417 (Phase 1) -> 0.6317 (Phase 2)
+// on the min-prior-2 subset). Training includes debutants (min prior 0) so the
+// model is calibrated on the population the Predict page actually serves.
+// Dropped at the gate (leave-one-out under this config, 2026-10-12): the Phase-2
+// extras stats_minutes, opp_adj_td_avg, elo_best_win, elo_trend, sos, and the
+// legacy features whose removal did not raise held-out logloss — slpm,
+// kd_absorbed_per15, cardio_degradation, experience, recent_win_rate,
+// form_trend. Final 18-feature set: pooled logloss 0.6298 on the min-prior-2 subset.
+const TRAIN_CONFIG = { ...DEFAULT_CONFIG, shrinkMinutes: 30, halfLifeDays: 1095, layoffCapDays: 730, winShrinkFights: 2, clipZ: 3, eloK: 100, eloFinishMult: 1.5 };
 const TRAIN_MIN_PRIOR = 0;
-const TRAIN_FEATURES = FEATURES.filter(f => f !== 'stats_minutes');
+const TRAIN_EXCLUDED = new Set([
+  'stats_minutes', 'opp_adj_td_avg', 'elo_best_win', 'elo_trend', 'sos',
+  'slpm', 'kd_absorbed_per15', 'cardio_degradation', 'experience', 'recent_win_rate', 'form_trend',
+]);
+const TRAIN_FEATURES = FEATURES.filter(f => !TRAIN_EXCLUDED.has(f));
 
 const FIGHT_COLS = 'id, event_id, fighter1_id, fighter2_id, winner_id, result, method, round, time, time_format, is_title_fight, weight_class_id, rounds_data';
 const FIGHTER_COLS = 'id, slug, first_name, last_name, date_of_birth, reach_inches, height_inches, pro_wins, pro_losses';
@@ -117,8 +127,9 @@ function evaluate(X, y, w, b) {
 function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIOR_STATS_FIGHTS, cfg = DEFAULT_CONFIG } = {}) {
   const eventById = Object.fromEntries(events.map(e => [e.id, e]));
   const fighterById = Object.fromEntries(fighters.map(f => [f.id, f]));
-  const timelines = buildTimelines(fights, eventById);
+  const timelines = annotateOpponentPriors(buildTimelines(fights, eventById));
   const priors = cfg.shrinkMinutes > 0 ? computePriors(timelines, PRIOR_CUTOFF) : null;
+  const elo = computeElo(fights, eventById, { K: cfg.eloK, finishMult: cfg.eloFinishMult });
 
   const rows = [];
   let skippedInexperienced = 0;
@@ -138,14 +149,14 @@ function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIO
     const bId = flip ? f.fighter1_id : f.fighter2_id;
     const label = f.winner_id === aId ? 1 : 0;
 
-    const a = sideFeatures(timelines.get(aId), fighterById[aId], ev.date, ev.date, cfg, priors);
-    const b = sideFeatures(timelines.get(bId), fighterById[bId], ev.date, ev.date, cfg, priors);
+    const a = sideFeatures(timelines.get(aId), fighterById[aId], ev.date, ev.date, cfg, priors, elo);
+    const b = sideFeatures(timelines.get(bId), fighterById[bId], ev.date, ev.date, cfg, priors, elo);
     rows.push({
       date: ev.date, fightId: f.id, weightClassId: f.weight_class_id ?? null, method: f.method || null,
       x: diffVector(a, b), y: label, a, b, flip, minPriorStats: Math.min(prior1, prior2),
     });
   }
-  return { rows, timelines, eventById, fighterById, priors, cfg, skippedInexperienced };
+  return { rows, timelines, eventById, fighterById, priors, elo, cfg, skippedInexperienced };
 }
 
 async function main() {

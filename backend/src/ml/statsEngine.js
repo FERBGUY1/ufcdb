@@ -218,11 +218,18 @@ function snapshot(timeline, cutoffDate = null, lastN = null, opts = {}) {
               opp_td_l: 0, opp_td_a: 0, sub: 0, kd: 0, opp_kd: 0,
               ctrl: 0, ctrl_sec_base: 0, dist_a: 0, clinch_a: 0, ground_a: 0 };
   const roundOut = {}; // roundNo -> {att, sec}
+  // what the opponents faced typically do/allow (minutes-weighted, decayed) —
+  // filled from e.oppPrior, set by annotateOpponentPriors()
+  const O = { sec: 0, slpm: 0, sapm: 0, td_def: 0 };
   let recWins = 0, recLosses = 0;
 
   for (const e of statsFights) {
     const wgt = weightOf(e);
     S.sec += e.seconds * wgt; S.rawSec += e.seconds;
+    if (e.oppPrior) {
+      const ws = e.seconds * wgt;
+      O.sec += ws; O.slpm += e.oppPrior.slpm * ws; O.sapm += e.oppPrior.sapm * ws; O.td_def += e.oppPrior.td_def * ws;
+    }
     const m = e.me, o = e.opp;
     S.sig_l += (m.sig_l || 0) * wgt; S.sig_a += (m.sig_a || 0) * wgt;
     S.opp_sig_l += (o.sig_l || 0) * wgt; S.opp_sig_a += (o.sig_a || 0) * wgt;
@@ -275,20 +282,41 @@ function snapshot(timeline, cutoffDate = null, lastN = null, opts = {}) {
   const styleDen = S.dist_a + S.clinch_a + S.ground_a;
   const lastFight = allCompleted[allCompleted.length - 1] || null;
 
+  // Opponent-adjusted striking/wrestling: own rate minus what the opponents
+  // faced typically allowed (or landed). Opponents without prior stats fall
+  // back to the league prior when one is supplied, so a debut-heavy slate is
+  // adjusted against an average opponent rather than dropped.
+  const slpm = round2(shr(S.sig_l, min, k ? P.slpm : 0, k));
+  const sapm = round2(shr(S.opp_sig_l, min, k ? P.sapm : 0, k));
+  const td_avg = round2(rate15(S.td_l, k ? P.td_avg : 0));
+  const G = priors ? priors.global : null;
+  const oppExp = key => {
+    const known = O.sec > 0 ? O[key] / O.sec : null;
+    if (!G) return known;
+    const unknownSec = Math.max(0, S.sec - O.sec);
+    return S.sec > 0 ? ((known ?? 0) * O.sec + G[key] * unknownSec) / S.sec : G[key];
+  };
+  const oppSapm = oppExp('sapm'), oppSlpm = oppExp('slpm'), oppTdDef = oppExp('td_def');
+
   return {
+    opp_exp_sapm: round2(oppSapm), opp_exp_slpm: round2(oppSlpm), opp_exp_td_def: round2(oppTdDef),
+    slpm_adj: slpm != null && oppSapm != null ? round2(slpm - oppSapm) : null,
+    sapm_adj: sapm != null && oppSlpm != null ? round2(sapm - oppSlpm) : null,
+    // takedowns landed, rescaled to a league-average takedown defense
+    td_avg_adj: td_avg != null && oppTdDef != null && G && oppTdDef < 100
+      ? round2(td_avg * ((100 - G.td_def) / (100 - oppTdDef))) : null,
     record: rec,
     total_fights: allCompleted.length,
     stats_fights: statsFights.length,
     stats_seconds: S.rawSec,
     stats_seconds_weighted: S.sec,
     prior_weight_class: wc,
-    slpm: round2(shr(S.sig_l, min, k ? P.slpm : 0, k)),
-    sapm: round2(shr(S.opp_sig_l, min, k ? P.sapm : 0, k)),
+    slpm, sapm,
     str_acc: round2(shrPct(S.sig_l, S.sig_a, k ? P.str_acc : 0, k ? k * P.sig_att_pm : 0)),
     str_def: round2(k
       ? shrPct(S.opp_sig_a - S.opp_sig_l, S.opp_sig_a, P.str_def, k * P.opp_sig_att_pm)
       : (S.opp_sig_a > 0 ? 100 - (S.opp_sig_l / S.opp_sig_a) * 100 : null)),
-    td_avg: round2(rate15(S.td_l, k ? P.td_avg : 0)),
+    td_avg,
     td_acc: round2(shrPct(S.td_l, S.td_a, k ? P.td_acc : 0, k ? k * P.td_att_pm : 0)),
     td_def: round2(k
       ? shrPct(S.opp_td_a - S.opp_td_l, S.opp_td_a, P.td_def, k * P.opp_td_att_pm)
@@ -310,4 +338,26 @@ function snapshot(timeline, cutoffDate = null, lastN = null, opts = {}) {
   };
 }
 
-module.exports = { buildTimelines, snapshot, computePriors, fightSeconds };
+/**
+ * Attach to every stats-fight entry the opponent's RAW career rates as they
+ * stood before that fight (e.oppPrior = {slpm, sapm, td_avg, td_def}), or
+ * null when the opponent had no prior stats. Point-in-time by construction:
+ * the opponent snapshot is cut off at the fight date. Mutates the timelines
+ * in place and returns them.
+ */
+function annotateOpponentPriors(timelines) {
+  for (const tl of timelines.values()) {
+    for (const e of tl) {
+      if (!e.hasStats || !e.oppId) { e.oppPrior = null; continue; }
+      const oppTl = timelines.get(e.oppId);
+      if (!oppTl) { e.oppPrior = null; continue; }
+      const s = snapshot(oppTl, e.date);
+      e.oppPrior = s.stats_fights > 0 && s.slpm != null && s.sapm != null && s.td_def != null
+        ? { slpm: s.slpm, sapm: s.sapm, td_avg: s.td_avg, td_def: s.td_def }
+        : null;
+    }
+  }
+  return timelines;
+}
+
+module.exports = { buildTimelines, snapshot, computePriors, annotateOpponentPriors, fightSeconds };

@@ -39,6 +39,14 @@ const FEATURES = [
   'stats_minutes',      // cage minutes with round stats (how much the rate stats rest on)
   'pro_win_rate',       // pro MMA win % as of the fight (current pro record minus UFC results on/after the date)
   'pro_fights',         // pro MMA fights as of the fight (same derivation)
+  // ── Phase 2: opponent strength (eloEngine.js + annotateOpponentPriors) ──
+  'elo',                // UFC Elo rating before the fight
+  'sos',                // strength of schedule: mean opponent Elo at the time of each fight
+  'elo_best_win',       // highest Elo (at the time) of an opponent beaten
+  'elo_trend',          // Elo change over the last 3 fights (momentum)
+  'opp_adj_slpm',       // SLpM minus what the opponents faced typically absorb
+  'opp_adj_sapm',       // SApM minus what the opponents faced typically land
+  'opp_adj_td_avg',     // TD/15 rescaled to a league-average takedown defense
 ];
 
 const DEFAULT_CONFIG = {
@@ -47,6 +55,8 @@ const DEFAULT_CONFIG = {
   layoffCapDays: 0,     // cap on layoff_days (0 = uncapped)
   winShrinkFights: 0,   // pseudo-fights at 50% mixed into win_rate / pro_win_rate (0 = raw)
   clipZ: 0,             // clip standardized features at ±clipZ (0 = no clipping)
+  eloK: 40,             // Elo step (eloEngine.computeElo)
+  eloFinishMult: 1,     // K multiplier for KO/SUB wins (1 = off)
 };
 
 /**
@@ -63,7 +73,7 @@ const DEFAULT_CONFIG = {
  *               after that date are not known and are not removed (small
  *               overcount for fighters who left and kept fighting).
  */
-function sideValues(snap, snapRecent, fighter, asOfDate, cfg = DEFAULT_CONFIG, ufcAfter = { wins: 0, losses: 0 }) {
+function sideValues(snap, snapRecent, fighter, asOfDate, cfg = DEFAULT_CONFIG, ufcAfter = { wins: 0, losses: 0 }, elo = null) {
   const asOf = new Date(asOfDate);
   const kw = cfg.winShrinkFights || 0;
   const shrinkRate = (w, n) => (n + kw > 0 ? ((w + kw * 0.5) / (n + kw)) * 100 : null);
@@ -90,6 +100,13 @@ function sideValues(snap, snapRecent, fighter, asOfDate, cfg = DEFAULT_CONFIG, u
     stats_minutes: snap.stats_seconds / 60,
     pro_win_rate: proW == null ? null : shrinkRate(proW, proW + proL),
     pro_fights: proW == null ? null : proW + proL,
+    elo: elo ? elo.elo : null,
+    sos: elo ? elo.sos : null,
+    elo_best_win: elo ? elo.elo_best_win : null,
+    elo_trend: elo ? elo.elo_trend : null,
+    opp_adj_slpm: snap.slpm_adj ?? null,
+    opp_adj_sapm: snap.sapm_adj ?? null,
+    opp_adj_td_avg: snap.td_avg_adj ?? null,
   };
 }
 
@@ -106,12 +123,14 @@ function ufcResultsOnOrAfter(timeline, date) {
  *            serving: null = full career
  *   cfg      DEFAULT_CONFIG-shaped; priors from statsEngine.computePriors
  *            (required when cfg.shrinkMinutes > 0)
+ *   elo      eloEngine.computeElo() result (null = Elo features neutral)
  */
-function sideFeatures(timeline, fighter, asOf, cutoff, cfg = DEFAULT_CONFIG, priors = null) {
+function sideFeatures(timeline, fighter, asOf, cutoff, cfg = DEFAULT_CONFIG, priors = null, elo = null) {
   const snapOpts = { asOf, halfLifeDays: cfg.halfLifeDays, shrinkMinutes: cfg.shrinkMinutes, priors };
   const snap = snapshot(timeline, cutoff, null, snapOpts);
   const recent = snapshot(timeline, cutoff, 3, snapOpts);
-  return sideValues(snap, recent, fighter, asOf, cfg, ufcResultsOnOrAfter(timeline, asOf));
+  const eloSummary = elo && fighter ? elo.summaryAsOf(fighter.id, cutoff) : null;
+  return sideValues(snap, recent, fighter, asOf, cfg, ufcResultsOnOrAfter(timeline, asOf), eloSummary);
 }
 
 // A-minus-B differentials in FEATURES order; null on either side -> 0

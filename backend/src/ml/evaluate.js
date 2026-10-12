@@ -43,6 +43,8 @@
  *   --layoff-cap DAYS        cap layoff_days
  *   --win-shrink N           pseudo-fights at 50% mixed into win rates
  *   --clip Z                 clip standardized features at ±Z
+ *   --elo-k K                Elo step (default 40)
+ *   --elo-finish M           Elo K multiplier for KO/SUB wins (default 1)
  *   --ablate                 leave-one-out feature gate (slow: folds x features fits)
  *   --out PATH               write the JSON report
  *   --baseline PATH          compare against a saved report
@@ -56,6 +58,7 @@ const fs = require('fs');
 const path = require('path');
 const { loadAll, sigmoid, trainLogistic, evaluate, buildDataset, sideFeatures, FIGHT_COLS, FIGHTER_COLS, MIN_PRIOR_STATS_FIGHTS } = require('./trainModel');
 const { FEATURES, DEFAULT_CONFIG, diffVector, standardize } = require('./features');
+const { computeElo } = require('./eloEngine');
 
 // ── CLI ───────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -76,6 +79,8 @@ const CFG = {
   layoffCapDays: parseFloat(opt('layoff-cap', String(DEFAULT_CONFIG.layoffCapDays))),
   winShrinkFights: parseFloat(opt('win-shrink', String(DEFAULT_CONFIG.winShrinkFights))),
   clipZ: parseFloat(opt('clip', String(DEFAULT_CONFIG.clipZ))),
+  eloK: parseFloat(opt('elo-k', String(DEFAULT_CONFIG.eloK))),
+  eloFinishMult: parseFloat(opt('elo-finish', String(DEFAULT_CONFIG.eloFinishMult))),
 };
 const ABLATE = flag('ablate');
 const OUT = opt('out', null);
@@ -214,18 +219,21 @@ function serveWith(model, a, b) {
   return { p, zmax: Math.max(...z.map(Math.abs)), top };
 }
 
-function runSanity(timelines, fighterById, candidate, priors) {
+function runSanity(timelines, fighterById, candidate, fights, events) {
   if (!fs.existsSync(SANITY_PATH)) return { skipped: `no ${path.basename(SANITY_PATH)}` };
   const { pairs } = JSON.parse(fs.readFileSync(SANITY_PATH, 'utf8'));
   const bySlug = new Map(Object.values(fighterById).map(f => [f.slug, f]));
   // the shipped model is served with ITS OWN config (stored in the file; Phase-0 files have none = raw)
   const shipped = fs.existsSync(MODEL_PATH) ? (() => {
     const m = require(MODEL_PATH);
-    return { names: m.features, mu: m.mu, sigma: m.sigma, w: m.w, b: m.b, cfg: { ...DEFAULT_CONFIG, ...(m.config || {}) }, priors: m.priors || null };
+    const cfg = { ...DEFAULT_CONFIG, ...(m.config || {}) };
+    const eventById = Object.fromEntries(events.map(e => [e.id, e]));
+    const elo = m.features.some(f => f.startsWith('elo') || f === 'sos') ? computeElo(fights, eventById, { K: cfg.eloK, finishMult: cfg.eloFinishMult }) : null;
+    return { names: m.features, mu: m.mu, sigma: m.sigma, w: m.w, b: m.b, cfg, priors: m.priors || null, elo };
   })() : null;
   const today = new Date().toISOString().slice(0, 10);
   // full career (no cutoff), decay measured back from today
-  const vals = (f, model) => sideFeatures(timelines.get(f.id) || [], f, today, null, model.cfg, model.priors);
+  const vals = (f, model) => sideFeatures(timelines.get(f.id) || [], f, today, null, model.cfg, model.priors, model.elo);
   const results = [];
   for (const pr of pairs) {
     const A = bySlug.get(pr.f1), B = bySlug.get(pr.f2);
@@ -255,7 +263,7 @@ async function main() {
     loadAll('fighters', FIGHTER_COLS),
     loadAll('odds', 'fight_id, bookmaker, fighter1_odds, fighter2_odds, line_type, recorded_at'),
   ]);
-  const { rows, timelines, fighterById, priors, skippedInexperienced } = buildDataset(fights, events, fighters, { minPriorStatsFights: MIN_PRIOR, cfg: CFG });
+  const { rows, timelines, fighterById, priors, elo, skippedInexperienced } = buildDataset(fights, events, fighters, { minPriorStatsFights: MIN_PRIOR, cfg: CFG });
   const market = buildMarket(oddsRows);
   console.log(`Rows: ${rows.length} usable fights (skipped ${skippedInexperienced} with a side under ${MIN_PRIOR} prior stats-fights)  |  market lines on ${market.size} fights`);
 
@@ -315,8 +323,8 @@ async function main() {
   let sanity = null;
   if (SANITY) {
     const all = fitAndScore(rows, [], SELECTED);
-    const candidate = { names: SELECTED, mu: all.mu, sigma: all.sigma, w: all.w, b: all.b, cfg: CFG, priors };
-    sanity = runSanity(timelines, fighterById, candidate, priors);
+    const candidate = { names: SELECTED, mu: all.mu, sigma: all.sigma, w: all.w, b: all.b, cfg: CFG, priors, elo };
+    sanity = runSanity(timelines, fighterById, candidate, fights, events);
     if (sanity.skipped) console.log(`\nSanity set: skipped (${sanity.skipped})`);
     else {
       console.log(`\n======== SANITY SET  shipped ${path.basename(MODEL_PATH)} ${sanity.shipped ? `${sanity.shipped.pass}/${sanity.shipped.total}` : 'n/a'}   candidate ${sanity.candidate.pass}/${sanity.candidate.total} ========`);

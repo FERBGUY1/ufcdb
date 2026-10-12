@@ -219,6 +219,7 @@ under and the **league priors**, so serving always matches training:
 | `layoffCapDays` | 730 | `layoff_days` capped |
 | `winShrinkFights` | 2 | `win_rate` / `pro_win_rate` = (w + k·0.5)/(n + k) |
 | `clipZ` | 3 | standardized features clipped at ±3 (`features.standardize`) |
+| `eloK` / `eloFinishMult` | 100 / 1.5 | `eloEngine.computeElo`: point-in-time Elo replayed in date order; KO/SUB wins step K×1.5 |
 
 All knobs default OFF, so `computeCareerStats.js` and the fighter pages keep raw career
 numbers (verified: Holloway dry-run == DB row after the change). Training includes
@@ -227,7 +228,17 @@ current `pro_wins/pro_losses` minus UFC results on or after the date (fights out
 UFC after that date are not removed — small overcount for fighters who left and kept fighting).
 `fighter1_record_at_fight` is empty on every row, so there is no better source yet.
 
-**Serving** (`predictionEngine.js`): `sideFeatures(timeline, fighter, today, null, CFG, PRIORS)`
+**Opponent strength (Phase 2).** `eloEngine.js` replays every decided fight in date order;
+`summaryAsOf(fighterId, date)` returns the rating before any fight on that date, strength
+of schedule (`sos` = mean opponent Elo at the time of each fight), best beaten opponent and
+3-fight momentum. `statsEngine.annotateOpponentPriors(timelines)` attaches to each
+stats-fight the opponent's RAW rates as they stood before that fight (`e.oppPrior`), and
+`snapshot()` then emits `slpm_adj` / `sapm_adj` (own rate minus what the opponents faced
+typically allow/land; unknown opponents fall back to the league prior) and `td_avg_adj`.
+Shipped features: `elo`, `opp_adj_slpm`, `opp_adj_sapm` (`sos` was gated out). The quality-score columns
+on `fights` (`fighterN_quality_score`) are still null — Elo lives in the model path only.
+
+**Serving** (`predictionEngine.js`): `sideFeatures(timeline, fighter, today, null, CFG, PRIORS, ELO)`
 for the model, raw `snapshot()` for round projections. Confidence: `high`/`medium`/`low` by
 probability margin, capped at `medium` when `weight_class_context.has_size_mismatch`, forced
 `low` when a side has <2 stats-fights or <30 min of stat time. Rate-stat factor rows carry a
@@ -255,13 +266,14 @@ and scorer. It writes nothing to the DB and never touches the model file.
 - **Feature gate** (`--ablate`): leave-one-feature-out across all folds. KEEP only if
   including the feature lowers mean fold log loss and raises it in at most one fold.
   `--baseline report.json` applies the same rule to this run vs a saved report. With 8
-  folds, deltas under ~0.001 are noise. The ≤1-fold rule is strict: the whole Phase-1
-  config (−0.006 mean) fails it on fold count (worse in 2–3 of 8, 2022/2026), so read the
-  per-fold deltas, not just the verdict.
+  folds, deltas under ~0.001 are noise. The ≤1-fold rule is strict and stays as written
+  (user decision 2026-10-12): the Phase-1 config alone (−0.006 mean) failed it on fold
+  count (worse in 2022 +0.006, 2023 +0.002, 2026 +0.022); Phases 1+2 together pass
+  (−0.016 mean, worse only in 2026 +0.007). Always read the per-fold deltas too.
 - **Flags**: `--features a,b,c` · `--min-prior N` · `--score-min-prior N` (score only test
   rows whose thinner side has ≥ N; use 2 to compare a `--min-prior 0` run with Phase 0)
   · `--shrink K` · `--half-life DAYS` · `--layoff-cap DAYS` · `--win-shrink N` · `--clip Z`
-  · `--ablate` · `--out PATH` · `--baseline PATH` · `--no-sanity`
+  · `--elo-k K` · `--elo-finish M` · `--ablate` · `--out PATH` · `--baseline PATH` · `--no-sanity`
 - Knobs off + the 19 Phase-0 features reproduces `reports/baseline-phase0.json` exactly.
 
 ### Results log (`reports/`)
@@ -270,6 +282,20 @@ and scorer. It writes nothing to the DB and never touches the model file.
 |---|---|---|---|
 | `baseline-phase0.json` | 19 raw features, min-prior 2 | 62.6% / logloss 0.6482 | 8/27 |
 | `phase1-candidate.json` | +pro_win_rate, pro_fights; v4 config; min-prior 0 | 64.2% / logloss 0.6417 | 11/27 |
+| `phase1-2.json` | **shipped v4**: 18 features (see below); Elo K 100 ×1.5 finishes; min-prior 0 | 64.8% / logloss 0.6298 | 19/27 |
+
+Phase-2 findings (2026-10-12): opponent-adjusted striking alone −0.0046 (passes the gate
+on its own); Elo alone −0.0007 at K 40 but keeps improving with larger steps (K 60 −0.0019,
+K 100 ≈ K 150) and a finish bonus (×1.5 −0.0099 with Elo+SoS+adjusted striking).
+Leave-one-out under the final config: KEEP = `age` (+0.0094 if removed), `elo` (+0.0027),
+`opp_adj_sapm`, `opp_adj_slpm`, `str_acc`, `layoff_days`, `pro_fights`; `sos` fell to
++0.0004 once K was 100; `slpm`, `kd_absorbed_per15`, `cardio_degradation`, `experience`,
+`recent_win_rate`, `form_trend` were at or below zero. Dropping those seven gave the best
+set that passes vs Phase 0 (−0.0175 mean, worse only in 2026); the 7-feature KEEP-only
+set was worse (0.6368, 2 folds). Shipped 18: sapm, str_acc, str_def, td_avg, td_acc,
+td_def, sub_avg, kd_per15, win_rate, age, reach, height, layoff_days, pro_win_rate,
+pro_fights, opp_adj_slpm, opp_adj_sapm, elo. Remaining sanity failures are the extreme
+cross-weight pairs (Pereira–Dvalishvili, Ngannou–Topuria, Miocic–Johnson) — Phase 3.
 
 Phase-1 findings (2026-10-12): shrinkage alone −0.002, pro record alone −0.0027, layoff cap
 −0.0006, win-rate shrink −0.0005, decay and clipping ≈0 alone but decay helps in

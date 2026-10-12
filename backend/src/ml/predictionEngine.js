@@ -15,7 +15,8 @@ require('dotenv').config();
 const Anthropic = require('@anthropic-ai/sdk');
 const path = require('path');
 const supabase = require('../db/client');
-const { buildTimelines, snapshot } = require('./statsEngine');
+const { buildTimelines, snapshot, annotateOpponentPriors } = require('./statsEngine');
+const { computeElo } = require('./eloEngine');
 const { FEATURES, DEFAULT_CONFIG, sideFeatures, diffVector, standardize } = require('./features');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -93,7 +94,9 @@ async function getData() {
   const fights = await loadAll('fights',
     'id, event_id, fighter1_id, fighter2_id, winner_id, result, method, round, time, time_format, is_title_fight, weight_class_id, rounds_data');
   const eventById = Object.fromEntries(events.map(e => [e.id, e]));
-  dataCache = { timelines: buildTimelines(fights, eventById), loadedAt: Date.now() };
+  const timelines = annotateOpponentPriors(buildTimelines(fights, eventById));
+  const elo = computeElo(fights, eventById, { K: CFG.eloK, finishMult: CFG.eloFinishMult });
+  dataCache = { timelines, elo, loadedAt: Date.now() };
   return dataCache;
 }
 
@@ -141,6 +144,13 @@ const FACTOR_META = {
   stats_minutes:     { sfx: '',  desc: 'min of UFC stat data',    dp: 0, hib: true,  adv: 'has the deeper statistical track record', despite: 'grades ahead despite a thinner track record', advP: 'a deeper track record', despiteP: 'a thinner track record' },
   pro_win_rate:      { sfx: '%', desc: 'pro MMA win rate',        dp: 1, hib: true,  adv: 'owns the stronger pro record',      despite: 'grades ahead despite a weaker pro record', advP: 'a stronger pro record',     despiteP: 'a weaker pro record' },
   pro_fights:        { sfx: '',  desc: 'pro fights',              dp: 0, hib: true,  adv: 'is the more seasoned pro',          despite: 'grades ahead despite fewer pro fights',   advP: 'more pro experience',        despiteP: 'less pro experience' },
+  elo:               { sfx: '',  desc: 'UFC Elo',                 dp: 0, hib: true,  adv: 'holds the higher UFC rating',       despite: 'grades ahead despite the lower rating',   advP: 'a higher UFC rating',        despiteP: 'a lower UFC rating' },
+  sos:               { sfx: '',  desc: 'avg opponent Elo',        dp: 0, hib: true,  adv: 'has faced the tougher schedule',    despite: 'grades ahead despite the softer schedule', advP: 'a tougher schedule',        despiteP: 'a softer schedule' },
+  elo_best_win:      { sfx: '',  desc: 'best win Elo',            dp: 0, hib: true,  adv: 'owns the bigger signature win',     despite: 'grades ahead despite the lesser best win', advP: 'a bigger signature win',    despiteP: 'a lesser best win' },
+  elo_trend:         { sfx: '',  desc: 'Elo change, last 3',      dp: 0, hib: true,  adv: 'is on the stronger rating run',     despite: 'grades ahead despite a rating slide',     advP: 'rating momentum',            despiteP: 'a rating slide' },
+  opp_adj_slpm:      { sfx: '',  desc: 'SLpM vs opponents\' norm', dp: 2, hib: true,  adv: 'outstrikes what the opposition usually allows', despite: 'grades ahead despite below-par output for the opposition faced', advP: 'opponent-adjusted volume', despiteP: 'below-par opponent-adjusted volume' },
+  opp_adj_sapm:      { sfx: '',  desc: 'SApM vs opponents\' norm', dp: 2, hib: false, adv: 'absorbs less than the opposition usually lands', despite: 'grades ahead despite absorbing more than the opposition usually lands', advP: 'opponent-adjusted defense', despiteP: 'below-par opponent-adjusted defense' },
+  opp_adj_td_avg:    { sfx: '',  desc: 'TD/15 vs league-avg defense', dp: 2, hib: true, adv: 'holds the opponent-adjusted takedown edge', despite: 'grades ahead despite fewer adjusted takedowns', advP: 'opponent-adjusted takedowns', despiteP: 'fewer adjusted takedowns' },
   // reach & height read as an inch advantage when the leader is the bigger one.
   reach:             { dp: 0, dim: 'reach' },
   height:            { dp: 0, dim: 'height' },
@@ -406,7 +416,7 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
     if (cached) return { ...cached, fighter1: f1, fighter2: f2, weight_class_context: weightClassContext };
   }
 
-  const { timelines } = await getData();
+  const { timelines, elo } = await getData();
   const tl1 = timelines.get(fighter1Id) || [];
   const tl2 = timelines.get(fighter2Id) || [];
   const today = new Date().toISOString().split('T')[0];
@@ -415,8 +425,8 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   // (shrunk, decayed, capped — exactly what training saw). Raw snapshots stay
   // for the round projections, which are display numbers.
   const snap1 = snapshot(tl1), snap2 = snapshot(tl2);
-  const vals1 = sideFeatures(tl1, f1, today, null, CFG, PRIORS);
-  const vals2 = sideFeatures(tl2, f2, today, null, CFG, PRIORS);
+  const vals1 = sideFeatures(tl1, f1, today, null, CFG, PRIORS, elo);
+  const vals2 = sideFeatures(tl2, f2, today, null, CFG, PRIORS, elo);
   const { p: f1WinProb, contributions } = predictProb(diffVector(vals1, vals2));
   const f2WinProb = 1 - f1WinProb;
 
