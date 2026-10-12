@@ -57,7 +57,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { loadAll, sigmoid, trainLogistic, evaluate, buildDataset, sideFeatures, FIGHT_COLS, FIGHTER_COLS, MIN_PRIOR_STATS_FIGHTS } = require('./trainModel');
-const { FEATURES, DEFAULT_CONFIG, diffVector, standardize } = require('./features');
+const { FEATURES, DEFAULT_CONFIG, diffVector, standardize, careerContext } = require('./features');
 const { computeElo } = require('./eloEngine');
 
 // ── CLI ───────────────────────────────────────────────────────────────────
@@ -219,7 +219,7 @@ function serveWith(model, a, b) {
   return { p, zmax: Math.max(...z.map(Math.abs)), top };
 }
 
-function runSanity(timelines, fighterById, candidate, fights, events) {
+function runSanity(timelines, fighterById, candidate, fights, events, limitByWc = {}) {
   if (!fs.existsSync(SANITY_PATH)) return { skipped: `no ${path.basename(SANITY_PATH)}` };
   const { pairs } = JSON.parse(fs.readFileSync(SANITY_PATH, 'utf8'));
   const bySlug = new Map(Object.values(fighterById).map(f => [f.slug, f]));
@@ -232,16 +232,23 @@ function runSanity(timelines, fighterById, candidate, fights, events) {
     return { names: m.features, mu: m.mu, sigma: m.sigma, w: m.w, b: m.b, cfg, priors: m.priors || null, elo };
   })() : null;
   const today = new Date().toISOString().slice(0, 10);
+  // Bout context as the Predict page derives it: the bout is in fighter1's
+  // natural division (modal weight class over the full career), 3 rounds.
+  const boutFor = f => {
+    const wc = careerContext(timelines.get(f.id) || [], today, null, limitByWc).modalWeightClassId;
+    return { scheduledRounds: 3, weightClassId: wc, limitLbs: wc != null ? (limitByWc[wc] ?? null) : null };
+  };
   // full career (no cutoff), decay measured back from today
-  const vals = (f, model) => sideFeatures(timelines.get(f.id) || [], f, today, null, model.cfg, model.priors, model.elo);
+  const vals = (f, model, bout) => sideFeatures(timelines.get(f.id) || [], f, today, null, model.cfg, model.priors, model.elo, bout, limitByWc);
   const results = [];
   for (const pr of pairs) {
     const A = bySlug.get(pr.f1), B = bySlug.get(pr.f2);
     if (!A || !B) { results.push({ ...pr, missing: !A ? pr.f1 : pr.f2 }); continue; }
     const want = pr.expect === 'f2' ? 'f2' : 'f1';
+    const bout = boutFor(A);
     const one = model => {
       if (!model) return null;
-      const s = serveWith(model, vals(A, model), vals(B, model));
+      const s = serveWith(model, vals(A, model, bout), vals(B, model, bout));
       const pExp = want === 'f1' ? s.p : 1 - s.p;
       return { pExpected: pExp, pass: pExp >= pr.minProb, zmax: s.zmax, top: `${s.top.f}${s.top.c >= 0 ? '+' : ''}${s.top.c.toFixed(2)}` };
     };
@@ -257,15 +264,16 @@ async function main() {
   const cfgText = Object.entries(CFG).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join(' ') || 'raw (Phase-0 behaviour)';
   console.log(`Predictor rolling-origin evaluation  folds ${FROM}..${TO}  features ${SELECTED.length}/${FEATURES.length}  min prior stats-fights ${MIN_PRIOR} (scored >= ${SCORE_MIN_PRIOR})\nconfig: ${cfgText}\n`);
 
-  const [events, fights, fighters, oddsRows] = await Promise.all([
+  const [events, fights, fighters, oddsRows, weightClasses] = await Promise.all([
     loadAll('events', 'id, date'),
     loadAll('fights', FIGHT_COLS),
     loadAll('fighters', FIGHTER_COLS),
     loadAll('odds', 'fight_id, bookmaker, fighter1_odds, fighter2_odds, line_type, recorded_at'),
+    loadAll('weight_classes', 'id, name, limit_lbs'),
   ]);
-  const { rows, timelines, fighterById, priors, elo, skippedInexperienced } = buildDataset(fights, events, fighters, { minPriorStatsFights: MIN_PRIOR, cfg: CFG });
+  const { rows, timelines, fighterById, priors, elo, limitByWc, skippedInexperienced, imputedWc, missingWc } = buildDataset(fights, events, fighters, { minPriorStatsFights: MIN_PRIOR, cfg: CFG, weightClasses });
   const market = buildMarket(oddsRows);
-  console.log(`Rows: ${rows.length} usable fights (skipped ${skippedInexperienced} with a side under ${MIN_PRIOR} prior stats-fights)  |  market lines on ${market.size} fights`);
+  console.log(`Rows: ${rows.length} usable fights (skipped ${skippedInexperienced} with a side under ${MIN_PRIOR} prior stats-fights)  |  market lines on ${market.size} fights  |  bout weight class imputed ${imputedWc}, unknown ${missingWc}`);
 
   // ── Main run
   const { folds, pooled } = runFolds(rows, SELECTED, market);
@@ -324,7 +332,7 @@ async function main() {
   if (SANITY) {
     const all = fitAndScore(rows, [], SELECTED);
     const candidate = { names: SELECTED, mu: all.mu, sigma: all.sigma, w: all.w, b: all.b, cfg: CFG, priors, elo };
-    sanity = runSanity(timelines, fighterById, candidate, fights, events);
+    sanity = runSanity(timelines, fighterById, candidate, fights, events, limitByWc);
     if (sanity.skipped) console.log(`\nSanity set: skipped (${sanity.skipped})`);
     else {
       console.log(`\n======== SANITY SET  shipped ${path.basename(MODEL_PATH)} ${sanity.shipped ? `${sanity.shipped.pass}/${sanity.shipped.total}` : 'n/a'}   candidate ${sanity.candidate.pass}/${sanity.candidate.total} ========`);

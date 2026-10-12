@@ -294,8 +294,31 @@ Leave-one-out under the final config: KEEP = `age` (+0.0094 if removed), `elo` (
 set that passes vs Phase 0 (−0.0175 mean, worse only in 2026); the 7-feature KEEP-only
 set was worse (0.6368, 2 folds). Shipped 18: sapm, str_acc, str_def, td_avg, td_acc,
 td_def, sub_avg, kd_per15, win_rate, age, reach, height, layoff_days, pro_win_rate,
-pro_fights, opp_adj_slpm, opp_adj_sapm, elo. Remaining sanity failures are the extreme
-cross-weight pairs (Pereira–Dvalishvili, Ngannou–Topuria, Miocic–Johnson) — Phase 3.
+pro_fights, opp_adj_slpm, opp_adj_sapm, elo. Deployed to Railway 2026-10-12 (cache cleared
+first; production verified serving `model_version: v4` with Elo factors).
+
+**Phase-3 findings (2026-10-12) — nothing shipped.** Built and gated, all available in
+`features.js` but in `TRAIN_EXCLUDED`: career phase (`age_sq` −0.0010 but worse in 2 folds;
+`years_active`, `ko_losses_career`, `ko_losses_24m` ≈0; `fights_12m` +0.0047), fight
+context (`five_round_fights`, `five_round_fights_sched` = count × this-bout-is-5-rounds
+interaction, `late_round_cardio` ≈0), size (`natural_limit`, `moving_up_lbs`,
+`off_division_fights` all +0.0002). Bout context now flows through `sideFeatures(..., bout,
+limitByWc)`: training reads `time_format` and the fight's weight class (imputed from both
+fighters' modal division within ±2 years when null — 457 of 626 null rows, 169 unknown; the
+DB rows are untouched, `fix-fight-weight-class.js` would need the ufcstats gate solver to
+fix them properly); serving reads `opts.scheduledRounds` or the pair's shared history, and
+the bout weight class the route derived.
+
+**Why size cannot be learned from UFC data:** among 6,390 training rows with both natural
+divisions known, 4,764 have no gap; with a 1–15 lb gap the naturally bigger fighter wins
+49.5% (n=1,185), 16–30 lb 47.6% (n=292), 31–60 lb 39.4% (n=127). Cross-division bouts are
+matchmade to be competitive, so "bigger wins" is absent from the evidence, and the
+hypothetical cross-weight sanity pairs (Ngannou–Topuria, Miocic–Johnson,
+Pereira–Dvalishvili) are out of distribution for any model trained on real cards. The
+engine therefore flags any matchup with a natural-division gap ≥ 30 lb
+(`CROSS_WEIGHT_LBS`): confidence forced to `low` and a leading key-factor line says the size
+advantage is not in the numbers. Any stronger cross-weight adjustment would be a hand-set
+prior, not evidence — a product decision, not a modelling one.
 
 Phase-1 findings (2026-10-12): shrinkage alone −0.002, pro record alone −0.0027, layoff cap
 −0.0006, win-rate shrink −0.0005, decay and clipping ≈0 alone but decay helps in

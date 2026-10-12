@@ -51,6 +51,10 @@ const TRAIN_MIN_PRIOR = 0;
 const TRAIN_EXCLUDED = new Set([
   'stats_minutes', 'opp_adj_td_avg', 'elo_best_win', 'elo_trend', 'sos',
   'slpm', 'kd_absorbed_per15', 'cardio_degradation', 'experience', 'recent_win_rate', 'form_trend',
+  // Phase 3 (2026-10-12): none passed the gate; see CLAUDE.md "Phase-3 findings"
+  'age_sq', 'years_active', 'ko_losses_career', 'ko_losses_24m', 'fights_12m',
+  'five_round_fights', 'five_round_fights_sched', 'late_round_cardio',
+  'natural_limit', 'moving_up_lbs', 'off_division_fights',
 ]);
 const TRAIN_FEATURES = FEATURES.filter(f => !TRAIN_EXCLUDED.has(f));
 
@@ -124,14 +128,37 @@ function evaluate(X, y, w, b) {
  * FEATURES order), y (1 = A won), a, b (per-side feature values), flip
  * (true when A is DB fighter2), minPriorStats }.
  */
-function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIOR_STATS_FIGHTS, cfg = DEFAULT_CONFIG } = {}) {
+// Bout weight class when the fight row has none (503 of 511 fights in 2022):
+// the division both fighters mostly fought in within two years of the date,
+// or the one side that has one. Read-only imputation for the model path; the
+// DB rows stay as they are.
+function imputeWeightClass(tl1, tl2, date) {
+  const modal = tl => {
+    const counts = {};
+    for (const e of tl || []) {
+      if (e.weightClassId == null || Math.abs(new Date(e.date) - new Date(date)) > 730 * 86400000) continue;
+      counts[e.weightClassId] = (counts[e.weightClassId] || 0) + 1;
+    }
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    return top ? +top[0] : null;
+  };
+  const a = modal(tl1), b = modal(tl2);
+  if (a != null && b != null) return a === b ? a : null;
+  return a ?? b ?? null;
+}
+
+const scheduledRoundsOf = f => (/5 Rnd/i.test(f.time_format || '') ? 5 : 3);
+
+function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIOR_STATS_FIGHTS, cfg = DEFAULT_CONFIG, weightClasses = [] } = {}) {
   const eventById = Object.fromEntries(events.map(e => [e.id, e]));
   const fighterById = Object.fromEntries(fighters.map(f => [f.id, f]));
+  const limitByWc = Object.fromEntries(weightClasses.filter(w => w.limit_lbs != null).map(w => [w.id, w.limit_lbs]));
   const timelines = annotateOpponentPriors(buildTimelines(fights, eventById));
   const priors = cfg.shrinkMinutes > 0 ? computePriors(timelines, PRIOR_CUTOFF) : null;
   const elo = computeElo(fights, eventById, { K: cfg.eloK, finishMult: cfg.eloFinishMult });
 
   const rows = [];
+  let imputedWc = 0, missingWc = 0;
   let skippedInexperienced = 0;
   for (const f of fights) {
     if (f.result !== 'win' || !f.winner_id) continue;
@@ -149,14 +176,17 @@ function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIO
     const bId = flip ? f.fighter1_id : f.fighter2_id;
     const label = f.winner_id === aId ? 1 : 0;
 
-    const a = sideFeatures(timelines.get(aId), fighterById[aId], ev.date, ev.date, cfg, priors, elo);
-    const b = sideFeatures(timelines.get(bId), fighterById[bId], ev.date, ev.date, cfg, priors, elo);
+    let wcId = f.weight_class_id ?? null;
+    if (wcId == null) { wcId = imputeWeightClass(tl1, tl2, ev.date); if (wcId != null) imputedWc++; else missingWc++; }
+    const bout = { scheduledRounds: scheduledRoundsOf(f), weightClassId: wcId, limitLbs: wcId != null ? (limitByWc[wcId] ?? null) : null };
+    const a = sideFeatures(timelines.get(aId), fighterById[aId], ev.date, ev.date, cfg, priors, elo, bout, limitByWc);
+    const b = sideFeatures(timelines.get(bId), fighterById[bId], ev.date, ev.date, cfg, priors, elo, bout, limitByWc);
     rows.push({
-      date: ev.date, fightId: f.id, weightClassId: f.weight_class_id ?? null, method: f.method || null,
+      date: ev.date, fightId: f.id, weightClassId: wcId, method: f.method || null, bout,
       x: diffVector(a, b), y: label, a, b, flip, minPriorStats: Math.min(prior1, prior2),
     });
   }
-  return { rows, timelines, eventById, fighterById, priors, elo, cfg, skippedInexperienced };
+  return { rows, timelines, eventById, fighterById, priors, elo, cfg, limitByWc, skippedInexperienced, imputedWc, missingWc };
 }
 
 async function main() {
@@ -164,9 +194,11 @@ async function main() {
   const events = await loadAll('events', 'id, date');
   const fights = await loadAll('fights', FIGHT_COLS);
   const fighters = await loadAll('fighters', FIGHTER_COLS);
+  const weightClasses = await loadAll('weight_classes', 'id, name, limit_lbs');
 
   console.log(`Loaded ${fights.length} fights; building timelines...`);
-  const { rows, priors, skippedInexperienced } = buildDataset(fights, events, fighters, { minPriorStatsFights: TRAIN_MIN_PRIOR, cfg: TRAIN_CONFIG });
+  const { rows, priors, skippedInexperienced, imputedWc, missingWc } = buildDataset(fights, events, fighters, { minPriorStatsFights: TRAIN_MIN_PRIOR, cfg: TRAIN_CONFIG, weightClasses });
+  console.log(`Bout weight class: imputed on ${imputedWc} rows, unknown on ${missingWc}`);
   console.log(`Config: ${JSON.stringify(TRAIN_CONFIG)}  features ${TRAIN_FEATURES.length}/${FEATURES.length}`);
   console.log(`Dataset: ${rows.length} fights (skipped ${skippedInexperienced} where a fighter had <${TRAIN_MIN_PRIOR} prior stats-fights)`);
   const labelBalance = rows.reduce((s, r) => s + r.y, 0) / rows.length;
@@ -241,7 +273,7 @@ async function main() {
 }
 
 module.exports = {
-  loadAll, hashFlip, sigmoid, trainLogistic, evaluate, buildDataset, sideFeatures, ufcResultsOnOrAfter,
+  loadAll, hashFlip, sigmoid, trainLogistic, evaluate, buildDataset, sideFeatures, ufcResultsOnOrAfter, imputeWeightClass, scheduledRoundsOf,
   FIGHT_COLS, FIGHTER_COLS, MIN_PRIOR_STATS_FIGHTS, SPLIT_DATE, PRIOR_CUTOFF, TRAIN_CONFIG, TRAIN_MIN_PRIOR, TRAIN_FEATURES, MODEL_PATH,
 };
 

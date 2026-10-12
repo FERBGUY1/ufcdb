@@ -27,6 +27,7 @@ const PRIORS = MODEL.priors || null;
 const MODEL_IDX = MODEL.features.map(n => FEATURES.indexOf(n)); // model subset -> FEATURES positions
 const DATA_TTL_MS = 6 * 60 * 60 * 1000;
 const THIN_SAMPLE_MINUTES = 30; // rate-stat factors cite this when a side has less stat time
+const CROSS_WEIGHT_LBS = 30;    // natural-division gap at which the prediction is flagged as unmodeled
 
 // ── WEIGHT CLASS CONTEXT (unchanged from v2) ──────────────────────────────
 async function deriveNaturalWeightClassId(fighterId) {
@@ -96,7 +97,9 @@ async function getData() {
   const eventById = Object.fromEntries(events.map(e => [e.id, e]));
   const timelines = annotateOpponentPriors(buildTimelines(fights, eventById));
   const elo = computeElo(fights, eventById, { K: CFG.eloK, finishMult: CFG.eloFinishMult });
-  dataCache = { timelines, elo, loadedAt: Date.now() };
+  const wcs = await loadAll('weight_classes', 'id, limit_lbs');
+  const limitByWc = Object.fromEntries(wcs.filter(w => w.limit_lbs != null).map(w => [w.id, w.limit_lbs]));
+  dataCache = { timelines, elo, limitByWc, loadedAt: Date.now() };
   return dataCache;
 }
 
@@ -151,6 +154,17 @@ const FACTOR_META = {
   opp_adj_slpm:      { sfx: '',  desc: 'SLpM vs opponents\' norm', dp: 2, hib: true,  adv: 'outstrikes what the opposition usually allows', despite: 'grades ahead despite below-par output for the opposition faced', advP: 'opponent-adjusted volume', despiteP: 'below-par opponent-adjusted volume' },
   opp_adj_sapm:      { sfx: '',  desc: 'SApM vs opponents\' norm', dp: 2, hib: false, adv: 'absorbs less than the opposition usually lands', despite: 'grades ahead despite absorbing more than the opposition usually lands', advP: 'opponent-adjusted defense', despiteP: 'below-par opponent-adjusted defense' },
   opp_adj_td_avg:    { sfx: '',  desc: 'TD/15 vs league-avg defense', dp: 2, hib: true, adv: 'holds the opponent-adjusted takedown edge', despite: 'grades ahead despite fewer adjusted takedowns', advP: 'opponent-adjusted takedowns', despiteP: 'fewer adjusted takedowns' },
+  age_sq:            { sfx: '',  desc: 'yrs from 30, squared',     dp: 0, hib: false, adv: 'is closer to athletic prime',        despite: 'grades ahead despite being further from prime', advP: 'proximity to prime',    despiteP: 'distance from prime' },
+  years_active:      { sfx: '',  desc: 'yrs in the UFC',           dp: 1, hib: true,  adv: 'has the longer UFC tenure',         despite: 'grades ahead despite the shorter tenure', advP: 'longer UFC tenure',          despiteP: 'shorter UFC tenure' },
+  ko_losses_career:  { sfx: '',  desc: 'career KO losses',         dp: 0, hib: false, adv: 'has been stopped less often',       despite: 'grades ahead despite more KO losses',     advP: 'fewer career KO losses',     despiteP: 'more career KO losses' },
+  ko_losses_24m:     { sfx: '',  desc: 'KO losses, last 2 yrs',    dp: 0, hib: false, adv: 'has taken less recent damage',      despite: 'grades ahead despite recent KO losses',   advP: 'less recent damage',         despiteP: 'recent KO losses' },
+  fights_12m:        { sfx: '',  desc: 'fights, last 12 months',   dp: 0, hib: true,  adv: 'has been the more active fighter',  despite: 'grades ahead despite less activity',      advP: 'more recent activity',       despiteP: 'less recent activity' },
+  five_round_fights: { sfx: '',  desc: '5-round bouts',            dp: 0, hib: true,  adv: 'has more five-round experience',    despite: 'grades ahead despite less five-round experience', advP: 'more five-round experience', despiteP: 'less five-round experience' },
+  five_round_fights_sched: { sfx: '', desc: '5-round bouts (this is one)', dp: 0, hib: true, adv: 'brings more five-round experience to a five-round fight', despite: 'grades ahead despite less five-round experience', advP: 'five-round experience', despiteP: 'less five-round experience' },
+  late_round_cardio: { sfx: '',  desc: 'R4-5 vs R1-3 output ratio', dp: 2, hib: true, adv: 'holds output better in championship rounds', despite: 'grades ahead despite fading in championship rounds', advP: 'championship-round cardio', despiteP: 'a championship-round fade' },
+  natural_limit:     { sfx: '',  desc: 'lbs, natural division',    dp: 0, hib: true,  adv: 'is the naturally bigger fighter',   despite: 'grades ahead despite being the smaller fighter', advP: 'a size advantage',      despiteP: 'a size disadvantage' },
+  moving_up_lbs:     { sfx: '',  desc: 'lbs above natural division', dp: 0, hib: false, adv: 'is closer to his natural weight', despite: 'grades ahead despite moving up further', advP: 'fighting nearer natural weight', despiteP: 'moving up in weight' },
+  off_division_fights: { sfx: '', desc: 'fights outside modal division', dp: 0, hib: true, adv: 'has more experience outside the home division', despite: 'grades ahead despite less cross-division experience', advP: 'cross-division experience', despiteP: 'less cross-division experience' },
   // reach & height read as an inch advantage when the leader is the bigger one.
   reach:             { dp: 0, dim: 'reach' },
   height:            { dp: 0, dim: 'height' },
@@ -416,17 +430,22 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
     if (cached) return { ...cached, fighter1: f1, fighter2: f2, weight_class_context: weightClassContext };
   }
 
-  const { timelines, elo } = await getData();
+  const { timelines, elo, limitByWc } = await getData();
   const tl1 = timelines.get(fighter1Id) || [];
   const tl2 = timelines.get(fighter2Id) || [];
+  // Bout context the model was trained with: scheduled rounds (caller may
+  // pass opts.scheduledRounds for a known 5-round bout; otherwise inferred
+  // from the pair's shared history) and the bout's weight limit.
+  const scheduledRounds = opts.scheduledRounds || scheduledRoundsForMatchup(tl1, fighter2Id);
+  const bout = { scheduledRounds, weightClassId: weightClassId ?? null, limitLbs: weightClassId != null ? (limitByWc[weightClassId] ?? null) : null };
   const today = new Date().toISOString().split('T')[0];
 
   // Model features: full career as of today under the model's config
   // (shrunk, decayed, capped — exactly what training saw). Raw snapshots stay
   // for the round projections, which are display numbers.
   const snap1 = snapshot(tl1), snap2 = snapshot(tl2);
-  const vals1 = sideFeatures(tl1, f1, today, null, CFG, PRIORS, elo);
-  const vals2 = sideFeatures(tl2, f2, today, null, CFG, PRIORS, elo);
+  const vals1 = sideFeatures(tl1, f1, today, null, CFG, PRIORS, elo, bout, limitByWc);
+  const vals2 = sideFeatures(tl2, f2, today, null, CFG, PRIORS, elo, bout, limitByWc);
   const { p: f1WinProb, contributions } = predictProb(diffVector(vals1, vals2));
   const f2WinProb = 1 - f1WinProb;
 
@@ -439,10 +458,21 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   const lowData = snap1.stats_fights < 2 || snap2.stats_fights < 2
     || snap1.stats_seconds / 60 < THIN_SAMPLE_MINUTES || snap2.stats_seconds / 60 < THIN_SAMPLE_MINUTES;
   const sizeMismatch = !!weightClassContext?.has_size_mismatch;
+  // Natural-division gap of two or more weight classes: UFC data holds no
+  // such matchups (the few cross-division bouts are matchmade to be
+  // competitive, and the naturally bigger fighter does NOT win them more
+  // often), so the model has nothing to say about size at this scale. Say so
+  // up front and keep the label at low.
+  const naturalGap = vals1.natural_limit != null && vals2.natural_limit != null
+    ? Math.abs(vals1.natural_limit - vals2.natural_limit) : 0;
+  const crossWeight = naturalGap >= CROSS_WEIGHT_LBS;
+  if (crossWeight) {
+    const bigger = vals1.natural_limit > vals2.natural_limit ? name1 : name2;
+    keyFactors.unshift(`Cross-weight matchup: ${bigger} is naturally ${naturalGap} lbs heavier (${vals1.natural_limit} vs ${vals2.natural_limit} lb divisions). No UFC bouts span a gap this size, so the size advantage is NOT in the model's numbers — treat the probability as a same-size comparison of skills.`);
+  }
 
   const f1Methods = computeMethodBreakdown(tl1, tl2, f1WinProb);
   const f2Methods = computeMethodBreakdown(tl2, tl1, f2WinProb);
-  const scheduledRounds = scheduledRoundsForMatchup(tl1, fighter2Id);
   const roundProjections = computeRoundProjections(f1, f2, snap1, snap2, scheduledRounds);
   const stats = { f1WinPct: (f1WinProb * 100).toFixed(1), f2WinPct: (f2WinProb * 100).toFixed(1) };
   const methodLine = `${f1.last_name}: KO ${f1Methods.ko}% / SUB ${f1Methods.sub}% / DEC ${f1Methods.dec}% — ${f2.last_name}: KO ${f2Methods.ko}% / SUB ${f2Methods.sub}% / DEC ${f2Methods.dec}%`;
@@ -460,7 +490,7 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   const probDiff = Math.abs(f1WinProb - f2WinProb);
   let confidence = probDiff > 0.25 ? 'high' : probDiff > 0.12 ? 'medium' : 'low';
   if (sizeMismatch && confidence === 'high') confidence = 'medium';
-  if (lowData) confidence = 'low';
+  if (lowData || crossWeight) confidence = 'low';
 
   const prediction = {
     fighter1_id: fighter1Id,

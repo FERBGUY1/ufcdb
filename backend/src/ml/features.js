@@ -47,6 +47,20 @@ const FEATURES = [
   'opp_adj_slpm',       // SLpM minus what the opponents faced typically absorb
   'opp_adj_sapm',       // SApM minus what the opponents faced typically land
   'opp_adj_td_avg',     // TD/15 rescaled to a league-average takedown defense
+  // ── Phase 3: career phase ──
+  'age_sq',             // (age - 30)^2: lets the age effect bend instead of staying linear
+  'years_active',       // years since first UFC fight
+  'ko_losses_career',   // KO/TKO losses, career
+  'ko_losses_24m',      // KO/TKO losses in the 24 months before the fight
+  'fights_12m',         // UFC fights in the 12 months before the fight (activity)
+  // ── Phase 3: fight context (bout.scheduledRounds) ──
+  'five_round_fights',  // prior fights scheduled for 5 rounds
+  'five_round_fights_sched', // same, but only when THIS bout is 5 rounds (interaction; 0 otherwise)
+  'late_round_cardio',  // mean R4-R5 output / mean R1-R3 output - 1 (null without R4+ data)
+  // ── Phase 3: size (bout.limitLbs) ──
+  'natural_limit',      // weight limit of the fighter's modal division before the fight (lbs)
+  'moving_up_lbs',      // bout limit minus natural limit (positive = fighting above natural division)
+  'off_division_fights',// prior fights outside the modal division
 ];
 
 const DEFAULT_CONFIG = {
@@ -73,8 +87,18 @@ const DEFAULT_CONFIG = {
  *               after that date are not known and are not removed (small
  *               overcount for fighters who left and kept fighting).
  */
-function sideValues(snap, snapRecent, fighter, asOfDate, cfg = DEFAULT_CONFIG, ufcAfter = { wins: 0, losses: 0 }, elo = null) {
+function sideValues(snap, snapRecent, fighter, asOfDate, cfg = DEFAULT_CONFIG, ufcAfter = { wins: 0, losses: 0 }, elo = null, ctx = {}) {
   const asOf = new Date(asOfDate);
+  const age = fighter?.date_of_birth ? (asOf - new Date(fighter.date_of_birth)) / (365.25 * 86400000) : null;
+  const bout = ctx.bout || {};
+  const c = ctx.career || {};
+  const r4 = snap.cardio?.r4, r5 = snap.cardio?.r5;
+  const early = [snap.cardio?.r1, snap.cardio?.r2, snap.cardio?.r3].filter(v => v != null);
+  const late = [r4, r5].filter(v => v != null);
+  const lateCardio = early.length && late.length && early.reduce((s, v) => s + v, 0) > 0
+    ? (late.reduce((s, v) => s + v, 0) / late.length) / (early.reduce((s, v) => s + v, 0) / early.length) - 1
+    : null;
+  const naturalLimit = c.naturalLimit ?? null;
   const kw = cfg.winShrinkFights || 0;
   const shrinkRate = (w, n) => (n + kw > 0 ? ((w + kw * 0.5) / (n + kw)) * 100 : null);
   const decided = snap.record.wins + snap.record.losses;
@@ -93,7 +117,7 @@ function sideValues(snap, snapRecent, fighter, asOfDate, cfg = DEFAULT_CONFIG, u
     win_rate: shrinkRate(snap.record.wins, decided),
     recent_win_rate: snapRecent.stats_win_rate,
     form_trend: snapRecent.slpm != null && snap.slpm != null ? snapRecent.slpm - snap.slpm : null,
-    age: fighter?.date_of_birth ? (asOf - new Date(fighter.date_of_birth)) / (365.25 * 86400000) : null,
+    age,
     reach: fighter?.reach_inches ?? null,
     height: fighter?.height_inches ?? null,
     layoff_days: layoff == null ? null : (cfg.layoffCapDays > 0 ? Math.min(layoff, cfg.layoffCapDays) : layoff),
@@ -107,6 +131,43 @@ function sideValues(snap, snapRecent, fighter, asOfDate, cfg = DEFAULT_CONFIG, u
     opp_adj_slpm: snap.slpm_adj ?? null,
     opp_adj_sapm: snap.sapm_adj ?? null,
     opp_adj_td_avg: snap.td_avg_adj ?? null,
+    age_sq: age == null ? null : (age - 30) ** 2,
+    years_active: c.firstFightDate ? (asOf - new Date(c.firstFightDate)) / (365.25 * 86400000) : null,
+    ko_losses_career: c.koLossesCareer ?? null,
+    ko_losses_24m: c.koLosses24m ?? null,
+    fights_12m: c.fights12m ?? null,
+    five_round_fights: c.fiveRoundFights ?? null,
+    five_round_fights_sched: c.fiveRoundFights == null ? null : (bout.scheduledRounds === 5 ? c.fiveRoundFights : 0),
+    late_round_cardio: lateCardio,
+    natural_limit: naturalLimit,
+    moving_up_lbs: naturalLimit != null && bout.limitLbs != null ? bout.limitLbs - naturalLimit : null,
+    off_division_fights: c.offDivisionFights ?? null,
+  };
+}
+
+/**
+ * Date-window and division facts about a timeline as of `asOf` (fights
+ * strictly before `cutoff`, or all when cutoff is null).
+ *   limitByWc  weight_class_id -> limit_lbs (from the weight_classes table)
+ */
+function careerContext(timeline, asOf, cutoff, limitByWc = {}) {
+  const fights = cutoff ? timeline.filter(e => e.date < cutoff) : timeline;
+  const asOfMs = new Date(asOf).getTime();
+  const daysAgo = e => (asOfMs - new Date(e.date).getTime()) / 86400000;
+  const isKoLoss = e => e.result === 'loss' && /KO/i.test(e.method || '');
+  const wcCounts = {};
+  for (const e of fights) if (e.weightClassId != null) wcCounts[e.weightClassId] = (wcCounts[e.weightClassId] || 0) + 1;
+  const modal = Object.entries(wcCounts).sort((a, b) => b[1] - a[1])[0];
+  const modalWc = modal ? +modal[0] : null;
+  return {
+    firstFightDate: fights.length ? fights[0].date : null,
+    koLossesCareer: fights.filter(isKoLoss).length,
+    koLosses24m: fights.filter(e => isKoLoss(e) && daysAgo(e) <= 730).length,
+    fights12m: fights.filter(e => daysAgo(e) <= 365).length,
+    fiveRoundFights: fights.filter(e => e.scheduledRounds === 5).length,
+    modalWeightClassId: modalWc,
+    naturalLimit: modalWc != null ? (limitByWc[modalWc] ?? null) : null,
+    offDivisionFights: modalWc != null ? fights.filter(e => e.weightClassId != null && e.weightClassId !== modalWc).length : null,
   };
 }
 
@@ -124,13 +185,17 @@ function ufcResultsOnOrAfter(timeline, date) {
  *   cfg      DEFAULT_CONFIG-shaped; priors from statsEngine.computePriors
  *            (required when cfg.shrinkMinutes > 0)
  *   elo      eloEngine.computeElo() result (null = Elo features neutral)
+ *   bout     { scheduledRounds (3|5), limitLbs } for THIS bout; limitByWc map
+ *            for the natural-division lookup. Missing pieces leave the
+ *            dependent features null (= neutral).
  */
-function sideFeatures(timeline, fighter, asOf, cutoff, cfg = DEFAULT_CONFIG, priors = null, elo = null) {
+function sideFeatures(timeline, fighter, asOf, cutoff, cfg = DEFAULT_CONFIG, priors = null, elo = null, bout = {}, limitByWc = {}) {
   const snapOpts = { asOf, halfLifeDays: cfg.halfLifeDays, shrinkMinutes: cfg.shrinkMinutes, priors };
   const snap = snapshot(timeline, cutoff, null, snapOpts);
   const recent = snapshot(timeline, cutoff, 3, snapOpts);
   const eloSummary = elo && fighter ? elo.summaryAsOf(fighter.id, cutoff) : null;
-  return sideValues(snap, recent, fighter, asOf, cfg, ufcResultsOnOrAfter(timeline, asOf), eloSummary);
+  const career = careerContext(timeline, asOf, cutoff, limitByWc);
+  return sideValues(snap, recent, fighter, asOf, cfg, ufcResultsOnOrAfter(timeline, asOf), eloSummary, { bout, career });
 }
 
 // A-minus-B differentials in FEATURES order; null on either side -> 0
@@ -147,4 +212,4 @@ function standardize(x, mu, sigma, clipZ = 0) {
   });
 }
 
-module.exports = { FEATURES, DEFAULT_CONFIG, sideValues, sideFeatures, ufcResultsOnOrAfter, diffVector, standardize };
+module.exports = { FEATURES, DEFAULT_CONFIG, sideValues, sideFeatures, careerContext, ufcResultsOnOrAfter, diffVector, standardize };
