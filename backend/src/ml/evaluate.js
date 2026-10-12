@@ -45,6 +45,9 @@
  *   --clip Z                 clip standardized features at ±Z
  *   --elo-k K                Elo step (default 40)
  *   --elo-finish M           Elo K multiplier for KO/SUB wins (default 1)
+ *   --model logistic|gbm     model family (baselines stay logistic)
+ *   --l2 X                   logistic L2 penalty (default 0.001)
+ *   --gbm-rounds N --gbm-depth D --gbm-lr X --gbm-l2 X --gbm-min-leaf N --gbm-subsample F
  *   --ablate                 leave-one-out feature gate (slow: folds x features fits)
  *   --out PATH               write the JSON report
  *   --baseline PATH          compare against a saved report
@@ -60,6 +63,7 @@ const { loadAll, sigmoid, trainLogistic, evaluate, buildDataset, sideFeatures, F
 const { FEATURES, DEFAULT_CONFIG, diffVector, standardize, careerContext } = require('./features');
 const { computeElo } = require('./eloEngine');
 const { applySizePrior } = require('./sizePrior');
+const { trainGBM, predictGBM } = require('./gbm');
 
 // ── CLI ───────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -84,6 +88,14 @@ const CFG = {
   eloFinishMult: parseFloat(opt('elo-finish', String(DEFAULT_CONFIG.eloFinishMult))),
 };
 const ABLATE = flag('ablate');
+// Model family. The baselines (win_rate / age) are always logistic.
+const MODEL_KIND = opt('model', 'logistic');
+if (!['logistic', 'gbm'].includes(MODEL_KIND)) { console.error('--model must be logistic or gbm'); process.exit(1); }
+const LOGIT_L2 = parseFloat(opt('l2', '0.001'));
+const GBM_OPTS = {
+  rounds: parseInt(opt('gbm-rounds', '300')), depth: parseInt(opt('gbm-depth', '3')), lr: parseFloat(opt('gbm-lr', '0.05')),
+  l2: parseFloat(opt('gbm-l2', '5')), minLeaf: parseFloat(opt('gbm-min-leaf', '20')), subsample: parseFloat(opt('gbm-subsample', '0.8')),
+};
 const OUT = opt('out', null);
 const BASELINE = opt('baseline', null);
 const SANITY = !flag('no-sanity');
@@ -104,7 +116,7 @@ const f4 = v => (v == null ? '  —   ' : v.toFixed(4));
 const idxOf = names => names.map(n => FEATURES.indexOf(n));
 
 // ── Core: fit on train rows, score test rows, for one feature subset ──────
-function fitAndScore(train, test, names) {
+function fitAndScore(train, test, names, kind = MODEL_KIND) {
   const idx = idxOf(names), d = idx.length;
   // zero-centred standardization (mu = 0, sigma = RMS) — see trainModel.fit
   const mu = new Array(d).fill(0), sigma = new Array(d).fill(0);
@@ -112,11 +124,17 @@ function fitAndScore(train, test, names) {
   for (let j = 0; j < d; j++) sigma[j] = Math.sqrt(sigma[j]) || 1;
   const std = r => standardize(idx.map(k => r.x[k]), mu, sigma, CFG.clipZ);
   const Xtr = train.map(std), ytr = train.map(r => r.y);
-  const { w, b } = trainLogistic(Xtr, ytr);
   const Xte = test.map(std), yte = test.map(r => r.y);
+  const zmax = Xte.map(x => Math.max(...x.map(Math.abs)));
+  if (kind === 'gbm') {
+    const gbm = trainGBM(Xtr, ytr, GBM_OPTS);
+    const probs = Xte.map(x => predictGBM(gbm, x).p);
+    const metrics = test.length ? { ...scoreSubset(probs, yte), calibration: null } : null;
+    return { metrics, probs, zmax, w: null, b: null, mu, sigma, names, gbm };
+  }
+  const { w, b } = trainLogistic(Xtr, ytr, { l2: LOGIT_L2 });
   const metrics = test.length ? evaluate(Xte, yte, w, b) : null;
   const probs = Xte.map(x => sigmoid(x.reduce((s, v, j) => s + v * w[j], b)));
-  const zmax = Xte.map(x => Math.max(...x.map(Math.abs)));
   return { metrics, probs, zmax, w, b, mu, sigma, names };
 }
 
@@ -172,7 +190,7 @@ function runFolds(rows, names, market, { quiet = false } = {}) {
       baselines: {}, market: null, fit };
     if (!quiet) {
       for (const [label, set] of Object.entries(BASELINE_SETS)) {
-        const bf = fitAndScore(train, test, set);
+        const bf = fitAndScore(train, test, set, 'logistic');
         fold.baselines[label] = { accuracy: bf.metrics.accuracy, logloss: bf.metrics.logloss };
       }
       if (market && market.size) {
@@ -210,10 +228,11 @@ function gate(candidateFolds, referenceFolds) {
 
 // ── Sanity set ────────────────────────────────────────────────────────────
 function serveWith(model, a, b) {
-  // model: { names, mu, sigma, w, b, cfg } over `names`; a/b are sideValues objects
+  // model: { names, mu, sigma, w, b, cfg } over `names` (or { gbm }); a/b are sideValues objects
   const full = diffVector(a, b);
   const idx = idxOf(model.names);
   const z = standardize(idx.map(k => full[k]), model.mu, model.sigma, model.cfg.clipZ);
+  if (model.gbm) return { p: predictGBM(model.gbm, z).p, zmax: Math.max(...z.map(Math.abs)), top: { f: 'gbm', c: 0 } };
   const contrib = z.map((v, j) => v * model.w[j]);
   const p = sigmoid(contrib.reduce((s, v) => s + v, model.b));
   const top = contrib.map((c, j) => ({ f: model.names[j], c })).sort((x, y) => Math.abs(y.c) - Math.abs(x.c))[0];
@@ -268,7 +287,8 @@ function runSanity(timelines, fighterById, candidate, fights, events, limitByWc 
 async function main() {
   const t0 = Date.now();
   const cfgText = Object.entries(CFG).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join(' ') || 'raw (Phase-0 behaviour)';
-  console.log(`Predictor rolling-origin evaluation  folds ${FROM}..${TO}  features ${SELECTED.length}/${FEATURES.length}  min prior stats-fights ${MIN_PRIOR} (scored >= ${SCORE_MIN_PRIOR})\nconfig: ${cfgText}\n`);
+  const modelText = MODEL_KIND === 'gbm' ? `gbm ${JSON.stringify(GBM_OPTS)}` : `logistic l2=${LOGIT_L2}`;
+  console.log(`Predictor rolling-origin evaluation  folds ${FROM}..${TO}  features ${SELECTED.length}/${FEATURES.length}  min prior stats-fights ${MIN_PRIOR} (scored >= ${SCORE_MIN_PRIOR})\nmodel: ${modelText}\nconfig: ${cfgText}\n`);
 
   const [events, fights, fighters, oddsRows, weightClasses] = await Promise.all([
     loadAll('events', 'id, date'),
@@ -337,7 +357,7 @@ async function main() {
   let sanity = null;
   if (SANITY) {
     const all = fitAndScore(rows, [], SELECTED);
-    const candidate = { names: SELECTED, mu: all.mu, sigma: all.sigma, w: all.w, b: all.b, cfg: CFG, priors, elo };
+    const candidate = { names: SELECTED, mu: all.mu, sigma: all.sigma, w: all.w, b: all.b, gbm: all.gbm || null, cfg: CFG, priors, elo };
     sanity = runSanity(timelines, fighterById, candidate, fights, events, limitByWc);
     if (sanity.skipped) console.log(`\nSanity set: skipped (${sanity.skipped})`);
     else {
@@ -387,6 +407,7 @@ async function main() {
   if (OUT) {
     const report = {
       generatedAt: new Date().toISOString(), from: FROM, to: TO, minPriorStatsFights: MIN_PRIOR, scoreMinPrior: SCORE_MIN_PRIOR,
+      model: MODEL_KIND, logitL2: LOGIT_L2, gbm: MODEL_KIND === 'gbm' ? GBM_OPTS : null,
       config: CFG, features: SELECTED, rows: rows.length,
       folds: folds.map(({ fit, ...f }) => f),
       summary, pooled: pooledScore, marketPooled,

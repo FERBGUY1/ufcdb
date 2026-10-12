@@ -369,6 +369,17 @@ features live in `features.PAIR_FEATURES` and are computed in `diffVector` from 
 serves one fighter's current profile — Compare, Predict and the Styles page should read
 these instead of `primary_style` / `style_matchups`.
 
+**Phase 5 — model choice (2026-10-12): logistic stays.** `gbm.js` is a dependency-free
+histogram gradient booster (Newton leaves, L2, depth limit, subsampling, optional monotone
+constraints) run through the harness with `--model gbm` on the SAME folds and standardized
+inputs as the logistic model (`--l2` sweeps the logistic penalty). Results vs the shipped
+19-feature logistic (0.6283): logistic L2 1e-4 ±0, 1e-2 +0.0003, 1e-1 +0.0060; GBM
+300×depth-3 +0.0086 (worse in 8/8 folds), on all 41 features +0.0101, stumps 600×depth-1
++0.0069, depth-2 400 rounds lr 0.03 l2 20 +0.0067, heavier regularization worse still
+(+0.011 to +0.020). Even an additive booster cannot beat the linear fit, so the structure
+is near-linear at this sample size and the plan's ship rule (GBM must win by ≥ 0.005 in
+every fold) is nowhere near met. Keep logistic, L2 = 1e-3, zero intercept.
+
 Phase-1 findings (2026-10-12): shrinkage alone −0.002, pro record alone −0.0027, layoff cap
 −0.0006, win-rate shrink −0.0005, decay and clipping ≈0 alone but decay helps in
 combination; `stats_minutes` as a feature failed the gate (+0.0006). Training on debutants
