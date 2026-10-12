@@ -99,4 +99,18 @@ router.get('/fighters', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/styles/profile/:slug — point-in-time style profile computed from
+// the fighter's UFC fights (styleEngine.styleProfile), the same definition the
+// predictor uses. Prefer this over fighters.primary_style, which is a
+// current-career heuristic. Returns { fighter, profile: { axes, label, hasData } }.
+router.get('/profile/:slug', async (req, res, next) => {
+  try {
+    const { data: f, error } = await supabase.from('fighters')
+      .select('id, slug, first_name, last_name, primary_style').eq('slug', req.params.slug).single();
+    if (error || !f) return res.status(404).json({ error: `Fighter not found: ${req.params.slug}` });
+    const { getStyleProfile } = require('../ml/predictionEngine');
+    res.json({ fighter: f, profile: await getStyleProfile(f.id) });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

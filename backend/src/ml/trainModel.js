@@ -30,6 +30,7 @@ const path = require('path');
 const supabase = require('../db/client');
 const { buildTimelines, computePriors, annotateOpponentPriors } = require('./statsEngine');
 const { computeElo } = require('./eloEngine');
+const { buildStylePairHistory } = require('./styleEngine');
 const { FEATURES, DEFAULT_CONFIG, sideFeatures, ufcResultsOnOrAfter, diffVector, standardize } = require('./features');
 
 const SPLIT_DATE = '2024-01-01';
@@ -56,6 +57,8 @@ const TRAIN_EXCLUDED = new Set([
   'five_round_fights', 'five_round_fights_sched', 'late_round_cardio',
   'natural_limit', 'moving_up_lbs', 'off_division_fights',
   // age_elo PASSED the gate (2026-10-12: -0.0014 mean, worse only in 2026) and is shipped
+  // Phase 4 style features: pending gate
+  'style_distance', 'style_clinch', 'style_ground', 'style_ctrl', 'style_pair_edge', 'pair_td_threat', 'pair_strike_threat',
 ]);
 const TRAIN_FEATURES = FEATURES.filter(f => !TRAIN_EXCLUDED.has(f));
 
@@ -160,6 +163,8 @@ function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIO
   const timelines = annotateOpponentPriors(buildTimelines(fights, eventById));
   const priors = cfg.shrinkMinutes > 0 ? computePriors(timelines, PRIOR_CUTOFF) : null;
   const elo = computeElo(fights, eventById, { K: cfg.eloK, finishMult: cfg.eloFinishMult });
+  // style-vs-style record, point-in-time per fight (styleEngine)
+  const styleHist = buildStylePairHistory(fights, eventById, timelines, { halfLifeDays: cfg.halfLifeDays, shrinkMinutes: cfg.shrinkMinutes, priors });
 
   const rows = [];
   let imputedWc = 0, missingWc = 0;
@@ -185,12 +190,15 @@ function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIO
     const bout = { scheduledRounds: scheduledRoundsOf(f), weightClassId: wcId, limitLbs: wcId != null ? (limitByWc[wcId] ?? null) : null };
     const a = sideFeatures(timelines.get(aId), fighterById[aId], ev.date, ev.date, cfg, priors, elo, bout, limitByWc);
     const b = sideFeatures(timelines.get(bId), fighterById[bId], ev.date, ev.date, cfg, priors, elo, bout, limitByWc);
+    // pre-fight style-vs-style edge, stored for DB fighter1; A is fighter1 unless flipped
+    const e1 = styleHist.edgeByFight.get(f.id) ?? 0;
+    a.style_pair_edge = flip ? -e1 : e1; b.style_pair_edge = -a.style_pair_edge;
     rows.push({
       date: ev.date, fightId: f.id, weightClassId: wcId, method: f.method || null, bout,
       x: diffVector(a, b), y: label, a, b, flip, minPriorStats: Math.min(prior1, prior2),
     });
   }
-  return { rows, timelines, eventById, fighterById, priors, elo, cfg, limitByWc, skippedInexperienced, imputedWc, missingWc };
+  return { rows, timelines, eventById, fighterById, priors, elo, styleHist, cfg, limitByWc, skippedInexperienced, imputedWc, missingWc };
 }
 
 async function main() {

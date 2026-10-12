@@ -347,7 +347,27 @@ pooled 0.6298 → 0.6283, mean Δ −0.0014, worse only in 2026 (+0.002); vs Pha
 Coefficient is NEGATIVE (−0.099): an older fighter carrying a high rating does *worse* than
 age and Elo separately predict — Elo is backward-looking and overstates aging champions.
 So it did not soften the age penalty for Yan; Van vs Yan went 58.0% → 62.4% for Van.
-Report: `reports/phase2-age-elo.json` (sanity 25/27).
+Report: `reports/phase2-age-elo.json` (sanity 25/27). Deployed 2026-10-12; production
+verified: Van vs Yan 62.4/37.6 both orders, Topuria vs Ngannou 1/99 with the size factor.
+
+**Phase 4 — style (2026-10-12): engine built, no feature shipped.** `styleEngine.js`:
+`styleProfile(snapshot)` → continuous axes (distance/clinch/ground share, TD/15, sub/15,
+control %, pace) + a label (Striker, Pressure striker, Counter striker, Clinch fighter,
+Wrestler, Grinder, Submission grappler, Submission hunter, Balanced, Unknown) from ANY
+snapshot, so it is point-in-time whenever the snapshot is — unlike `fighters.primary_style`
+(`assign-styles.js`), a current-career heuristic backfilled onto every historical fight,
+which is leaky and should not be used for modelling. `buildStylePairHistory()` replays
+fights in date order and records, per fight, the pre-fight win rate of style A vs style B.
+Gated features (all in `TRAIN_EXCLUDED`): `style_distance/clinch/ground/ctrl` −0.0005 but
+worse in 3 folds; `style_pair_edge` +0.0002; pairwise `pair_td_threat` (own TD/15 × opp
+TD-defence gap) and `pair_strike_threat` +0.0006; all seven together +0.0003. The style
+record itself is real but small (Wrestler vs Balanced 63%, Striker vs Submission grappler
+42%, n≈170–640) and already expressed by td_avg / sub_avg / defence features. Pairwise
+features live in `features.PAIR_FEATURES` and are computed in `diffVector` from both sides
+(antisymmetric, mirror-safe). Reuse: `predictionEngine.generatePrediction` returns
+`style_profiles: { fighter1, fighter2 }` (not cached) and `GET /api/styles/profile/:slug`
+serves one fighter's current profile — Compare, Predict and the Styles page should read
+these instead of `primary_style` / `style_matchups`.
 
 Phase-1 findings (2026-10-12): shrinkage alone −0.002, pro record alone −0.0027, layoff cap
 −0.0006, win-rate shrink −0.0005, decay and clipping ≈0 alone but decay helps in

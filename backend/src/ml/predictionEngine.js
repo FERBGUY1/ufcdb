@@ -18,6 +18,7 @@ const supabase = require('../db/client');
 const { buildTimelines, snapshot, annotateOpponentPriors } = require('./statsEngine');
 const { computeElo } = require('./eloEngine');
 const { applySizePrior } = require('./sizePrior');
+const { styleProfile } = require('./styleEngine');
 const { FEATURES, DEFAULT_CONFIG, sideFeatures, diffVector, standardize } = require('./features');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -430,7 +431,11 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
       : query.eq('weight_class_id', weightClassId);
     const { data: rows } = await query;
     const cached = pickCached(rows, fighter1Id);
-    if (cached) return { ...cached, fighter1: f1, fighter2: f2, weight_class_context: weightClassContext };
+    if (cached) {
+      const { timelines: tls } = await getData();
+      return { ...cached, fighter1: f1, fighter2: f2, weight_class_context: weightClassContext,
+        style_profiles: { fighter1: styleProfile(snapshot(tls.get(fighter1Id) || [])), fighter2: styleProfile(snapshot(tls.get(fighter2Id) || [])) } };
+    }
   }
 
   const { timelines, elo, limitByWc } = await getData();
@@ -530,7 +535,16 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
       .upsert(prediction, { onConflict: 'fighter1_id,fighter2_id,weight_class_id' });
   }
 
-  return { ...prediction, fighter1: f1, fighter2: f2, weight_class_context: weightClassContext };
+  return { ...prediction, fighter1: f1, fighter2: f2, weight_class_context: weightClassContext,
+    style_profiles: { fighter1: styleProfile(snap1), fighter2: styleProfile(snap2) } };
 }
 
-module.exports = { generatePrediction, pickCached, mirrorPrediction };
+// Current (full-career, raw) style profile for one fighter — the same
+// function the model path uses, so Compare / Predict / Styles pages read one
+// definition. Returns styleEngine's { axes, label, hasData }.
+async function getStyleProfile(fighterId) {
+  const { timelines } = await getData();
+  return styleProfile(snapshot(timelines.get(fighterId) || []));
+}
+
+module.exports = { generatePrediction, getStyleProfile, pickCached, mirrorPrediction };

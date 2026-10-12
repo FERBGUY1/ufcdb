@@ -15,6 +15,7 @@
  */
 
 const { snapshot } = require('./statsEngine');
+const { styleProfile } = require('./styleEngine');
 
 const FEATURES = [
   'slpm',               // sig strikes landed / min
@@ -63,7 +64,24 @@ const FEATURES = [
   'off_division_fights',// prior fights outside the modal division
   // ── age × rating interaction ──
   'age_elo',            // (age - 30) * (elo - 1500) / 100: lets the age penalty flatten for highly rated fighters
+  // ── Phase 4: style (styleEngine.js) ──
+  'style_distance',     // share of sig attempts at distance (%)
+  'style_clinch',       // share in the clinch (%)
+  'style_ground',       // share on the ground (%)
+  'style_ctrl',         // control time % of cage time
+  'style_pair_edge',    // historical win rate of own style label vs opponent's, before the fight, minus 50% (antisymmetric)
+  'pair_td_threat',     // PAIRWISE: own TD/15 x (100 - opp TD defense) — computed in diffVector from both sides
+  'pair_strike_threat', // PAIRWISE: own SLpM x (100 - opp striking defense)
 ];
+
+// Pairwise features are built from BOTH sides in diffVector (antisymmetric
+// by construction, so the mirror property holds).
+const PAIR_FEATURES = {
+  pair_td_threat: (a, b) => (a.td_avg != null && b.td_def != null && b.td_avg != null && a.td_def != null
+    ? a.td_avg * (100 - b.td_def) / 100 - b.td_avg * (100 - a.td_def) / 100 : 0),
+  pair_strike_threat: (a, b) => (a.slpm != null && b.str_def != null && b.slpm != null && a.str_def != null
+    ? a.slpm * (100 - b.str_def) / 100 - b.slpm * (100 - a.str_def) / 100 : 0),
+};
 
 const DEFAULT_CONFIG = {
   shrinkMinutes: 0,     // pseudo-minutes of league prior mixed into rate stats (statsEngine.snapshot)
@@ -145,6 +163,12 @@ function sideValues(snap, snapRecent, fighter, asOfDate, cfg = DEFAULT_CONFIG, u
     moving_up_lbs: naturalLimit != null && bout.limitLbs != null ? bout.limitLbs - naturalLimit : null,
     off_division_fights: c.offDivisionFights ?? null,
     age_elo: age != null && elo ? (age - 30) * (elo.elo - 1500) / 100 : null,
+    style_distance: snap.sig_distance_pct ?? null,
+    style_clinch: snap.sig_clinch_pct ?? null,
+    style_ground: snap.sig_ground_pct ?? null,
+    style_ctrl: snap.ctrl_pct ?? null,
+    style_pair_edge: ctx.stylePairEdge ?? null, // set by the caller once both labels are known
+    style_label: ctx.styleLabel ?? null,         // not a model feature; carried for the caller
   };
 }
 
@@ -198,12 +222,22 @@ function sideFeatures(timeline, fighter, asOf, cutoff, cfg = DEFAULT_CONFIG, pri
   const recent = snapshot(timeline, cutoff, 3, snapOpts);
   const eloSummary = elo && fighter ? elo.summaryAsOf(fighter.id, cutoff) : null;
   const career = careerContext(timeline, asOf, cutoff, limitByWc);
-  return sideValues(snap, recent, fighter, asOf, cfg, ufcResultsOnOrAfter(timeline, asOf), eloSummary, { bout, career });
+  const styleLabel = styleProfile(snap).label;
+  return sideValues(snap, recent, fighter, asOf, cfg, ufcResultsOnOrAfter(timeline, asOf), eloSummary, { bout, career, styleLabel });
 }
 
-// A-minus-B differentials in FEATURES order; null on either side -> 0
+// Once both sides are known, set the antisymmetric style-vs-style edge
+// (edge for A; B gets the negative). `edgeFn(styleA, styleB)` comes from
+// styleEngine (a point-in-time value for training, the final table for serving).
+function attachStylePairEdge(a, b, edgeFn) {
+  const e = edgeFn ? edgeFn(a.style_label, b.style_label) : 0;
+  a.style_pair_edge = e; b.style_pair_edge = -e;
+}
+
+// A-minus-B differentials in FEATURES order; null on either side -> 0.
+// Pairwise features are computed from both sides (see PAIR_FEATURES).
 function diffVector(a, b) {
-  return FEATURES.map(k => (a[k] != null && b[k] != null ? a[k] - b[k] : 0));
+  return FEATURES.map(k => (PAIR_FEATURES[k] ? PAIR_FEATURES[k](a, b) : (a[k] != null && b[k] != null ? a[k] - b[k] : 0)));
 }
 
 // Standardize a raw diff vector with train-set mu/sigma, clipping at ±clipZ
@@ -215,4 +249,4 @@ function standardize(x, mu, sigma, clipZ = 0) {
   });
 }
 
-module.exports = { FEATURES, DEFAULT_CONFIG, sideValues, sideFeatures, careerContext, ufcResultsOnOrAfter, diffVector, standardize };
+module.exports = { FEATURES, PAIR_FEATURES, DEFAULT_CONFIG, sideValues, sideFeatures, attachStylePairEdge, careerContext, ufcResultsOnOrAfter, diffVector, standardize };
