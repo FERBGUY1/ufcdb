@@ -206,34 +206,76 @@ so it always classifies as stale even when it is on the source card).
 
 ---
 
-## Predictor evaluation (`src/ml/evaluate.js`, `npm run eval:predictor`)
+## Predictor (`src/ml/`)
 
-Every feature or model decision for the predictor goes through the rolling-origin
-harness, never through `trainModel.js`'s single 2024 split. `trainModel.js` still
-writes `model-v3.json`; `evaluate.js` imports its dataset builder, trainer and scorer
-so the two cannot drift. The harness writes nothing to the DB and never touches
-`model-v3.json`.
+**Shipped model: `model-v4.json`** (written by `trainModel.js`, read by `predictionEngine.js`).
+The file carries the feature list, standardization, weights, the **config** it was trained
+under and the **league priors**, so serving always matches training:
+
+| Knob (`features.js DEFAULT_CONFIG` → `trainModel.js TRAIN_CONFIG`) | v4 value | What it does |
+|---|---|---|
+| `shrinkMinutes` | 30 | every rate stat = (sum + k·prior) / (minutes + k); prior = division mean (global fallback) over fights before 2019-01-01 (`statsEngine.computePriors`) |
+| `halfLifeDays` | 1095 | stats-fight sums decay by 0.5^(days/halfLife) back from the as-of date |
+| `layoffCapDays` | 730 | `layoff_days` capped |
+| `winShrinkFights` | 2 | `win_rate` / `pro_win_rate` = (w + k·0.5)/(n + k) |
+| `clipZ` | 3 | standardized features clipped at ±3 (`features.standardize`) |
+
+All knobs default OFF, so `computeCareerStats.js` and the fighter pages keep raw career
+numbers (verified: Holloway dry-run == DB row after the change). Training includes
+debutants (`TRAIN_MIN_PRIOR = 0`); the pro record as of the fight is approximated as the
+current `pro_wins/pro_losses` minus UFC results on or after the date (fights outside the
+UFC after that date are not removed — small overcount for fighters who left and kept fighting).
+`fighter1_record_at_fight` is empty on every row, so there is no better source yet.
+
+**Serving** (`predictionEngine.js`): `sideFeatures(timeline, fighter, today, null, CFG, PRIORS)`
+for the model, raw `snapshot()` for round projections. Confidence: `high`/`medium`/`low` by
+probability margin, capped at `medium` when `weight_class_context.has_size_mismatch`, forced
+`low` when a side has <2 stats-fights or <30 min of stat time. Rate-stat factor rows carry a
+"thin sample" note under 30 min. Cache rows are keyed by `model_version` (`v4`); old `v3`
+rows are simply never matched.
+
+### Evaluation (`evaluate.js`, `npm run eval:predictor`)
+
+Every feature or model decision goes through the rolling-origin harness, never through
+`trainModel.js`'s report split. The harness imports the trainer's dataset builder, trainer
+and scorer. It writes nothing to the DB and never touches the model file.
 
 - **Folds**: one per year (`--from 2019 --to <now>`); train on all usable fights before
   Jan 1 of the year, test on that year. Standardization is fit per fold on train rows.
 - **Reports**: per-fold and pooled accuracy / log loss / Brier; baselines fit the same
-  way on `win_rate`, `age`, and both; pooled calibration; accuracy per confidence label
-  using the exact `predictionEngine.js` rule; count of rows with a standardized feature
-  beyond ±3 (small-sample extrapolation).
+  way on `win_rate`, `age`, and both; pooled calibration; accuracy per confidence label;
+  count of rows with a standardized feature beyond ±3.
 - **Market baseline**: de-vigged closing consensus from the `odds` table (prefers
   `line_type='closing'`, else latest line per bookmaker; proportional de-vig averaged
-  across books). `odds.fighter1_odds` refers to DB `fighter1_id`, and the harness
-  re-orients it through the row's hash flip. Reported as skipped while the table is empty.
-- **Sanity set** (`src/ml/sanitySet.json`): lopsided / cross-weight matchups served
-  full-career as of today through both the shipped `model-v3.json` and the candidate
-  (current feature set fit on all rows). Pass = expected side gets ≥ `minProb`. It is a
-  judgment list keyed by fighter slug; edit freely.
+  across books). `odds.fighter1_odds` refers to DB `fighter1_id`; the harness re-orients it
+  through the row's hash flip. Reported as skipped while the table is empty.
+- **Sanity set** (`sanitySet.json`): lopsided / cross-weight matchups served full-career as
+  of today through both the shipped model (with its stored config) and the candidate.
+  Pass = expected side gets ≥ `minProb`. Judgment list keyed by fighter slug; edit freely.
 - **Feature gate** (`--ablate`): leave-one-feature-out across all folds. KEEP only if
   including the feature lowers mean fold log loss and raises it in at most one fold.
-  `--baseline report.json` applies the same rule to this run vs a report saved with
-  `--out`. With 8 folds, deltas under ~0.001 are noise — most of the 19 v3 features sit
-  there; only `age`, `sapm`, `td_avg` pass cleanly (2026-10-12 run).
-- **Flags**: `--features a,b,c` · `--min-prior N` (prior stats-fights per side, default 2)
+  `--baseline report.json` applies the same rule to this run vs a saved report. With 8
+  folds, deltas under ~0.001 are noise. The ≤1-fold rule is strict: the whole Phase-1
+  config (−0.006 mean) fails it on fold count (worse in 2–3 of 8, 2022/2026), so read the
+  per-fold deltas, not just the verdict.
+- **Flags**: `--features a,b,c` · `--min-prior N` · `--score-min-prior N` (score only test
+  rows whose thinner side has ≥ N; use 2 to compare a `--min-prior 0` run with Phase 0)
+  · `--shrink K` · `--half-life DAYS` · `--layoff-cap DAYS` · `--win-shrink N` · `--clip Z`
   · `--ablate` · `--out PATH` · `--baseline PATH` · `--no-sanity`
-- Phase-0 baseline (2026-10-12, 19 features, 4,970 rows): pooled 62.6% / logloss 0.6482
-  over 2,508 test fights; win_rate+age baseline 0.6608; sanity 8/27.
+- Knobs off + the 19 Phase-0 features reproduces `reports/baseline-phase0.json` exactly.
+
+### Results log (`reports/`)
+
+| Report | Setup | Pooled (min-prior-2 subset, 2,508 fights) | Sanity |
+|---|---|---|---|
+| `baseline-phase0.json` | 19 raw features, min-prior 2 | 62.6% / logloss 0.6482 | 8/27 |
+| `phase1-candidate.json` | +pro_win_rate, pro_fights; v4 config; min-prior 0 | 64.2% / logloss 0.6417 | 11/27 |
+
+Phase-1 findings (2026-10-12): shrinkage alone −0.002, pro record alone −0.0027, layoff cap
+−0.0006, win-rate shrink −0.0005, decay and clipping ≈0 alone but decay helps in
+combination; `stats_minutes` as a feature failed the gate (+0.0006). Training on debutants
+costs +0.0004 on the experienced subset and makes the model valid for the full serving
+population (3,929 test fights, 62.6% / 0.6495). Ablation under v4 config: `age` (+0.0083
+if removed), `str_acc`, `str_def`, `layoff_days`, `pro_fights` pass; `pro_win_rate`
+(+0.0014), `td_avg` (+0.0026), `sapm` (+0.0020) help on mean but fail the fold count.
+Cross-weight sanity pairs still fail — that is Phase 3 (size / weight-class features).

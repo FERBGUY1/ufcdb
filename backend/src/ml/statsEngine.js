@@ -97,6 +97,7 @@ function buildTimelines(fights, eventById) {
         date: ev.date, fightId: f.id, oppId, result,
         method: f.method || null,
         finishRound: f.round || null,
+        weightClassId: f.weight_class_id ?? null,
         seconds, hasStats, scheduledRounds,
         isTitle: !!f.is_title_fight,
         me: hasStats ? agg('me') : null,
@@ -113,13 +114,86 @@ function buildTimelines(fights, eventById) {
 const div = (a, b) => (b > 0 && a != null ? a / b : null);
 const pct = (a, b) => (b > 0 && a != null ? (a / b) * 100 : null);
 const round2 = v => (v == null ? null : Math.round(v * 100) / 100);
+const DAY_MS = 86400000;
+
+// Modal weight class across a list of timeline entries (null if none known).
+function modalWeightClass(entries) {
+  const counts = {};
+  for (const e of entries) if (e.weightClassId != null) counts[e.weightClassId] = (counts[e.weightClassId] || 0) + 1;
+  const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  return top ? +top[0] : null;
+}
+
+/**
+ * League-wide prior rates used by snapshot() shrinkage. Computed over every
+ * stats-fight dated before cutoffDate (so no evaluation fold ever sees its own
+ * era), globally and per weight class. Each side of each fight contributes, so
+ * the landed/absorbed priors are symmetric by construction.
+ *   minMinutes  a weight class needs this many stats minutes to get its own
+ *               prior; otherwise it falls back to the global one
+ */
+function computePriors(timelines, cutoffDate, { minMinutes = 3000 } = {}) {
+  const fresh = () => ({ sec: 0, sig_l: 0, sig_a: 0, opp_sig_l: 0, opp_sig_a: 0, td_l: 0, td_a: 0,
+    opp_td_l: 0, opp_td_a: 0, sub: 0, kd: 0, opp_kd: 0, r: {} });
+  const acc = { global: fresh(), byWc: {} };
+  const add = (S, e) => {
+    S.sec += e.seconds;
+    const m = e.me, o = e.opp;
+    S.sig_l += m.sig_l || 0; S.sig_a += m.sig_a || 0; S.opp_sig_l += o.sig_l || 0; S.opp_sig_a += o.sig_a || 0;
+    S.td_l += m.td_l || 0; S.td_a += m.td_a || 0; S.opp_td_l += o.td_l || 0; S.opp_td_a += o.td_a || 0;
+    S.sub += m.sub || 0; S.kd += m.kd || 0; S.opp_kd += o.kd || 0;
+    for (const r of e.rounds) {
+      if (r.no > 5 || r.me.sig_att == null) continue;
+      if (!S.r[r.no]) S.r[r.no] = { att: 0, sec: 0 };
+      S.r[r.no].att += r.me.sig_att; S.r[r.no].sec += r.sec;
+    }
+  };
+  for (const tl of timelines.values()) {
+    for (const e of tl) {
+      if (!e.hasStats || (cutoffDate && e.date >= cutoffDate)) continue;
+      add(acc.global, e);
+      if (e.weightClassId != null) {
+        if (!acc.byWc[e.weightClassId]) acc.byWc[e.weightClassId] = fresh();
+        add(acc.byWc[e.weightClassId], e);
+      }
+    }
+  }
+  const finish = S => {
+    const min = S.sec / 60;
+    const p = {
+      minutes: min,
+      slpm: S.sig_l / min, sapm: S.opp_sig_l / min,
+      sig_att_pm: S.sig_a / min, opp_sig_att_pm: S.opp_sig_a / min,
+      str_acc: 100 * S.sig_l / S.sig_a, str_def: 100 * (1 - S.opp_sig_l / S.opp_sig_a),
+      td_avg: 900 * S.td_l / S.sec, td_att_pm: S.td_a / min, opp_td_att_pm: S.opp_td_a / min,
+      td_acc: 100 * S.td_l / S.td_a, td_def: 100 * (1 - S.opp_td_l / S.opp_td_a),
+      sub_avg: 900 * S.sub / S.sec, kd_per15: 900 * S.kd / S.sec, kd_absorbed_per15: 900 * S.opp_kd / S.sec,
+    };
+    for (let r = 1; r <= 5; r++) p['r' + r] = S.r[r] && S.r[r].sec > 0 ? S.r[r].att / (S.r[r].sec / 60) : null;
+    return p;
+  };
+  const priors = { cutoffDate: cutoffDate || null, global: finish(acc.global), byWc: {} };
+  for (const [wc, S] of Object.entries(acc.byWc)) if (S.sec / 60 >= minMinutes) priors.byWc[wc] = finish(S);
+  return priors;
+}
 
 /**
  * Aggregate a fighter's timeline into a stat snapshot.
  *   cutoffDate  only fights strictly before this ISO date (null = all)
  *   lastN       only the most recent N stats-fights (after cutoff filter)
+ *   opts        model-path options; all default OFF so computeCareerStats and
+ *               the fighter pages keep raw career numbers:
+ *     asOf           ISO date that recency decay measures back from
+ *                    (defaults to cutoffDate; no decay when neither is set)
+ *     halfLifeDays   exponential decay half-life for stats-fight sums
+ *     shrinkMinutes  pseudo-minutes of league-prior performance mixed into
+ *                    every rate stat (k). 0 = raw. Accuracy stats use the
+ *                    prior's attempts-per-minute to turn k into pseudo-attempts
+ *     priors         output of computePriors(); required when shrinkMinutes > 0
  */
-function snapshot(timeline, cutoffDate = null, lastN = null) {
+function snapshot(timeline, cutoffDate = null, lastN = null, opts = {}) {
+  const { halfLifeDays = 0, shrinkMinutes = 0, priors = null } = opts;
+  const asOf = opts.asOf || cutoffDate || null;
   let fights = cutoffDate ? timeline.filter(e => e.date < cutoffDate) : timeline.slice();
   const allCompleted = fights;
   let statsFights = fights.filter(e => e.hasStats);
@@ -133,37 +207,58 @@ function snapshot(timeline, cutoffDate = null, lastN = null) {
     else rec.nc++;
   }
 
-  // sums over stats-fights only
-  const S = { sec: 0, sig_l: 0, sig_a: 0, opp_sig_l: 0, opp_sig_a: 0, td_l: 0, td_a: 0,
+  // recency weight per fight (1 when decay is off)
+  const asOfMs = asOf ? new Date(asOf).getTime() : null;
+  const weightOf = e => (halfLifeDays > 0 && asOfMs != null
+    ? Math.pow(0.5, Math.max(0, (asOfMs - new Date(e.date).getTime()) / DAY_MS) / halfLifeDays)
+    : 1);
+
+  // (weighted) sums over stats-fights only
+  const S = { sec: 0, rawSec: 0, sig_l: 0, sig_a: 0, opp_sig_l: 0, opp_sig_a: 0, td_l: 0, td_a: 0,
               opp_td_l: 0, opp_td_a: 0, sub: 0, kd: 0, opp_kd: 0,
               ctrl: 0, ctrl_sec_base: 0, dist_a: 0, clinch_a: 0, ground_a: 0 };
   const roundOut = {}; // roundNo -> {att, sec}
   let recWins = 0, recLosses = 0;
 
   for (const e of statsFights) {
-    S.sec += e.seconds;
+    const wgt = weightOf(e);
+    S.sec += e.seconds * wgt; S.rawSec += e.seconds;
     const m = e.me, o = e.opp;
-    S.sig_l += m.sig_l || 0; S.sig_a += m.sig_a || 0;
-    S.opp_sig_l += o.sig_l || 0; S.opp_sig_a += o.sig_a || 0;
-    S.td_l += m.td_l || 0; S.td_a += m.td_a || 0;
-    S.opp_td_l += o.td_l || 0; S.opp_td_a += o.td_a || 0;
-    S.sub += m.sub || 0; S.kd += m.kd || 0; S.opp_kd += o.kd || 0;
-    if (m.ctrl != null) { S.ctrl += m.ctrl; S.ctrl_sec_base += e.seconds; }
-    S.dist_a += m.dist_a || 0; S.clinch_a += m.clinch_a || 0; S.ground_a += m.ground_a || 0;
+    S.sig_l += (m.sig_l || 0) * wgt; S.sig_a += (m.sig_a || 0) * wgt;
+    S.opp_sig_l += (o.sig_l || 0) * wgt; S.opp_sig_a += (o.sig_a || 0) * wgt;
+    S.td_l += (m.td_l || 0) * wgt; S.td_a += (m.td_a || 0) * wgt;
+    S.opp_td_l += (o.td_l || 0) * wgt; S.opp_td_a += (o.td_a || 0) * wgt;
+    S.sub += (m.sub || 0) * wgt; S.kd += (m.kd || 0) * wgt; S.opp_kd += (o.kd || 0) * wgt;
+    if (m.ctrl != null) { S.ctrl += m.ctrl * wgt; S.ctrl_sec_base += e.seconds * wgt; }
+    S.dist_a += (m.dist_a || 0) * wgt; S.clinch_a += (m.clinch_a || 0) * wgt; S.ground_a += (m.ground_a || 0) * wgt;
     if (e.result === 'win') recWins++; else if (e.result === 'loss') recLosses++;
     for (const r of e.rounds) {
       if (r.no > 5 || r.me.sig_att == null) continue;
       if (!roundOut[r.no]) roundOut[r.no] = { att: 0, sec: 0 };
-      roundOut[r.no].att += r.me.sig_att;
-      roundOut[r.no].sec += r.sec;
+      roundOut[r.no].att += r.me.sig_att * wgt;
+      roundOut[r.no].sec += r.sec * wgt;
     }
   }
 
+  // shrinkage toward the league prior: (num + k*prior) / (den + k)
+  const k = shrinkMinutes > 0 && priors ? shrinkMinutes : 0;
+  const wc = k ? modalWeightClass(fights) : null;
+  const P = k ? (wc != null && priors.byWc[wc]) || priors.global : null;
+  const shr = (num, den, prior, kk) => (kk > 0 ? (num + kk * prior) / (den + kk) : div(num, den));
+  const shrPct = (num, den, priorPct, kk) => (kk > 0 ? 100 * (num + kk * priorPct / 100) / (den + kk) : pct(num, den));
+
   const min = S.sec / 60;
   const per15 = v => (S.sec > 0 ? (v / S.sec) * 900 : null);
+  const rate15 = (v, prior) => (k ? 15 * (v + (k / 15) * prior) / (min + k) : per15(v));
   const cardio = {};
   for (let r = 1; r <= 5; r++) {
-    cardio['r' + r] = roundOut[r] && roundOut[r].sec > 0 ? round2(roundOut[r].att / (roundOut[r].sec / 60)) : null;
+    const ro = roundOut[r];
+    if (k) {
+      const prior = P['r' + r] ?? priors.global['r' + r] ?? P.sig_att_pm;
+      cardio['r' + r] = prior != null ? round2(shr(ro ? ro.att : 0, ro ? ro.sec / 60 : 0, prior, k / 3)) : null;
+    } else {
+      cardio['r' + r] = ro && ro.sec > 0 ? round2(ro.att / (ro.sec / 60)) : null;
+    }
   }
   const degradation = cardio.r1 && cardio.r3 != null ? round2(((cardio.r1 - cardio.r3) / cardio.r1) * 100) : null;
 
@@ -184,17 +279,23 @@ function snapshot(timeline, cutoffDate = null, lastN = null) {
     record: rec,
     total_fights: allCompleted.length,
     stats_fights: statsFights.length,
-    stats_seconds: S.sec,
-    slpm: round2(div(S.sig_l, min)),
-    sapm: round2(div(S.opp_sig_l, min)),
-    str_acc: round2(pct(S.sig_l, S.sig_a)),
-    str_def: round2(S.opp_sig_a > 0 ? 100 - (S.opp_sig_l / S.opp_sig_a) * 100 : null),
-    td_avg: round2(per15(S.td_l)),
-    td_acc: round2(pct(S.td_l, S.td_a)),
-    td_def: round2(S.opp_td_a > 0 ? 100 - (S.opp_td_l / S.opp_td_a) * 100 : null),
-    sub_avg: round2(per15(S.sub)),
-    kd_per15: round2(per15(S.kd)),
-    kd_absorbed_per15: round2(per15(S.opp_kd)),
+    stats_seconds: S.rawSec,
+    stats_seconds_weighted: S.sec,
+    prior_weight_class: wc,
+    slpm: round2(shr(S.sig_l, min, k ? P.slpm : 0, k)),
+    sapm: round2(shr(S.opp_sig_l, min, k ? P.sapm : 0, k)),
+    str_acc: round2(shrPct(S.sig_l, S.sig_a, k ? P.str_acc : 0, k ? k * P.sig_att_pm : 0)),
+    str_def: round2(k
+      ? shrPct(S.opp_sig_a - S.opp_sig_l, S.opp_sig_a, P.str_def, k * P.opp_sig_att_pm)
+      : (S.opp_sig_a > 0 ? 100 - (S.opp_sig_l / S.opp_sig_a) * 100 : null)),
+    td_avg: round2(rate15(S.td_l, k ? P.td_avg : 0)),
+    td_acc: round2(shrPct(S.td_l, S.td_a, k ? P.td_acc : 0, k ? k * P.td_att_pm : 0)),
+    td_def: round2(k
+      ? shrPct(S.opp_td_a - S.opp_td_l, S.opp_td_a, P.td_def, k * P.opp_td_att_pm)
+      : (S.opp_td_a > 0 ? 100 - (S.opp_td_l / S.opp_td_a) * 100 : null)),
+    sub_avg: round2(rate15(S.sub, k ? P.sub_avg : 0)),
+    kd_per15: round2(rate15(S.kd, k ? P.kd_per15 : 0)),
+    kd_absorbed_per15: round2(rate15(S.opp_kd, k ? P.kd_absorbed_per15 : 0)),
     ctrl_pct: round2(pct(S.ctrl, S.ctrl_sec_base)),
     sig_distance_pct: round2(pct(S.dist_a, styleDen)),
     sig_clinch_pct: round2(pct(S.clinch_a, styleDen)),
@@ -209,4 +310,4 @@ function snapshot(timeline, cutoffDate = null, lastN = null) {
   };
 }
 
-module.exports = { buildTimelines, snapshot, fightSeconds };
+module.exports = { buildTimelines, snapshot, computePriors, fightSeconds };

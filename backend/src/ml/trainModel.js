@@ -1,9 +1,14 @@
 /**
- * trainModel.js — train predictor v3 (logistic regression) and backtest it.
+ * trainModel.js — train the shipped predictor (logistic regression) and write
+ * src/ml/model-v4.json.
  *
- * Dataset: every completed fight with a winner where BOTH fighters have >=2
- * prior stats-fights. Features are computed with a cutoff at the fight's own
- * date (statsEngine snapshots see only earlier fights — no time leakage).
+ * Dataset: every completed fight with a winner (TRAIN_MIN_PRIOR prior
+ * stats-fights per side; 0 = debutants included). Features are computed with
+ * a cutoff at the fight's own date (statsEngine snapshots see only earlier
+ * fights — no time leakage) under TRAIN_CONFIG (shrinkage toward league
+ * priors, recency decay, layoff cap, z-clipping). The config and the priors
+ * are stored in the model file so predictionEngine.js serves exactly what
+ * was trained.
  *
  * Orientation: DB fighter1 is always the winner, so a naive label would be
  * constant. Each fight is deterministically flipped by a hash of its id so
@@ -23,15 +28,24 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const supabase = require('../db/client');
-const { buildTimelines, snapshot } = require('./statsEngine');
-const { FEATURES, sideValues, diffVector } = require('./features');
+const { buildTimelines, computePriors } = require('./statsEngine');
+const { FEATURES, DEFAULT_CONFIG, sideFeatures, ufcResultsOnOrAfter, diffVector, standardize } = require('./features');
 
 const SPLIT_DATE = '2024-01-01';
-const MIN_PRIOR_STATS_FIGHTS = 2;
-const MODEL_PATH = path.join(__dirname, 'model-v3.json');
+const MIN_PRIOR_STATS_FIGHTS = 2;   // harness default (Phase-0 comparability)
+const PRIOR_CUTOFF = '2019-01-01'; // league priors use only fights before the first evaluation fold
+const MODEL_PATH = path.join(__dirname, 'model-v4.json');
+
+// What the SHIPPED model is trained with (Phase 1, chosen with evaluate.js on
+// 2026-10-12: pooled logloss 0.6482 -> 0.6417 on the min-prior-2 subset).
+// Training includes debutants (min prior 0) so the model is calibrated on the
+// population the Predict page actually serves. stats_minutes failed the gate.
+const TRAIN_CONFIG = { ...DEFAULT_CONFIG, shrinkMinutes: 30, halfLifeDays: 1095, layoffCapDays: 730, winShrinkFights: 2, clipZ: 3 };
+const TRAIN_MIN_PRIOR = 0;
+const TRAIN_FEATURES = FEATURES.filter(f => f !== 'stats_minutes');
 
 const FIGHT_COLS = 'id, event_id, fighter1_id, fighter2_id, winner_id, result, method, round, time, time_format, is_title_fight, weight_class_id, rounds_data';
-const FIGHTER_COLS = 'id, slug, first_name, last_name, date_of_birth, reach_inches, height_inches';
+const FIGHTER_COLS = 'id, slug, first_name, last_name, date_of_birth, reach_inches, height_inches, pro_wins, pro_losses';
 
 async function loadAll(table, cols) {
   const all = [];
@@ -100,10 +114,11 @@ function evaluate(X, y, w, b) {
  * FEATURES order), y (1 = A won), a, b (per-side feature values), flip
  * (true when A is DB fighter2), minPriorStats }.
  */
-function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIOR_STATS_FIGHTS } = {}) {
+function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIOR_STATS_FIGHTS, cfg = DEFAULT_CONFIG } = {}) {
   const eventById = Object.fromEntries(events.map(e => [e.id, e]));
   const fighterById = Object.fromEntries(fighters.map(f => [f.id, f]));
   const timelines = buildTimelines(fights, eventById);
+  const priors = cfg.shrinkMinutes > 0 ? computePriors(timelines, PRIOR_CUTOFF) : null;
 
   const rows = [];
   let skippedInexperienced = 0;
@@ -123,50 +138,54 @@ function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIO
     const bId = flip ? f.fighter1_id : f.fighter2_id;
     const label = f.winner_id === aId ? 1 : 0;
 
-    const tlA = timelines.get(aId), tlB = timelines.get(bId);
-    const a = sideValues(snapshot(tlA, ev.date), snapshot(tlA, ev.date, 3), fighterById[aId], ev.date);
-    const b = sideValues(snapshot(tlB, ev.date), snapshot(tlB, ev.date, 3), fighterById[bId], ev.date);
+    const a = sideFeatures(timelines.get(aId), fighterById[aId], ev.date, ev.date, cfg, priors);
+    const b = sideFeatures(timelines.get(bId), fighterById[bId], ev.date, ev.date, cfg, priors);
     rows.push({
       date: ev.date, fightId: f.id, weightClassId: f.weight_class_id ?? null, method: f.method || null,
       x: diffVector(a, b), y: label, a, b, flip, minPriorStats: Math.min(prior1, prior2),
     });
   }
-  return { rows, timelines, eventById, fighterById, skippedInexperienced };
+  return { rows, timelines, eventById, fighterById, priors, cfg, skippedInexperienced };
 }
 
 async function main() {
-  console.log('Predictor v3 training\n');
+  console.log('Predictor v4 training\n');
   const events = await loadAll('events', 'id, date');
   const fights = await loadAll('fights', FIGHT_COLS);
   const fighters = await loadAll('fighters', FIGHTER_COLS);
 
   console.log(`Loaded ${fights.length} fights; building timelines...`);
-  const { rows, skippedInexperienced } = buildDataset(fights, events, fighters);
-  console.log(`Dataset: ${rows.length} fights (skipped ${skippedInexperienced} where a fighter had <${MIN_PRIOR_STATS_FIGHTS} prior stats-fights)`);
+  const { rows, priors, skippedInexperienced } = buildDataset(fights, events, fighters, { minPriorStatsFights: TRAIN_MIN_PRIOR, cfg: TRAIN_CONFIG });
+  console.log(`Config: ${JSON.stringify(TRAIN_CONFIG)}  features ${TRAIN_FEATURES.length}/${FEATURES.length}`);
+  console.log(`Dataset: ${rows.length} fights (skipped ${skippedInexperienced} where a fighter had <${TRAIN_MIN_PRIOR} prior stats-fights)`);
   const labelBalance = rows.reduce((s, r) => s + r.y, 0) / rows.length;
   console.log(`Label balance: ${(labelBalance * 100).toFixed(1)}% positive (orientation flip working if ~50%)`);
 
+  // The shipped model is fit on EVERY row; the split below only produces the
+  // metrics stored in the file. evaluate.js is the real judge.
   const train = rows.filter(r => r.date < SPLIT_DATE);
   const test = rows.filter(r => r.date >= SPLIT_DATE);
-  console.log(`Split: train ${train.length} (< ${SPLIT_DATE})  |  test ${test.length} (>= ${SPLIT_DATE})\n`);
+  console.log(`Report split: train ${train.length} (< ${SPLIT_DATE})  |  test ${test.length} (>= ${SPLIT_DATE})\n`);
 
-  // ── Standardize on train ───────────────────────────────────────────────────
-  const d = FEATURES.length;
-  const mu = new Array(d).fill(0), sigma = new Array(d).fill(0);
-  for (const r of train) for (let j = 0; j < d; j++) mu[j] += r.x[j] / train.length;
-  for (const r of train) for (let j = 0; j < d; j++) sigma[j] += (r.x[j] - mu[j]) ** 2 / train.length;
-  for (let j = 0; j < d; j++) sigma[j] = Math.sqrt(sigma[j]) || 1;
-  const standardize = x => x.map((v, j) => (v - mu[j]) / sigma[j]);
-  const Xtr = train.map(r => standardize(r.x)), ytr = train.map(r => r.y);
-  const Xte = test.map(r => standardize(r.x)), yte = test.map(r => r.y);
+  const idx = TRAIN_FEATURES.map(n => FEATURES.indexOf(n));
+  const d = idx.length;
+  const fit = (fitRows) => {
+    const mu = new Array(d).fill(0), sigma = new Array(d).fill(0);
+    for (const r of fitRows) for (let j = 0; j < d; j++) mu[j] += r.x[idx[j]] / fitRows.length;
+    for (const r of fitRows) for (let j = 0; j < d; j++) sigma[j] += (r.x[idx[j]] - mu[j]) ** 2 / fitRows.length;
+    for (let j = 0; j < d; j++) sigma[j] = Math.sqrt(sigma[j]) || 1;
+    const std = r => standardize(idx.map(k => r.x[k]), mu, sigma, TRAIN_CONFIG.clipZ);
+    const { w, b } = trainLogistic(fitRows.map(std), fitRows.map(r => r.y));
+    return { mu, sigma, w, b, std };
+  };
 
-  // ── Train + evaluate ───────────────────────────────────────────────────────
-  console.log('Training logistic regression...');
-  const { w, b } = trainLogistic(Xtr, ytr);
-  const trainMetrics = evaluate(Xtr, ytr, w, b);
-  const testMetrics = evaluate(Xte, yte, w, b);
+  // ── Report fit (train < split, scored on >= split) ────────────────────────
+  console.log('Training report model (train < split)...');
+  const rep = fit(train);
+  const trainMetrics = evaluate(train.map(rep.std), train.map(r => r.y), rep.w, rep.b);
+  const testMetrics = evaluate(test.map(rep.std), test.map(r => r.y), rep.w, rep.b);
 
-  console.log('\n======== RESULTS ========');
+  console.log('\n======== REPORT SPLIT ========');
   console.log(`Train (${trainMetrics.n}):  accuracy ${(trainMetrics.accuracy * 100).toFixed(1)}%  logloss ${trainMetrics.logloss.toFixed(4)}  brier ${trainMetrics.brier.toFixed(4)}`);
   console.log(`Test  (${testMetrics.n}):  accuracy ${(testMetrics.accuracy * 100).toFixed(1)}%  logloss ${testMetrics.logloss.toFixed(4)}  brier ${testMetrics.brier.toFixed(4)}`);
   console.log(`Baselines: coin flip 50.0% / logloss 0.6931`);
@@ -177,8 +196,11 @@ async function main() {
     console.log(`  ${c.range} | ${String(c.n).padStart(4)} | ${(c.predicted * 100).toFixed(1)}% | ${(c.actual * 100).toFixed(1)}%`);
   }
 
+  // ── Shipped fit (all rows) ────────────────────────────────────────────────
+  console.log('\nTraining shipped model (all rows)...');
+  const { mu, sigma, w, b } = fit(rows);
   console.log('\nCoefficients (standardized — magnitude = importance):');
-  FEATURES.map((name, j) => ({ name, w: w[j] }))
+  TRAIN_FEATURES.map((name, j) => ({ name, w: w[j] }))
     .sort((a2, b2) => Math.abs(b2.w) - Math.abs(a2.w))
     .forEach(({ name, w: wj }) => console.log(`  ${name.padEnd(20)} ${wj >= 0 ? '+' : ''}${wj.toFixed(4)}`));
 
@@ -191,21 +213,25 @@ async function main() {
   }
 
   fs.writeFileSync(MODEL_PATH, JSON.stringify({
-    version: 'v3',
+    version: 'v4',
     trainedAt: new Date().toISOString(),
     splitDate: SPLIT_DATE,
-    minPriorStatsFights: MIN_PRIOR_STATS_FIGHTS,
-    features: FEATURES,
+    minPriorStatsFights: TRAIN_MIN_PRIOR,
+    rows: rows.length,
+    config: TRAIN_CONFIG,
+    priors,
+    features: TRAIN_FEATURES,
     mu, sigma, w, b,
-    metrics: { train: { n: trainMetrics.n, accuracy: trainMetrics.accuracy, logloss: trainMetrics.logloss },
+    metrics: { note: 'report split only; the shipped weights are fit on all rows. See src/ml/reports for the rolling-origin evaluation.',
+               train: { n: trainMetrics.n, accuracy: trainMetrics.accuracy, logloss: trainMetrics.logloss },
                test: { n: testMetrics.n, accuracy: testMetrics.accuracy, logloss: testMetrics.logloss, brier: testMetrics.brier } },
   }, null, 2));
   console.log(`\nModel written to ${MODEL_PATH}`);
 }
 
 module.exports = {
-  loadAll, hashFlip, sigmoid, trainLogistic, evaluate, buildDataset,
-  FIGHT_COLS, FIGHTER_COLS, MIN_PRIOR_STATS_FIGHTS, SPLIT_DATE,
+  loadAll, hashFlip, sigmoid, trainLogistic, evaluate, buildDataset, sideFeatures, ufcResultsOnOrAfter,
+  FIGHT_COLS, FIGHTER_COLS, MIN_PRIOR_STATS_FIGHTS, SPLIT_DATE, PRIOR_CUTOFF, TRAIN_CONFIG, TRAIN_MIN_PRIOR, TRAIN_FEATURES, MODEL_PATH,
 };
 
 if (require.main === module) {

@@ -1,9 +1,10 @@
 /**
- * AI Fight Prediction Engine — v3
+ * AI Fight Prediction Engine — v4
  *
- * Replaces the hand-tuned v2 blend with the trained logistic model
- * (src/ml/model-v3.json, produced by trainModel.js): real per-fight stats ->
- * statsEngine snapshots -> standardized feature differentials -> calibrated
+ * Serves the trained logistic model (src/ml/model-v4.json, produced by
+ * trainModel.js): real per-fight stats -> statsEngine snapshots under the
+ * model's stored config (shrinkage toward league priors, recency decay,
+ * layoff cap, z-clipping) -> standardized feature differentials -> calibrated
  * win probability. Each feature's contribution (weight x standardized diff)
  * is computed per matchup; the top contributions become key_factors carrying
  * the actual numbers, and the narrative model is given ONLY those numbers to
@@ -15,11 +16,16 @@ const Anthropic = require('@anthropic-ai/sdk');
 const path = require('path');
 const supabase = require('../db/client');
 const { buildTimelines, snapshot } = require('./statsEngine');
-const { FEATURES, sideValues, diffVector } = require('./features');
+const { FEATURES, DEFAULT_CONFIG, sideFeatures, diffVector, standardize } = require('./features');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const MODEL = require(path.join(__dirname, 'model-v3.json'));
+const MODEL = require(path.join(__dirname, 'model-v4.json'));
+const MODEL_VERSION = MODEL.version || 'v4';
+const CFG = { ...DEFAULT_CONFIG, ...(MODEL.config || {}) };
+const PRIORS = MODEL.priors || null;
+const MODEL_IDX = MODEL.features.map(n => FEATURES.indexOf(n)); // model subset -> FEATURES positions
 const DATA_TTL_MS = 6 * 60 * 60 * 1000;
+const THIN_SAMPLE_MINUTES = 30; // rate-stat factors cite this when a side has less stat time
 
 // ── WEIGHT CLASS CONTEXT (unchanged from v2) ──────────────────────────────
 async function deriveNaturalWeightClassId(fighterId) {
@@ -85,7 +91,7 @@ async function getData() {
   if (dataCache && Date.now() - dataCache.loadedAt < DATA_TTL_MS) return dataCache;
   const events = await loadAll('events', 'id, date');
   const fights = await loadAll('fights',
-    'id, event_id, fighter1_id, fighter2_id, winner_id, result, method, round, time, time_format, is_title_fight, rounds_data');
+    'id, event_id, fighter1_id, fighter2_id, winner_id, result, method, round, time, time_format, is_title_fight, weight_class_id, rounds_data');
   const eventById = Object.fromEntries(events.map(e => [e.id, e]));
   dataCache = { timelines: buildTimelines(fights, eventById), loadedAt: Date.now() };
   return dataCache;
@@ -94,8 +100,9 @@ async function getData() {
 // ── MODEL ──────────────────────────────────────────────────────────────────
 const sigmoid = z => 1 / (1 + Math.exp(-z));
 
+// diffs: full FEATURES-order vector; the model reads its own subset.
 function predictProb(diffs) {
-  const z = diffs.map((v, j) => (v - MODEL.mu[j]) / MODEL.sigma[j]);
+  const z = standardize(MODEL_IDX.map(k => diffs[k]), MODEL.mu, MODEL.sigma, CFG.clipZ);
   const score = z.reduce((s, x, j) => s + x * MODEL.w[j], MODEL.b);
   return { p: sigmoid(score), contributions: z.map((x, j) => x * MODEL.w[j]) };
 }
@@ -131,6 +138,9 @@ const FACTOR_META = {
   form_trend:        { sfx: '',  desc: 'SLpM vs career avg',      dp: 2, hib: true,  adv: 'has rising output momentum',        despite: 'grades ahead despite fading output',      advP: 'rising output momentum',     despiteP: 'fading output' },
   age:               { sfx: '',  desc: 'yrs',                     dp: 0, hib: false, adv: 'is the younger fighter',            despite: 'grades ahead despite being older',        advP: 'a youth edge',               despiteP: 'an age disadvantage' },
   layoff_days:       { sfx: '',  desc: 'days since last fight',   dp: 0, hib: false, adv: 'comes in with less ring rust',      despite: 'grades ahead despite a longer layoff',    advP: 'less ring rust',             despiteP: 'a longer layoff' },
+  stats_minutes:     { sfx: '',  desc: 'min of UFC stat data',    dp: 0, hib: true,  adv: 'has the deeper statistical track record', despite: 'grades ahead despite a thinner track record', advP: 'a deeper track record', despiteP: 'a thinner track record' },
+  pro_win_rate:      { sfx: '%', desc: 'pro MMA win rate',        dp: 1, hib: true,  adv: 'owns the stronger pro record',      despite: 'grades ahead despite a weaker pro record', advP: 'a stronger pro record',     despiteP: 'a weaker pro record' },
+  pro_fights:        { sfx: '',  desc: 'pro fights',              dp: 0, hib: true,  adv: 'is the more seasoned pro',          despite: 'grades ahead despite fewer pro fights',   advP: 'more pro experience',        despiteP: 'less pro experience' },
   // reach & height read as an inch advantage when the leader is the bigger one.
   reach:             { dp: 0, dim: 'reach' },
   height:            { dp: 0, dim: 'height' },
@@ -155,10 +165,22 @@ function factorText(feature, L, lv, tv) {
 // Top-5 model contributions as structured factors. Each carries the finished
 // evidence `row` string plus fields the prose fallback reuses (leader, whether
 // the leader sits on the intuitively better side, a bare noun `phrase`, `nums`).
+// Rate stats rest on cage time with round data. When either side has less
+// than THIN_SAMPLE_MINUTES the factor row says so (the model already shrinks
+// such numbers toward the league prior; the caveat is for the reader).
+const RATE_FEATURES = new Set(['slpm', 'sapm', 'str_acc', 'str_def', 'td_avg', 'td_acc', 'td_def', 'sub_avg', 'kd_per15', 'kd_absorbed_per15', 'cardio_degradation', 'form_trend']);
+function thinSampleNote(feature, valsA, valsB, nameA, nameB) {
+  if (!RATE_FEATURES.has(feature)) return '';
+  const thin = [[nameA, valsA.stats_minutes], [nameB, valsB.stats_minutes]]
+    .filter(([, m]) => m != null && m < THIN_SAMPLE_MINUTES)
+    .map(([n, m]) => `${n} ${Math.round(m)} min`);
+  return thin.length ? ` — thin sample: ${thin.join(', ')} of stat data` : '';
+}
+
 function computeFactors(nameA, nameB, valsA, valsB, contributions) {
   return contributions
-    .map((c, j) => ({ feature: FEATURES[j], c }))
-    .filter(({ feature, c }) => Math.abs(c) > 0.01 && valsA[feature] != null && valsB[feature] != null)
+    .map((c, j) => ({ feature: MODEL.features[j], c }))
+    .filter(({ feature, c }) => Math.abs(c) > 0.01 && FACTOR_META[feature] && valsA[feature] != null && valsB[feature] != null)
     .sort((a, b) => Math.abs(b.c) - Math.abs(a.c))
     .slice(0, 5)
     .map(({ feature, c }) => {
@@ -180,7 +202,7 @@ function computeFactors(nameA, nameB, valsA, valsB, contributions) {
         : (leaderBetter ? meta.advP : meta.despiteP);
       return {
         feature, leader, leaderBetter, pts, phrase, nums,
-        row: `${factorText(feature, leader, lv, tv)} (~${pts} pts of win probability)`,
+        row: `${factorText(feature, leader, lv, tv)} (~${pts} pts of win probability)${thinSampleNote(feature, valsA, valsB, nameA, nameB)}`,
       };
     });
 }
@@ -371,7 +393,7 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
     let query = supabase
       .from('fight_predictions').select('*')
       .or(cacheFilter)
-      .eq('model_version', 'v3')
+      .eq('model_version', MODEL_VERSION)
       .gt('expires_at', new Date().toISOString());
     // weight_class_id is part of the upsert conflict target, so it has to be
     // part of the read too — without it a lookup can straddle two weight
@@ -389,16 +411,24 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   const tl2 = timelines.get(fighter2Id) || [];
   const today = new Date().toISOString().split('T')[0];
 
+  // Model features: full career as of today under the model's config
+  // (shrunk, decayed, capped — exactly what training saw). Raw snapshots stay
+  // for the round projections, which are display numbers.
   const snap1 = snapshot(tl1), snap2 = snapshot(tl2);
-  const vals1 = sideValues(snap1, snapshot(tl1, null, 3), f1, today);
-  const vals2 = sideValues(snap2, snapshot(tl2, null, 3), f2, today);
+  const vals1 = sideFeatures(tl1, f1, today, null, CFG, PRIORS);
+  const vals2 = sideFeatures(tl2, f2, today, null, CFG, PRIORS);
   const { p: f1WinProb, contributions } = predictProb(diffVector(vals1, vals2));
   const f2WinProb = 1 - f1WinProb;
 
   const name1 = `${f1.first_name} ${f1.last_name}`, name2 = `${f2.first_name} ${f2.last_name}`;
   const factors = computeFactors(name1, name2, vals1, vals2, contributions);
   const keyFactors = factors.map(f => f.row);
-  const lowData = snap1.stats_fights < 2 || snap2.stats_fights < 2;
+  // Thin data on either side caps confidence at low: fewer than 2 stats-fights
+  // or under THIN_SAMPLE_MINUTES of stat time. A size mismatch the model does
+  // not yet see (cross-weight matchup) caps it at medium.
+  const lowData = snap1.stats_fights < 2 || snap2.stats_fights < 2
+    || snap1.stats_seconds / 60 < THIN_SAMPLE_MINUTES || snap2.stats_seconds / 60 < THIN_SAMPLE_MINUTES;
+  const sizeMismatch = !!weightClassContext?.has_size_mismatch;
 
   const f1Methods = computeMethodBreakdown(tl1, tl2, f1WinProb);
   const f2Methods = computeMethodBreakdown(tl2, tl1, f2WinProb);
@@ -418,7 +448,9 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   }
 
   const probDiff = Math.abs(f1WinProb - f2WinProb);
-  const confidence = lowData ? 'low' : probDiff > 0.25 ? 'high' : probDiff > 0.12 ? 'medium' : 'low';
+  let confidence = probDiff > 0.25 ? 'high' : probDiff > 0.12 ? 'medium' : 'low';
+  if (sizeMismatch && confidence === 'high') confidence = 'medium';
+  if (lowData) confidence = 'low';
 
   const prediction = {
     fighter1_id: fighter1Id,
@@ -439,7 +471,7 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
     confidence,
     generated_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    model_version: 'v3',
+    model_version: MODEL_VERSION,
   };
 
   if (!opts.skipCache) {

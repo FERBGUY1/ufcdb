@@ -35,6 +35,14 @@
  *   --from YEAR --to YEAR    fold range (default 2019..now)
  *   --features a,b,c         restrict to a subset of features.js FEATURES
  *   --min-prior N            prior stats-fights required per side (default 2)
+ *   --score-min-prior N      score only test rows whose thinner side has >= N
+ *                            (default = --min-prior; use 2 to compare a
+ *                            --min-prior 0 run against the Phase-0 baseline)
+ *   --shrink K               pseudo-minutes of league prior mixed into rate stats
+ *   --half-life DAYS         recency decay half-life for stats sums
+ *   --layoff-cap DAYS        cap layoff_days
+ *   --win-shrink N           pseudo-fights at 50% mixed into win rates
+ *   --clip Z                 clip standardized features at ±Z
  *   --ablate                 leave-one-out feature gate (slow: folds x features fits)
  *   --out PATH               write the JSON report
  *   --baseline PATH          compare against a saved report
@@ -46,9 +54,8 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { loadAll, sigmoid, trainLogistic, evaluate, buildDataset, FIGHT_COLS, FIGHTER_COLS, MIN_PRIOR_STATS_FIGHTS } = require('./trainModel');
-const { snapshot } = require('./statsEngine');
-const { FEATURES, sideValues, diffVector } = require('./features');
+const { loadAll, sigmoid, trainLogistic, evaluate, buildDataset, sideFeatures, FIGHT_COLS, FIGHTER_COLS, MIN_PRIOR_STATS_FIGHTS } = require('./trainModel');
+const { FEATURES, DEFAULT_CONFIG, diffVector, standardize } = require('./features');
 
 // ── CLI ───────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -57,13 +64,25 @@ const opt = (name, dflt) => { const i = argv.indexOf(`--${name}`); return i > -1
 const FROM = parseInt(opt('from', '2019'));
 const TO = parseInt(opt('to', String(new Date().getFullYear())));
 const MIN_PRIOR = parseInt(opt('min-prior', String(MIN_PRIOR_STATS_FIGHTS)));
+// Score only test rows whose thinner side has at least this many prior
+// stats-fights (training still uses every row). Lets a --min-prior 0 run be
+// compared with the Phase-0 baseline on the same fights.
+const SCORE_MIN_PRIOR = parseInt(opt('score-min-prior', String(MIN_PRIOR)));
 const SELECTED = opt('features', null) ? opt('features').split(',').map(s => s.trim()).filter(Boolean) : FEATURES.slice();
+const CFG = {
+  ...DEFAULT_CONFIG,
+  shrinkMinutes: parseFloat(opt('shrink', String(DEFAULT_CONFIG.shrinkMinutes))),
+  halfLifeDays: parseFloat(opt('half-life', String(DEFAULT_CONFIG.halfLifeDays))),
+  layoffCapDays: parseFloat(opt('layoff-cap', String(DEFAULT_CONFIG.layoffCapDays))),
+  winShrinkFights: parseFloat(opt('win-shrink', String(DEFAULT_CONFIG.winShrinkFights))),
+  clipZ: parseFloat(opt('clip', String(DEFAULT_CONFIG.clipZ))),
+};
 const ABLATE = flag('ablate');
 const OUT = opt('out', null);
 const BASELINE = opt('baseline', null);
 const SANITY = !flag('no-sanity');
 const SANITY_PATH = path.join(__dirname, 'sanitySet.json');
-const MODEL_PATH = path.join(__dirname, 'model-v3.json');
+const { MODEL_PATH } = require('./trainModel');
 
 for (const f of SELECTED) if (!FEATURES.includes(f)) { console.error(`Unknown feature "${f}". Known: ${FEATURES.join(', ')}`); process.exit(1); }
 
@@ -85,7 +104,7 @@ function fitAndScore(train, test, names) {
   for (const r of train) for (let j = 0; j < d; j++) mu[j] += r.x[idx[j]] / train.length;
   for (const r of train) for (let j = 0; j < d; j++) sigma[j] += (r.x[idx[j]] - mu[j]) ** 2 / train.length;
   for (let j = 0; j < d; j++) sigma[j] = Math.sqrt(sigma[j]) || 1;
-  const std = r => idx.map((k, j) => (r.x[k] - mu[j]) / sigma[j]);
+  const std = r => standardize(idx.map(k => r.x[k]), mu, sigma, CFG.clipZ);
   const Xtr = train.map(std), ytr = train.map(r => r.y);
   const { w, b } = trainLogistic(Xtr, ytr);
   const Xte = test.map(std), yte = test.map(r => r.y);
@@ -139,7 +158,7 @@ function runFolds(rows, names, market, { quiet = false } = {}) {
   for (let year = FROM; year <= TO; year++) {
     const lo = `${year}-01-01`, hi = `${year + 1}-01-01`;
     const train = rows.filter(r => r.date < lo);
-    const test = rows.filter(r => r.date >= lo && r.date < hi);
+    const test = rows.filter(r => r.date >= lo && r.date < hi && r.minPriorStats >= SCORE_MIN_PRIOR);
     if (!train.length || !test.length) continue;
     const fit = fitAndScore(train, test, names);
     const fold = { year, nTrain: train.length, nTest: test.length,
@@ -185,32 +204,36 @@ function gate(candidateFolds, referenceFolds) {
 
 // ── Sanity set ────────────────────────────────────────────────────────────
 function serveWith(model, a, b) {
-  // model: { names, mu, sigma, w, b } over `names`; a/b are sideValues objects
+  // model: { names, mu, sigma, w, b, cfg } over `names`; a/b are sideValues objects
   const full = diffVector(a, b);
   const idx = idxOf(model.names);
-  const z = idx.map((k, j) => (full[k] - model.mu[j]) / model.sigma[j]);
+  const z = standardize(idx.map(k => full[k]), model.mu, model.sigma, model.cfg.clipZ);
   const contrib = z.map((v, j) => v * model.w[j]);
   const p = sigmoid(contrib.reduce((s, v) => s + v, model.b));
   const top = contrib.map((c, j) => ({ f: model.names[j], c })).sort((x, y) => Math.abs(y.c) - Math.abs(x.c))[0];
   return { p, zmax: Math.max(...z.map(Math.abs)), top };
 }
 
-function runSanity(timelines, fighterById, candidate) {
+function runSanity(timelines, fighterById, candidate, priors) {
   if (!fs.existsSync(SANITY_PATH)) return { skipped: `no ${path.basename(SANITY_PATH)}` };
   const { pairs } = JSON.parse(fs.readFileSync(SANITY_PATH, 'utf8'));
   const bySlug = new Map(Object.values(fighterById).map(f => [f.slug, f]));
-  const shipped = fs.existsSync(MODEL_PATH) ? (() => { const m = require(MODEL_PATH); return { names: m.features, mu: m.mu, sigma: m.sigma, w: m.w, b: m.b }; })() : null;
+  // the shipped model is served with ITS OWN config (stored in the file; Phase-0 files have none = raw)
+  const shipped = fs.existsSync(MODEL_PATH) ? (() => {
+    const m = require(MODEL_PATH);
+    return { names: m.features, mu: m.mu, sigma: m.sigma, w: m.w, b: m.b, cfg: { ...DEFAULT_CONFIG, ...(m.config || {}) }, priors: m.priors || null };
+  })() : null;
   const today = new Date().toISOString().slice(0, 10);
-  const vals = f => { const tl = timelines.get(f.id) || []; return sideValues(snapshot(tl), snapshot(tl, null, 3), f, today); };
+  // full career (no cutoff), decay measured back from today
+  const vals = (f, model) => sideFeatures(timelines.get(f.id) || [], f, today, null, model.cfg, model.priors);
   const results = [];
   for (const pr of pairs) {
     const A = bySlug.get(pr.f1), B = bySlug.get(pr.f2);
     if (!A || !B) { results.push({ ...pr, missing: !A ? pr.f1 : pr.f2 }); continue; }
-    const a = vals(A), b = vals(B);
     const want = pr.expect === 'f2' ? 'f2' : 'f1';
     const one = model => {
       if (!model) return null;
-      const s = serveWith(model, a, b);
+      const s = serveWith(model, vals(A, model), vals(B, model));
       const pExp = want === 'f1' ? s.p : 1 - s.p;
       return { pExpected: pExp, pass: pExp >= pr.minProb, zmax: s.zmax, top: `${s.top.f}${s.top.c >= 0 ? '+' : ''}${s.top.c.toFixed(2)}` };
     };
@@ -223,7 +246,8 @@ function runSanity(timelines, fighterById, candidate) {
 // ── Main ──────────────────────────────────────────────────────────────────
 async function main() {
   const t0 = Date.now();
-  console.log(`Predictor rolling-origin evaluation  folds ${FROM}..${TO}  features ${SELECTED.length}/${FEATURES.length}  min prior stats-fights ${MIN_PRIOR}\n`);
+  const cfgText = Object.entries(CFG).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join(' ') || 'raw (Phase-0 behaviour)';
+  console.log(`Predictor rolling-origin evaluation  folds ${FROM}..${TO}  features ${SELECTED.length}/${FEATURES.length}  min prior stats-fights ${MIN_PRIOR} (scored >= ${SCORE_MIN_PRIOR})\nconfig: ${cfgText}\n`);
 
   const [events, fights, fighters, oddsRows] = await Promise.all([
     loadAll('events', 'id, date'),
@@ -231,7 +255,7 @@ async function main() {
     loadAll('fighters', FIGHTER_COLS),
     loadAll('odds', 'fight_id, bookmaker, fighter1_odds, fighter2_odds, line_type, recorded_at'),
   ]);
-  const { rows, timelines, fighterById, skippedInexperienced } = buildDataset(fights, events, fighters, { minPriorStatsFights: MIN_PRIOR });
+  const { rows, timelines, fighterById, priors, skippedInexperienced } = buildDataset(fights, events, fighters, { minPriorStatsFights: MIN_PRIOR, cfg: CFG });
   const market = buildMarket(oddsRows);
   console.log(`Rows: ${rows.length} usable fights (skipped ${skippedInexperienced} with a side under ${MIN_PRIOR} prior stats-fights)  |  market lines on ${market.size} fights`);
 
@@ -291,11 +315,11 @@ async function main() {
   let sanity = null;
   if (SANITY) {
     const all = fitAndScore(rows, [], SELECTED);
-    const candidate = { names: SELECTED, mu: all.mu, sigma: all.sigma, w: all.w, b: all.b };
-    sanity = runSanity(timelines, fighterById, candidate);
+    const candidate = { names: SELECTED, mu: all.mu, sigma: all.sigma, w: all.w, b: all.b, cfg: CFG, priors };
+    sanity = runSanity(timelines, fighterById, candidate, priors);
     if (sanity.skipped) console.log(`\nSanity set: skipped (${sanity.skipped})`);
     else {
-      console.log(`\n======== SANITY SET  shipped model-v3.json ${sanity.shipped ? `${sanity.shipped.pass}/${sanity.shipped.total}` : 'n/a'}   candidate ${sanity.candidate.pass}/${sanity.candidate.total} ========`);
+      console.log(`\n======== SANITY SET  shipped ${path.basename(MODEL_PATH)} ${sanity.shipped ? `${sanity.shipped.pass}/${sanity.shipped.total}` : 'n/a'}   candidate ${sanity.candidate.pass}/${sanity.candidate.total} ========`);
       console.log('shipped  candidate | need  | matchup (expected side first)');
       for (const r of sanity.results) {
         if (r.missing) { console.log(`   —        —     |  —    | ${r.f1} vs ${r.f2}: MISSING ${r.missing}`); continue; }
@@ -339,8 +363,8 @@ async function main() {
   // ── Report
   if (OUT) {
     const report = {
-      generatedAt: new Date().toISOString(), from: FROM, to: TO, minPriorStatsFights: MIN_PRIOR,
-      features: SELECTED, rows: rows.length,
+      generatedAt: new Date().toISOString(), from: FROM, to: TO, minPriorStatsFights: MIN_PRIOR, scoreMinPrior: SCORE_MIN_PRIOR,
+      config: CFG, features: SELECTED, rows: rows.length,
       folds: folds.map(({ fit, ...f }) => f),
       summary, pooled: pooledScore, marketPooled,
       calibration: bins.map((b, i) => ({ bin: i, n: b.n, predicted: b.n ? b.p / b.n : null, actual: b.n ? b.y / b.n : null })),
