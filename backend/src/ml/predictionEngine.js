@@ -17,6 +17,7 @@ const path = require('path');
 const supabase = require('../db/client');
 const { buildTimelines, snapshot, annotateOpponentPriors } = require('./statsEngine');
 const { computeElo } = require('./eloEngine');
+const { applySizePrior } = require('./sizePrior');
 const { FEATURES, DEFAULT_CONFIG, sideFeatures, diffVector, standardize } = require('./features');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -27,7 +28,6 @@ const PRIORS = MODEL.priors || null;
 const MODEL_IDX = MODEL.features.map(n => FEATURES.indexOf(n)); // model subset -> FEATURES positions
 const DATA_TTL_MS = 6 * 60 * 60 * 1000;
 const THIN_SAMPLE_MINUTES = 30; // rate-stat factors cite this when a side has less stat time
-const CROSS_WEIGHT_LBS = 30;    // natural-division gap at which the prediction is flagged as unmodeled
 
 // ── WEIGHT CLASS CONTEXT (unchanged from v2) ──────────────────────────────
 async function deriveNaturalWeightClassId(fighterId) {
@@ -446,30 +446,38 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   const snap1 = snapshot(tl1), snap2 = snapshot(tl2);
   const vals1 = sideFeatures(tl1, f1, today, null, CFG, PRIORS, elo, bout, limitByWc);
   const vals2 = sideFeatures(tl2, f2, today, null, CFG, PRIORS, elo, bout, limitByWc);
-  const { p: f1WinProb, contributions } = predictProb(diffVector(vals1, vals2));
+  const { p: skillProb, contributions } = predictProb(diffVector(vals1, vals2));
+
+  // Size prior (sizePrior.js): a hand-set log-odds shift toward the naturally
+  // bigger fighter once the natural-division gap is two or more divisions.
+  // It is an assumption, not learned from fight data — UFC cards hold no
+  // such bouts — so it is applied on top of the model's skill estimate and
+  // shown as its own factor. Gaps of 0-1 divisions get nothing.
+  const size = applySizePrior(skillProb, vals1.natural_limit, vals2.natural_limit);
+  const f1WinProb = size.p;
   const f2WinProb = 1 - f1WinProb;
+  const crossWeight = size.gap != null && size.gap >= 2;
 
   const name1 = `${f1.first_name} ${f1.last_name}`, name2 = `${f2.first_name} ${f2.last_name}`;
   const factors = computeFactors(name1, name2, vals1, vals2, contributions);
   const keyFactors = factors.map(f => f.row);
+  if (crossWeight) {
+    const bigger = size.biggerIsA ? name1 : name2;
+    const pBiggerBefore = size.biggerIsA ? size.pBefore : 1 - size.pBefore;
+    const pBiggerAfter = size.biggerIsA ? size.p : 1 - size.p;
+    keyFactors.unshift(
+      `Size adjustment (assumption, not learned from fight data): ${bigger} is ${size.gap} divisions heavier by natural division ` +
+      `(${Math.max(vals1.natural_limit, vals2.natural_limit)} vs ${Math.min(vals1.natural_limit, vals2.natural_limit)} lb). ` +
+      `A hand-set prior of +${Math.abs(size.shift).toFixed(2)} log-odds moved ${bigger} from ${(pBiggerBefore * 100).toFixed(1)}% on skill alone to ${(pBiggerAfter * 100).toFixed(1)}%. ` +
+      `No UFC bouts span a gap this size, so the skill numbers below compare the two as if same-sized.`);
+  }
   // Thin data on either side caps confidence at low: fewer than 2 stats-fights
-  // or under THIN_SAMPLE_MINUTES of stat time. A size mismatch the model does
-  // not yet see (cross-weight matchup) caps it at medium.
+  // or under THIN_SAMPLE_MINUTES of stat time. A size mismatch in the bout
+  // context caps it at medium; a 2+ division natural gap forces low (the
+  // probability then rests on the prior, not on evidence).
   const lowData = snap1.stats_fights < 2 || snap2.stats_fights < 2
     || snap1.stats_seconds / 60 < THIN_SAMPLE_MINUTES || snap2.stats_seconds / 60 < THIN_SAMPLE_MINUTES;
   const sizeMismatch = !!weightClassContext?.has_size_mismatch;
-  // Natural-division gap of two or more weight classes: UFC data holds no
-  // such matchups (the few cross-division bouts are matchmade to be
-  // competitive, and the naturally bigger fighter does NOT win them more
-  // often), so the model has nothing to say about size at this scale. Say so
-  // up front and keep the label at low.
-  const naturalGap = vals1.natural_limit != null && vals2.natural_limit != null
-    ? Math.abs(vals1.natural_limit - vals2.natural_limit) : 0;
-  const crossWeight = naturalGap >= CROSS_WEIGHT_LBS;
-  if (crossWeight) {
-    const bigger = vals1.natural_limit > vals2.natural_limit ? name1 : name2;
-    keyFactors.unshift(`Cross-weight matchup: ${bigger} is naturally ${naturalGap} lbs heavier (${vals1.natural_limit} vs ${vals2.natural_limit} lb divisions). No UFC bouts span a gap this size, so the size advantage is NOT in the model's numbers — treat the probability as a same-size comparison of skills.`);
-  }
 
   const f1Methods = computeMethodBreakdown(tl1, tl2, f1WinProb);
   const f2Methods = computeMethodBreakdown(tl2, tl1, f2WinProb);

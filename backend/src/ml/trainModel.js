@@ -78,7 +78,10 @@ async function loadAll(table, cols) {
 const sigmoid = z => 1 / (1 + Math.exp(-z));
 const hashFlip = id => parseInt(id.replace(/-/g, '').slice(0, 8), 16) % 2 === 1;
 
-function trainLogistic(X, y, { epochs = 1200, lr = 0.3, l2 = 1e-3 } = {}) {
+// fitIntercept defaults to FALSE: every feature is an A-minus-B differential
+// and the orientation is randomized by the hash flip, so the true intercept
+// is zero. A fitted intercept would make P(A beats B) != 1 - P(B beats A).
+function trainLogistic(X, y, { epochs = 1200, lr = 0.3, l2 = 1e-3, fitIntercept = false } = {}) {
   const n = X.length, d = X[0].length;
   let w = new Array(d).fill(0), b = 0;
   for (let e = 0; e < epochs; e++) {
@@ -91,7 +94,7 @@ function trainLogistic(X, y, { epochs = 1200, lr = 0.3, l2 = 1e-3 } = {}) {
       gb += err;
     }
     for (let j = 0; j < d; j++) w[j] -= lr * (gw[j] / n + l2 * w[j]);
-    b -= lr * (gb / n);
+    if (fitIntercept) b -= lr * (gb / n);
   }
   return { w, b };
 }
@@ -212,10 +215,12 @@ async function main() {
 
   const idx = TRAIN_FEATURES.map(n => FEATURES.indexOf(n));
   const d = idx.length;
+  // Standardization is centred on ZERO (mu = 0, sigma = RMS): every feature is
+  // an A-minus-B differential whose true mean is zero by construction, and a
+  // fitted non-zero mean would make A-vs-B and B-vs-A unequal after clipping.
   const fit = (fitRows) => {
     const mu = new Array(d).fill(0), sigma = new Array(d).fill(0);
-    for (const r of fitRows) for (let j = 0; j < d; j++) mu[j] += r.x[idx[j]] / fitRows.length;
-    for (const r of fitRows) for (let j = 0; j < d; j++) sigma[j] += (r.x[idx[j]] - mu[j]) ** 2 / fitRows.length;
+    for (const r of fitRows) for (let j = 0; j < d; j++) sigma[j] += r.x[idx[j]] ** 2 / fitRows.length;
     for (let j = 0; j < d; j++) sigma[j] = Math.sqrt(sigma[j]) || 1;
     const std = r => standardize(idx.map(k => r.x[k]), mu, sigma, TRAIN_CONFIG.clipZ);
     const { w, b } = trainLogistic(fitRows.map(std), fitRows.map(r => r.y));

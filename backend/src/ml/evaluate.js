@@ -59,6 +59,7 @@ const path = require('path');
 const { loadAll, sigmoid, trainLogistic, evaluate, buildDataset, sideFeatures, FIGHT_COLS, FIGHTER_COLS, MIN_PRIOR_STATS_FIGHTS } = require('./trainModel');
 const { FEATURES, DEFAULT_CONFIG, diffVector, standardize, careerContext } = require('./features');
 const { computeElo } = require('./eloEngine');
+const { applySizePrior } = require('./sizePrior');
 
 // ── CLI ───────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -105,9 +106,9 @@ const idxOf = names => names.map(n => FEATURES.indexOf(n));
 // ── Core: fit on train rows, score test rows, for one feature subset ──────
 function fitAndScore(train, test, names) {
   const idx = idxOf(names), d = idx.length;
+  // zero-centred standardization (mu = 0, sigma = RMS) — see trainModel.fit
   const mu = new Array(d).fill(0), sigma = new Array(d).fill(0);
-  for (const r of train) for (let j = 0; j < d; j++) mu[j] += r.x[idx[j]] / train.length;
-  for (const r of train) for (let j = 0; j < d; j++) sigma[j] += (r.x[idx[j]] - mu[j]) ** 2 / train.length;
+  for (const r of train) for (let j = 0; j < d; j++) sigma[j] += r.x[idx[j]] ** 2 / train.length;
   for (let j = 0; j < d; j++) sigma[j] = Math.sqrt(sigma[j]) || 1;
   const std = r => standardize(idx.map(k => r.x[k]), mu, sigma, CFG.clipZ);
   const Xtr = train.map(std), ytr = train.map(r => r.y);
@@ -246,11 +247,16 @@ function runSanity(timelines, fighterById, candidate, fights, events, limitByWc 
     if (!A || !B) { results.push({ ...pr, missing: !A ? pr.f1 : pr.f2 }); continue; }
     const want = pr.expect === 'f2' ? 'f2' : 'f1';
     const bout = boutFor(A);
+    // The size prior (sizePrior.js) is applied here exactly as the engine
+    // applies it at serving time. It never touches the fold evaluation above.
     const one = model => {
       if (!model) return null;
-      const s = serveWith(model, vals(A, model, bout), vals(B, model, bout));
-      const pExp = want === 'f1' ? s.p : 1 - s.p;
-      return { pExpected: pExp, pass: pExp >= pr.minProb, zmax: s.zmax, top: `${s.top.f}${s.top.c >= 0 ? '+' : ''}${s.top.c.toFixed(2)}` };
+      const va = vals(A, model, bout), vb = vals(B, model, bout);
+      const s = serveWith(model, va, vb);
+      const size = applySizePrior(s.p, va.natural_limit, vb.natural_limit);
+      const pExp = want === 'f1' ? size.p : 1 - size.p;
+      const skillExp = want === 'f1' ? s.p : 1 - s.p;
+      return { pExpected: pExp, pass: pExp >= pr.minProb, zmax: s.zmax, top: `${s.top.f}${s.top.c >= 0 ? '+' : ''}${s.top.c.toFixed(2)}`, sizeGap: size.gap, skillOnly: skillExp };
     };
     results.push({ ...pr, shipped: one(shipped), candidate: one(candidate) });
   }
@@ -341,7 +347,8 @@ async function main() {
         if (r.missing) { console.log(`   —        —     |  —    | ${r.f1} vs ${r.f2}: MISSING ${r.missing}`); continue; }
         const cell = x => (x ? `${x.pass ? 'ok ' : 'XX '}${pct(x.pExpected)}` : '    —    ');
         const first = r.expect === 'f2' ? r.f2 : r.f1, second = r.expect === 'f2' ? r.f1 : r.f2;
-        console.log(`${cell(r.shipped)}  ${cell(r.candidate)} | ${pct(r.minProb)} | ${first} vs ${second}  [${r.note}]  z${r.candidate.zmax.toFixed(1)} ${r.candidate.top}`);
+        const sizeNote = r.candidate.sizeGap >= 2 ? `  size prior: ${r.candidate.sizeGap} divisions, skill-only ${pct(r.candidate.skillOnly)}` : '';
+        console.log(`${cell(r.shipped)}  ${cell(r.candidate)} | ${pct(r.minProb)} | ${first} vs ${second}  [${r.note}]  z${r.candidate.zmax.toFixed(1)} ${r.candidate.top}${sizeNote}`);
       }
     }
   }

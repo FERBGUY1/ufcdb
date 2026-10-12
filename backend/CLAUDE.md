@@ -309,16 +309,37 @@ DB rows are untouched, `fix-fight-weight-class.js` would need the ufcstats gate 
 fix them properly); serving reads `opts.scheduledRounds` or the pair's shared history, and
 the bout weight class the route derived.
 
+**Size prior (`sizePrior.js`, user decision 2026-10-12).** A hand-set log-odds shift
+toward the naturally bigger fighter, applied ON TOP of the model's skill estimate at serving
+time and in the sanity set, never inside the fold evaluation. Gap = divisions between the
+two NATURAL divisions (modal weight class) on the ladder 115/125/135/145/155/170/185/205/265.
+Gap 0–1: nothing (Volkanovski–Makhachev 1 reads 45/55 on skill, Makhachev won). Gap ≥ 2:
+`1.10·x + 0.05·x²` with x = gap − 1 → +1.15 at 2 divisions (Makhachev vs Chimaev 41%, vs
+Strickland 69%), +5.2 at 5 (Topuria vs Ngannou 0.8/99.2). Shown as the first key factor
+("Size adjustment (assumption, not learned from fight data) … moved X from a% on skill alone
+to b%"); confidence forced to `low` for gap ≥ 2. Sanity set 25/27 with it (the two misses are
+same-division direction-only pairs).
+
+**Mirror symmetry.** P(A beats B) must equal 1 − P(B beats A). Two things broke it: a
+fitted mean in standardization (fixed: `mu = 0`, `sigma` = RMS, in both `trainModel.fit`
+and `evaluate.fitAndScore`) and a fitted intercept (fixed: `trainLogistic` defaults to
+`fitIntercept: false`; the hash flip makes the true intercept zero). Held-out logloss was
+unchanged by both (0.6298). Van vs Yan now reads 58.0/42.0 in both orders.
+
 **Why size cannot be learned from UFC data:** among 6,390 training rows with both natural
 divisions known, 4,764 have no gap; with a 1–15 lb gap the naturally bigger fighter wins
 49.5% (n=1,185), 16–30 lb 47.6% (n=292), 31–60 lb 39.4% (n=127). Cross-division bouts are
 matchmade to be competitive, so "bigger wins" is absent from the evidence, and the
 hypothetical cross-weight sanity pairs (Ngannou–Topuria, Miocic–Johnson,
-Pereira–Dvalishvili) are out of distribution for any model trained on real cards. The
-engine therefore flags any matchup with a natural-division gap ≥ 30 lb
-(`CROSS_WEIGHT_LBS`): confidence forced to `low` and a leading key-factor line says the size
-advantage is not in the numbers. Any stronger cross-weight adjustment would be a hand-set
-prior, not evidence — a product decision, not a modelling one.
+Pereira–Dvalishvili) are out of distribution for any model trained on real cards. Hence
+the hand-set prior above rather than a learned feature.
+
+**Age (investigated 2026-10-12, model unchanged).** The data backs the age weight: the
+younger fighter wins 53/57/61/68% at gaps of 0–3/4–6/7–9/10+ years (n=3,035/2,567/1,408/760),
+stronger in fly/bantamweight at big gaps (75% at 10+). Held-out, the model UNDER-favours the
+younger side by 2–7 points in every gap bucket (age-only slope −0.059 log-odds/yr, full model
+−0.046). The effect flattens only when the older fighter is elite (Elo ≥ 1900: 50.8% at
+7–9 yrs, n=61) — see the `age_elo` interaction gate result below.
 
 Phase-1 findings (2026-10-12): shrinkage alone −0.002, pro record alone −0.0027, layoff cap
 −0.0006, win-rate shrink −0.0005, decay and clipping ≈0 alone but decay helps in
