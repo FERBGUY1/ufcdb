@@ -1,0 +1,39 @@
+{
+  "_doc": [
+    "Matchups any good model must get right. Served through the full-career path (as the Predict page would today).",
+    "expect = which side must be favored; minProb = the minimum win probability the model must give that side.",
+    "Tiers: cross-weight elite-vs-small (0.80), elite vs journeyman (0.70), lopsided real fights (0.60), direction-only (0.55).",
+    "Edit freely — this is a judgment list, not ground truth. Pass rate is reported by src/ml/evaluate.js."
+  ],
+  "pairs": [
+    { "f1": "jon-jones",              "f2": "deiveson-figueiredo", "expect": "f1", "minProb": 0.80, "note": "HW/LHW champion vs flyweight" },
+    { "f1": "tom-aspinall",           "f2": "alexandre-pantoja",   "expect": "f1", "minProb": 0.80, "note": "HW champion vs flyweight champion" },
+    { "f1": "islam-makhachev",        "f2": "joshua-van",          "expect": "f1", "minProb": 0.80, "note": "LW/WW champion vs flyweight" },
+    { "f1": "alex-pereira",           "f2": "merab-dvalishvili",   "expect": "f1", "minProb": 0.80, "note": "LHW champion vs bantamweight champion" },
+    { "f1": "francis-ngannou",        "f2": "ilia-topuria",        "expect": "f1", "minProb": 0.80, "note": "HW champion vs FW/LW champion" },
+    { "f1": "stipe-miocic",           "f2": "demetrious-johnson",  "expect": "f1", "minProb": 0.80, "note": "HW champion vs flyweight GOAT" },
+    { "f1": "khamzat-chimaev",        "f2": "brandon-moreno",      "expect": "f1", "minProb": 0.80, "note": "MW champion vs flyweight" },
+    { "f1": "amanda-nunes",           "f2": "rose-namajunas",      "expect": "f1", "minProb": 0.75, "note": "two-division champion vs strawweight" },
+
+    { "f1": "khabib-nurmagomedov",    "f2": "darren-elkins",       "expect": "f1", "minProb": 0.75, "note": "undefeated all-time great vs journeyman, adjacent division" },
+    { "f1": "islam-makhachev",        "f2": "tim-means",           "expect": "f1", "minProb": 0.75, "note": "champion vs gatekeeper at WW" },
+    { "f1": "shavkat-rakhmonov",      "f2": "tim-means",           "expect": "f1", "minProb": 0.75, "note": "undefeated contender vs gatekeeper" },
+    { "f1": "valentina-shevchenko",   "f2": "katlyn-chookagian",   "expect": "f1", "minProb": 0.75, "note": "dominant champion vs ranked contender she beat" },
+    { "f1": "jon-jones",              "f2": "ovince-saint-preux",  "expect": "f1", "minProb": 0.75, "note": "real fight, lopsided" },
+    { "f1": "georges-st-pierre",      "f2": "thiago-alves",        "expect": "f1", "minProb": 0.70, "note": "real fight, lopsided" },
+    { "f1": "alexander-volkanovski",  "f2": "josh-emmett",         "expect": "f1", "minProb": 0.70, "note": "champion vs top-10 at FW" },
+    { "f1": "kamaru-usman",           "f2": "tim-means",           "expect": "f1", "minProb": 0.70, "note": "champion vs gatekeeper" },
+    { "f1": "umar-nurmagomedov",      "f2": "cody-garbrandt",      "expect": "f1", "minProb": 0.70, "note": "rising contender vs faded ex-champ" },
+    { "f1": "ciryl-gane",             "f2": "tai-tuivasa",         "expect": "f1", "minProb": 0.70, "note": "real fight, lopsided" },
+    { "f1": "max-holloway",           "f2": "dan-ige",             "expect": "f1", "minProb": 0.65, "note": "elite vs gatekeeper, same division" },
+    { "f1": "movsar-evloev",          "f2": "calvin-kattar",       "expect": "f1", "minProb": 0.65, "note": "undefeated contender vs declining veteran" },
+    { "f1": "erin-blanchfield",       "f2": "katlyn-chookagian",   "expect": "f1", "minProb": 0.65, "note": "rising contender vs veteran" },
+    { "f1": "daniel-cormier",         "f2": "tai-tuivasa",         "expect": "f1", "minProb": 0.60, "note": "retired champion vs active journeyman — layoff must not dominate" },
+
+    { "f1": "charles-oliveira",       "f2": "paddy-pimblett",      "expect": "f1", "minProb": 0.55, "note": "direction only" },
+    { "f1": "merab-dvalishvili",      "f2": "sean-omalley",        "expect": "f1", "minProb": 0.55, "note": "real rematch, direction only" },
+    { "f1": "anderson-silva",         "f2": "chael-sonnen",        "expect": "f1", "minProb": 0.55, "note": "direction only" },
+    { "f1": "magomed-ankalaev",       "f2": "jamahal-hill",        "expect": "f1", "minProb": 0.55, "note": "direction only" },
+    { "f1": "tatiana-suarez",         "f2": "jessica-andrade",     "expect": "f1", "minProb": 0.55, "note": "direction only" }
+  ]
+}

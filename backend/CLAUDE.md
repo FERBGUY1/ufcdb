@@ -203,3 +203,37 @@ unknowable from the row; both files credit nobody rather than guess.
 
 `backfill-event.js` never auto-deletes a null-participant row (it is unmatchable by id,
 so it always classifies as stale even when it is on the source card).
+
+---
+
+## Predictor evaluation (`src/ml/evaluate.js`, `npm run eval:predictor`)
+
+Every feature or model decision for the predictor goes through the rolling-origin
+harness, never through `trainModel.js`'s single 2024 split. `trainModel.js` still
+writes `model-v3.json`; `evaluate.js` imports its dataset builder, trainer and scorer
+so the two cannot drift. The harness writes nothing to the DB and never touches
+`model-v3.json`.
+
+- **Folds**: one per year (`--from 2019 --to <now>`); train on all usable fights before
+  Jan 1 of the year, test on that year. Standardization is fit per fold on train rows.
+- **Reports**: per-fold and pooled accuracy / log loss / Brier; baselines fit the same
+  way on `win_rate`, `age`, and both; pooled calibration; accuracy per confidence label
+  using the exact `predictionEngine.js` rule; count of rows with a standardized feature
+  beyond ±3 (small-sample extrapolation).
+- **Market baseline**: de-vigged closing consensus from the `odds` table (prefers
+  `line_type='closing'`, else latest line per bookmaker; proportional de-vig averaged
+  across books). `odds.fighter1_odds` refers to DB `fighter1_id`, and the harness
+  re-orients it through the row's hash flip. Reported as skipped while the table is empty.
+- **Sanity set** (`src/ml/sanitySet.json`): lopsided / cross-weight matchups served
+  full-career as of today through both the shipped `model-v3.json` and the candidate
+  (current feature set fit on all rows). Pass = expected side gets ≥ `minProb`. It is a
+  judgment list keyed by fighter slug; edit freely.
+- **Feature gate** (`--ablate`): leave-one-feature-out across all folds. KEEP only if
+  including the feature lowers mean fold log loss and raises it in at most one fold.
+  `--baseline report.json` applies the same rule to this run vs a report saved with
+  `--out`. With 8 folds, deltas under ~0.001 are noise — most of the 19 v3 features sit
+  there; only `age`, `sapm`, `td_avg` pass cleanly (2026-10-12 run).
+- **Flags**: `--features a,b,c` · `--min-prior N` (prior stats-fights per side, default 2)
+  · `--ablate` · `--out PATH` · `--baseline PATH` · `--no-sanity`
+- Phase-0 baseline (2026-10-12, 19 features, 4,970 rows): pooled 62.6% / logloss 0.6482
+  over 2,508 test fights; win_rate+age baseline 0.6608; sanity 8/27.

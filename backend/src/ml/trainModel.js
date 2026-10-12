@@ -10,8 +10,9 @@
  * labels are ~50/50 and re-runs are reproducible.
  *
  * Split: train < 2024-01-01 <= test (time-based; user-specified backtest era).
- * Odds benchmark: runs against the odds table when it has rows; skipped
- * (and said so) while it's empty.
+ * For the rolling-origin evaluation (one fold per year, feature gate, sanity
+ * set, market baseline) use src/ml/evaluate.js — it imports the dataset
+ * builder, trainer and scorer from here so the two can never drift.
  *
  * Output: src/ml/model-v3.json (weights, standardization, metrics) — read by
  * predictionEngine.js. Writes NOTHING to the database.
@@ -28,6 +29,9 @@ const { FEATURES, sideValues, diffVector } = require('./features');
 const SPLIT_DATE = '2024-01-01';
 const MIN_PRIOR_STATS_FIGHTS = 2;
 const MODEL_PATH = path.join(__dirname, 'model-v3.json');
+
+const FIGHT_COLS = 'id, event_id, fighter1_id, fighter2_id, winner_id, result, method, round, time, time_format, is_title_fight, weight_class_id, rounds_data';
+const FIGHTER_COLS = 'id, slug, first_name, last_name, date_of_birth, reach_inches, height_inches';
 
 async function loadAll(table, cols) {
   const all = [];
@@ -90,19 +94,17 @@ function evaluate(X, y, w, b) {
   };
 }
 
-async function main() {
-  console.log('Predictor v3 training\n');
-  const events = await loadAll('events', 'id, date');
-  const fights = await loadAll('fights',
-    'id, event_id, fighter1_id, fighter2_id, winner_id, result, method, round, time, time_format, is_title_fight, rounds_data');
-  const fighters = await loadAll('fighters', 'id, first_name, last_name, date_of_birth, reach_inches, height_inches');
+/**
+ * Build the point-in-time training rows from raw tables.
+ * Each row: { date, fightId, weightClassId, method, x (A-minus-B diffs in
+ * FEATURES order), y (1 = A won), a, b (per-side feature values), flip
+ * (true when A is DB fighter2), minPriorStats }.
+ */
+function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIOR_STATS_FIGHTS } = {}) {
   const eventById = Object.fromEntries(events.map(e => [e.id, e]));
   const fighterById = Object.fromEntries(fighters.map(f => [f.id, f]));
-
-  console.log(`Loaded ${fights.length} fights; building timelines...`);
   const timelines = buildTimelines(fights, eventById);
 
-  // ── Build dataset ──────────────────────────────────────────────────────────
   const rows = [];
   let skippedInexperienced = 0;
   for (const f of fights) {
@@ -113,7 +115,7 @@ async function main() {
     if (!tl1 || !tl2) continue;
     const prior1 = tl1.filter(e => e.date < ev.date && e.hasStats).length;
     const prior2 = tl2.filter(e => e.date < ev.date && e.hasStats).length;
-    if (prior1 < MIN_PRIOR_STATS_FIGHTS || prior2 < MIN_PRIOR_STATS_FIGHTS) { skippedInexperienced++; continue; }
+    if (prior1 < minPriorStatsFights || prior2 < minPriorStatsFights) { skippedInexperienced++; continue; }
 
     // deterministic orientation flip (fighter1 is always the winner in the DB)
     const flip = hashFlip(f.id);
@@ -124,8 +126,22 @@ async function main() {
     const tlA = timelines.get(aId), tlB = timelines.get(bId);
     const a = sideValues(snapshot(tlA, ev.date), snapshot(tlA, ev.date, 3), fighterById[aId], ev.date);
     const b = sideValues(snapshot(tlB, ev.date), snapshot(tlB, ev.date, 3), fighterById[bId], ev.date);
-    rows.push({ date: ev.date, fightId: f.id, x: diffVector(a, b), y: label });
+    rows.push({
+      date: ev.date, fightId: f.id, weightClassId: f.weight_class_id ?? null, method: f.method || null,
+      x: diffVector(a, b), y: label, a, b, flip, minPriorStats: Math.min(prior1, prior2),
+    });
   }
+  return { rows, timelines, eventById, fighterById, skippedInexperienced };
+}
+
+async function main() {
+  console.log('Predictor v3 training\n');
+  const events = await loadAll('events', 'id, date');
+  const fights = await loadAll('fights', FIGHT_COLS);
+  const fighters = await loadAll('fighters', FIGHTER_COLS);
+
+  console.log(`Loaded ${fights.length} fights; building timelines...`);
+  const { rows, skippedInexperienced } = buildDataset(fights, events, fighters);
   console.log(`Dataset: ${rows.length} fights (skipped ${skippedInexperienced} where a fighter had <${MIN_PRIOR_STATS_FIGHTS} prior stats-fights)`);
   const labelBalance = rows.reduce((s, r) => s + r.y, 0) / rows.length;
   console.log(`Label balance: ${(labelBalance * 100).toFixed(1)}% positive (orientation flip working if ~50%)`);
@@ -169,9 +185,9 @@ async function main() {
   // ── Odds benchmark (when the odds table has data) ──────────────────────────
   const { count: oddsCount } = await supabase.from('odds').select('id', { count: 'exact', head: true });
   if (!oddsCount) {
-    console.log('\nOdds benchmark: SKIPPED — odds table is empty (backfill it and re-run for the market comparison).');
+    console.log('\nOdds benchmark: SKIPPED — odds table is empty (backfill it and run evaluate.js for the market comparison).');
   } else {
-    console.log(`\nOdds benchmark: ${oddsCount} odds rows found — implement comparison when historical odds land.`);
+    console.log(`\nOdds benchmark: ${oddsCount} odds rows found — run src/ml/evaluate.js for the market comparison.`);
   }
 
   fs.writeFileSync(MODEL_PATH, JSON.stringify({
@@ -187,4 +203,11 @@ async function main() {
   console.log(`\nModel written to ${MODEL_PATH}`);
 }
 
-main().catch(e => { console.error('Fatal:', e); process.exit(1); });
+module.exports = {
+  loadAll, hashFlip, sigmoid, trainLogistic, evaluate, buildDataset,
+  FIGHT_COLS, FIGHTER_COLS, MIN_PRIOR_STATS_FIGHTS, SPLIT_DATE,
+};
+
+if (require.main === module) {
+  main().catch(e => { console.error('Fatal:', e); process.exit(1); });
+}
