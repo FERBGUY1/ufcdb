@@ -61,6 +61,8 @@ const FEATURES = [
   'natural_limit',      // weight limit of the fighter's modal division before the fight (lbs)
   'moving_up_lbs',      // bout limit minus natural limit (positive = fighting above natural division)
   'off_division_fights',// prior fights outside the modal division
+  // ── age × rating interaction ──
+  'age_elo',            // (age - 30) * (elo - 1500) / 100: lets the age penalty flatten for highly rated fighters
 ];
 
 const DEFAULT_CONFIG = {
@@ -142,6 +144,7 @@ function sideValues(snap, snapRecent, fighter, asOfDate, cfg = DEFAULT_CONFIG, u
     natural_limit: naturalLimit,
     moving_up_lbs: naturalLimit != null && bout.limitLbs != null ? bout.limitLbs - naturalLimit : null,
     off_division_fights: c.offDivisionFights ?? null,
+    age_elo: age != null && elo ? (age - 30) * (elo.elo - 1500) / 100 : null,
   };
 }
 

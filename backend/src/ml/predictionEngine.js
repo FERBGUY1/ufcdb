@@ -165,6 +165,9 @@ const FACTOR_META = {
   natural_limit:     { sfx: '',  desc: 'lbs, natural division',    dp: 0, hib: true,  adv: 'is the naturally bigger fighter',   despite: 'grades ahead despite being the smaller fighter', advP: 'a size advantage',      despiteP: 'a size disadvantage' },
   moving_up_lbs:     { sfx: '',  desc: 'lbs above natural division', dp: 0, hib: false, adv: 'is closer to his natural weight', despite: 'grades ahead despite moving up further', advP: 'fighting nearer natural weight', despiteP: 'moving up in weight' },
   off_division_fights: { sfx: '', desc: 'fights outside modal division', dp: 0, hib: true, adv: 'has more experience outside the home division', despite: 'grades ahead despite less cross-division experience', advP: 'cross-division experience', despiteP: 'less cross-division experience' },
+  // (age-30)*(elo-1500)/100: high = an older fighter carrying a high rating, which the
+  // data says overstates current form; lower is better.
+  age_elo:           { sfx: '',  desc: 'age × rating index',       dp: 0, hib: false, adv: 'carries less age-on-rating risk',   despite: 'grades ahead despite an aging high rating', advP: 'a rating less exposed to age', despiteP: 'an aging high rating' },
   // reach & height read as an inch advantage when the leader is the bigger one.
   reach:             { dp: 0, dim: 'reach' },
   height:            { dp: 0, dim: 'height' },

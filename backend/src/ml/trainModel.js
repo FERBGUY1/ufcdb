@@ -55,6 +55,7 @@ const TRAIN_EXCLUDED = new Set([
   'age_sq', 'years_active', 'ko_losses_career', 'ko_losses_24m', 'fights_12m',
   'five_round_fights', 'five_round_fights_sched', 'late_round_cardio',
   'natural_limit', 'moving_up_lbs', 'off_division_fights',
+  // age_elo PASSED the gate (2026-10-12: -0.0014 mean, worse only in 2026) and is shipped
 ]);
 const TRAIN_FEATURES = FEATURES.filter(f => !TRAIN_EXCLUDED.has(f));
 

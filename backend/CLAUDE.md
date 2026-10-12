@@ -282,7 +282,8 @@ and scorer. It writes nothing to the DB and never touches the model file.
 |---|---|---|---|
 | `baseline-phase0.json` | 19 raw features, min-prior 2 | 62.6% / logloss 0.6482 | 8/27 |
 | `phase1-candidate.json` | +pro_win_rate, pro_fights; v4 config; min-prior 0 | 64.2% / logloss 0.6417 | 11/27 |
-| `phase1-2.json` | **shipped v4**: 18 features (see below); Elo K 100 ×1.5 finishes; min-prior 0 | 64.8% / logloss 0.6298 | 19/27 |
+| `phase1-2.json` | 18 features (see below); Elo K 100 ×1.5 finishes; min-prior 0 | 64.8% / logloss 0.6298 | 19/27 |
+| `phase2-age-elo.json` | **shipped v4**: the 18 + `age_elo`; size prior in sanity | 65.2% / logloss 0.6283 | 25/27 |
 
 Phase-2 findings (2026-10-12): opponent-adjusted striking alone −0.0046 (passes the gate
 on its own); Elo alone −0.0007 at K 40 but keeps improving with larger steps (K 60 −0.0019,
@@ -339,7 +340,14 @@ younger fighter wins 53/57/61/68% at gaps of 0–3/4–6/7–9/10+ years (n=3,03
 stronger in fly/bantamweight at big gaps (75% at 10+). Held-out, the model UNDER-favours the
 younger side by 2–7 points in every gap bucket (age-only slope −0.059 log-odds/yr, full model
 −0.046). The effect flattens only when the older fighter is elite (Elo ≥ 1900: 50.8% at
-7–9 yrs, n=61) — see the `age_elo` interaction gate result below.
+7–9 yrs, n=61).
+
+**`age_elo` = (age − 30)·(elo − 1500)/100 — PASSED the gate and is shipped (feature 19):**
+pooled 0.6298 → 0.6283, mean Δ −0.0014, worse only in 2026 (+0.002); vs Phase 0 −0.0189.
+Coefficient is NEGATIVE (−0.099): an older fighter carrying a high rating does *worse* than
+age and Elo separately predict — Elo is backward-looking and overstates aging champions.
+So it did not soften the age penalty for Yan; Van vs Yan went 58.0% → 62.4% for Van.
+Report: `reports/phase2-age-elo.json` (sanity 25/27).
 
 Phase-1 findings (2026-10-12): shrinkage alone −0.002, pro record alone −0.0027, layoff cap
 −0.0006, win-rate shrink −0.0005, decay and clipping ≈0 alone but decay helps in

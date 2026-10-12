@@ -1,0 +1,1023 @@
+{
+  "generatedAt": "2026-10-12T19:05:18.084Z",
+  "from": 2019,
+  "to": 2026,
+  "minPriorStatsFights": 0,
+  "scoreMinPrior": 2,
+  "config": {
+    "shrinkMinutes": 30,
+    "halfLifeDays": 1095,
+    "layoffCapDays": 730,
+    "winShrinkFights": 2,
+    "clipZ": 3,
+    "eloK": 100,
+    "eloFinishMult": 1.5
+  },
+  "features": [
+    "sapm",
+    "str_acc",
+    "str_def",
+    "td_avg",
+    "td_acc",
+    "td_def",
+    "sub_avg",
+    "kd_per15",
+    "win_rate",
+    "age",
+    "reach",
+    "height",
+    "layoff_days",
+    "pro_win_rate",
+    "pro_fights",
+    "opp_adj_slpm",
+    "opp_adj_sapm",
+    "elo",
+    "age_elo"
+  ],
+  "rows": 8803,
+  "folds": [
+    {
+      "year": 2019,
+      "nTrain": 4874,
+      "nTest": 290,
+      "model": {
+        "accuracy": 0.6344827586206897,
+        "logloss": 0.6445688971790003,
+        "brier": 0.22729801381372666
+      },
+      "baselines": {
+        "win_rate only": {
+          "accuracy": 0.5310344827586206,
+          "logloss": 0.6892003424094868
+        },
+        "age only": {
+          "accuracy": 0.5862068965517241,
+          "logloss": 0.6798546110902105
+        },
+        "win_rate+age": {
+          "accuracy": 0.5862068965517241,
+          "logloss": 0.6783658179317975
+        }
+      },
+      "market": null
+    },
+    {
+      "year": 2020,
+      "nTrain": 5380,
+      "nTest": 258,
+      "model": {
+        "accuracy": 0.6589147286821705,
+        "logloss": 0.6326721449194324,
+        "brier": 0.21996458293446905
+      },
+      "baselines": {
+        "win_rate only": {
+          "accuracy": 0.5581395348837209,
+          "logloss": 0.6835686425914297
+        },
+        "age only": {
+          "accuracy": 0.5658914728682171,
+          "logloss": 0.6836300248253854
+        },
+        "win_rate+age": {
+          "accuracy": 0.5775193798449613,
+          "logloss": 0.6795340692358159
+        }
+      },
+      "market": null
+    },
+    {
+      "year": 2021,
+      "nTrain": 5824,
+      "nTest": 326,
+      "model": {
+        "accuracy": 0.6441717791411042,
+        "logloss": 0.6338417153034799,
+        "brier": 0.22140049131633582
+      },
+      "baselines": {
+        "win_rate only": {
+          "accuracy": 0.5736196319018405,
+          "logloss": 0.6790737504333431
+        },
+        "age only": {
+          "accuracy": 0.5797546012269938,
+          "logloss": 0.6768856138647579
+        },
+        "win_rate+age": {
+          "accuracy": 0.588957055214724,
+          "logloss": 0.668038629865181
+        }
+      },
+      "market": null
+    },
+    {
+      "year": 2022,
+      "nTrain": 6321,
+      "nTest": 340,
+      "model": {
+        "accuracy": 0.6058823529411764,
+        "logloss": 0.6452018073364099,
+        "brier": 0.22772477455638354
+      },
+      "baselines": {
+        "win_rate only": {
+          "accuracy": 0.6029411764705882,
+          "logloss": 0.6691206783673237
+        },
+        "age only": {
+          "accuracy": 0.6029411764705882,
+          "logloss": 0.670758247150012
+        },
+        "win_rate+age": {
+          "accuracy": 0.6147058823529412,
+          "logloss": 0.6543202959829448
+        }
+      },
+      "market": null
+    },
+    {
+      "year": 2023,
+      "nTrain": 6828,
+      "nTest": 314,
+      "model": {
+        "accuracy": 0.643312101910828,
+        "logloss": 0.6273776031232271,
+        "brier": 0.2189839206704215
+      },
+      "baselines": {
+        "win_rate only": {
+          "accuracy": 0.5987261146496815,
+          "logloss": 0.6718240631431724
+        },
+        "age only": {
+          "accuracy": 0.6019108280254777,
+          "logloss": 0.6669129300597152
+        },
+        "win_rate+age": {
+          "accuracy": 0.6146496815286624,
+          "logloss": 0.6542724724860974
+        }
+      },
+      "market": null
+    },
+    {
+      "year": 2024,
+      "nTrain": 7338,
+      "nTest": 356,
+      "model": {
+        "accuracy": 0.6966292134831461,
+        "logloss": 0.6003045876162135,
+        "brier": 0.20608491642628088
+      },
+      "baselines": {
+        "win_rate only": {
+          "accuracy": 0.6179775280898876,
+          "logloss": 0.6625200716422718
+        },
+        "age only": {
+          "accuracy": 0.6123595505617978,
+          "logloss": 0.6701003605812529
+        },
+        "win_rate+age": {
+          "accuracy": 0.6292134831460674,
+          "logloss": 0.6486254143932223
+        }
+      },
+      "market": null
+    },
+    {
+      "year": 2025,
+      "nTrain": 7852,
+      "nTest": 344,
+      "model": {
+        "accuracy": 0.688953488372093,
+        "logloss": 0.6012218606849665,
+        "brier": 0.20683050732436434
+      },
+      "baselines": {
+        "win_rate only": {
+          "accuracy": 0.5988372093023255,
+          "logloss": 0.6701731087714919
+        },
+        "age only": {
+          "accuracy": 0.5843023255813954,
+          "logloss": 0.66128762176669
+        },
+        "win_rate+age": {
+          "accuracy": 0.6424418604651163,
+          "logloss": 0.647871173747376
+        }
+      },
+      "market": null
+    },
+    {
+      "year": 2026,
+      "nTrain": 8367,
+      "nTest": 280,
+      "model": {
+        "accuracy": 0.6392857142857142,
+        "logloss": 0.6500890997254385,
+        "brier": 0.2278375733350938
+      },
+      "baselines": {
+        "win_rate only": {
+          "accuracy": 0.6178571428571429,
+          "logloss": 0.6692014369845294
+        },
+        "age only": {
+          "accuracy": 0.6142857142857143,
+          "logloss": 0.6605847218332973
+        },
+        "win_rate+age": {
+          "accuracy": 0.6142857142857143,
+          "logloss": 0.6473690767588772
+        }
+      },
+      "market": null
+    }
+  ],
+  "summary": {
+    "meanLogloss": 0.6294097144860209,
+    "meanAccuracy": 0.6514540171796153,
+    "meanBrier": 0.2195155975471344
+  },
+  "pooled": {
+    "n": 2508,
+    "accuracy": 0.6523125996810207,
+    "logloss": 0.6282718005682817,
+    "brier": 0.21903575211843887
+  },
+  "marketPooled": null,
+  "calibration": [
+    {
+      "bin": 0,
+      "n": 3,
+      "predicted": 0.0734478293114978,
+      "actual": 0.3333333333333333
+    },
+    {
+      "bin": 1,
+      "n": 71,
+      "predicted": 0.1642534852326057,
+      "actual": 0.11267605633802817
+    },
+    {
+      "bin": 2,
+      "n": 238,
+      "predicted": 0.25693502944376523,
+      "actual": 0.28991596638655465
+    },
+    {
+      "bin": 3,
+      "n": 439,
+      "predicted": 0.352937466023052,
+      "actual": 0.32574031890660593
+    },
+    {
+      "bin": 4,
+      "n": 517,
+      "predicted": 0.4514601225025894,
+      "actual": 0.41392649903288203
+    },
+    {
+      "bin": 5,
+      "n": 531,
+      "predicted": 0.5521732110551013,
+      "actual": 0.5574387947269304
+    },
+    {
+      "bin": 6,
+      "n": 394,
+      "predicted": 0.6489316382545384,
+      "actual": 0.649746192893401
+    },
+    {
+      "bin": 7,
+      "n": 225,
+      "predicted": 0.7421546187890234,
+      "actual": 0.7644444444444445
+    },
+    {
+      "bin": 8,
+      "n": 87,
+      "predicted": 0.8409878304271099,
+      "actual": 0.8735632183908046
+    },
+    {
+      "bin": 9,
+      "n": 3,
+      "predicted": 0.9227437589823014,
+      "actual": 1
+    }
+  ],
+  "confidence": {
+    "high": {
+      "n": 1217,
+      "c": 887
+    },
+    "medium": {
+      "n": 662,
+      "c": 413
+    },
+    "low": {
+      "n": 629,
+      "c": 336
+    }
+  },
+  "sanity": {
+    "shipped": {
+      "pass": 25,
+      "total": 27
+    },
+    "candidate": {
+      "pass": 25,
+      "total": 27
+    },
+    "results": [
+      {
+        "f1": "jon-jones",
+        "f2": "deiveson-figueiredo",
+        "expect": "f1",
+        "minProb": 0.8,
+        "note": "HW/LHW champion vs flyweight",
+        "shipped": {
+          "pExpected": 0.9997973014966757,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 6,
+          "skillOnly": 0.8524048036644584
+        },
+        "candidate": {
+          "pExpected": 0.9997973014966757,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 6,
+          "skillOnly": 0.8524048036644584
+        }
+      },
+      {
+        "f1": "tom-aspinall",
+        "f2": "alexandre-pantoja",
+        "expect": "f1",
+        "minProb": 0.8,
+        "note": "HW champion vs flyweight champion",
+        "shipped": {
+          "pExpected": 0.9999386337409192,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+0.82",
+          "sizeGap": 7,
+          "skillOnly": 0.7855974236834837
+        },
+        "candidate": {
+          "pExpected": 0.9999386337409192,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+0.82",
+          "sizeGap": 7,
+          "skillOnly": 0.7855974236834837
+        }
+      },
+      {
+        "f1": "islam-makhachev",
+        "f2": "joshua-van",
+        "expect": "f1",
+        "minProb": 0.8,
+        "note": "LW/WW champion vs flyweight",
+        "shipped": {
+          "pExpected": 0.9687992694908303,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.18",
+          "sizeGap": 3,
+          "skillOnly": 0.7380032114501381
+        },
+        "candidate": {
+          "pExpected": 0.9687992694908303,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.18",
+          "sizeGap": 3,
+          "skillOnly": 0.7380032114501381
+        }
+      },
+      {
+        "f1": "alex-pereira",
+        "f2": "merab-dvalishvili",
+        "expect": "f1",
+        "minProb": 0.8,
+        "note": "LHW champion vs bantamweight champion",
+        "shipped": {
+          "pExpected": 0.9925916755152192,
+          "pass": true,
+          "zmax": 3,
+          "top": "td_avg-0.46",
+          "sizeGap": 5,
+          "skillOnly": 0.424999010310886
+        },
+        "candidate": {
+          "pExpected": 0.9925916755152192,
+          "pass": true,
+          "zmax": 3,
+          "top": "td_avg-0.46",
+          "sizeGap": 5,
+          "skillOnly": 0.424999010310886
+        }
+      },
+      {
+        "f1": "francis-ngannou",
+        "f2": "ilia-topuria",
+        "expect": "f1",
+        "minProb": 0.8,
+        "note": "HW champion vs FW/LW champion",
+        "shipped": {
+          "pExpected": 0.9903142440228028,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+0.50",
+          "sizeGap": 5,
+          "skillOnly": 0.36062925644091554
+        },
+        "candidate": {
+          "pExpected": 0.9903142440228028,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+0.50",
+          "sizeGap": 5,
+          "skillOnly": 0.36062925644091554
+        }
+      },
+      {
+        "f1": "stipe-miocic",
+        "f2": "demetrious-johnson",
+        "expect": "f1",
+        "minProb": 0.8,
+        "note": "HW champion vs flyweight GOAT",
+        "shipped": {
+          "pExpected": 0.9996249217685138,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+0.42",
+          "sizeGap": 7,
+          "skillOnly": 0.3747249806022239
+        },
+        "candidate": {
+          "pExpected": 0.9996249217685138,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+0.42",
+          "sizeGap": 7,
+          "skillOnly": 0.3747249806022239
+        }
+      },
+      {
+        "f1": "khamzat-chimaev",
+        "f2": "brandon-moreno",
+        "expect": "f1",
+        "minProb": 0.8,
+        "note": "MW champion vs flyweight",
+        "shipped": {
+          "pExpected": 0.9992817375933003,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.18",
+          "sizeGap": 5,
+          "skillOnly": 0.8847250797635399
+        },
+        "candidate": {
+          "pExpected": 0.9992817375933003,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.18",
+          "sizeGap": 5,
+          "skillOnly": 0.8847250797635399
+        }
+      },
+      {
+        "f1": "amanda-nunes",
+        "f2": "rose-namajunas",
+        "expect": "f1",
+        "minProb": 0.75,
+        "note": "two-division champion vs strawweight",
+        "shipped": {
+          "pExpected": 0.8299771738408189,
+          "pass": true,
+          "zmax": 2.9920969459454545,
+          "top": "elo+0.61",
+          "sizeGap": 2,
+          "skillOnly": 0.6071780212210169
+        },
+        "candidate": {
+          "pExpected": 0.8299771738408189,
+          "pass": true,
+          "zmax": 2.9920969459454545,
+          "top": "elo+0.61",
+          "sizeGap": 2,
+          "skillOnly": 0.6071780212210169
+        }
+      },
+      {
+        "f1": "khabib-nurmagomedov",
+        "f2": "darren-elkins",
+        "expect": "f1",
+        "minProb": 0.75,
+        "note": "undefeated all-time great vs journeyman, adjacent division",
+        "shipped": {
+          "pExpected": 0.8550045913831182,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 1,
+          "skillOnly": 0.8550045913831182
+        },
+        "candidate": {
+          "pExpected": 0.8550045913831182,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 1,
+          "skillOnly": 0.8550045913831182
+        }
+      },
+      {
+        "f1": "islam-makhachev",
+        "f2": "tim-means",
+        "expect": "f1",
+        "minProb": 0.75,
+        "note": "champion vs gatekeeper at WW",
+        "shipped": {
+          "pExpected": 0.9016923630767735,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 1,
+          "skillOnly": 0.9016923630767735
+        },
+        "candidate": {
+          "pExpected": 0.9016923630767735,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 1,
+          "skillOnly": 0.9016923630767735
+        }
+      },
+      {
+        "f1": "shavkat-rakhmonov",
+        "f2": "tim-means",
+        "expect": "f1",
+        "minProb": 0.75,
+        "note": "undefeated contender vs gatekeeper",
+        "shipped": {
+          "pExpected": 0.8901593998358567,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 0,
+          "skillOnly": 0.8901593998358567
+        },
+        "candidate": {
+          "pExpected": 0.8901593998358567,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 0,
+          "skillOnly": 0.8901593998358567
+        }
+      },
+      {
+        "f1": "valentina-shevchenko",
+        "f2": "katlyn-chookagian",
+        "expect": "f1",
+        "minProb": 0.75,
+        "note": "dominant champion vs ranked contender she beat",
+        "shipped": {
+          "pExpected": 0.8753196591354145,
+          "pass": true,
+          "zmax": 2.9294342672378497,
+          "top": "elo+1.21",
+          "sizeGap": 0,
+          "skillOnly": 0.8753196591354145
+        },
+        "candidate": {
+          "pExpected": 0.8753196591354145,
+          "pass": true,
+          "zmax": 2.9294342672378497,
+          "top": "elo+1.21",
+          "sizeGap": 0,
+          "skillOnly": 0.8753196591354145
+        }
+      },
+      {
+        "f1": "jon-jones",
+        "f2": "ovince-saint-preux",
+        "expect": "f1",
+        "minProb": 0.75,
+        "note": "real fight, lopsided",
+        "shipped": {
+          "pExpected": 0.8248445820643592,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 0,
+          "skillOnly": 0.8248445820643592
+        },
+        "candidate": {
+          "pExpected": 0.8248445820643592,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 0,
+          "skillOnly": 0.8248445820643592
+        }
+      },
+      {
+        "f1": "georges-st-pierre",
+        "f2": "thiago-alves",
+        "expect": "f1",
+        "minProb": 0.7,
+        "note": "real fight, lopsided",
+        "shipped": {
+          "pExpected": 0.7377264216277664,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 0,
+          "skillOnly": 0.7377264216277664
+        },
+        "candidate": {
+          "pExpected": 0.7377264216277664,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 0,
+          "skillOnly": 0.7377264216277664
+        }
+      },
+      {
+        "f1": "alexander-volkanovski",
+        "f2": "josh-emmett",
+        "expect": "f1",
+        "minProb": 0.7,
+        "note": "champion vs top-10 at FW",
+        "shipped": {
+          "pExpected": 0.8835218204225549,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 0,
+          "skillOnly": 0.8835218204225549
+        },
+        "candidate": {
+          "pExpected": 0.8835218204225549,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 0,
+          "skillOnly": 0.8835218204225549
+        }
+      },
+      {
+        "f1": "kamaru-usman",
+        "f2": "tim-means",
+        "expect": "f1",
+        "minProb": 0.7,
+        "note": "champion vs gatekeeper",
+        "shipped": {
+          "pExpected": 0.821875201468772,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 0,
+          "skillOnly": 0.821875201468772
+        },
+        "candidate": {
+          "pExpected": 0.821875201468772,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 0,
+          "skillOnly": 0.821875201468772
+        }
+      },
+      {
+        "f1": "umar-nurmagomedov",
+        "f2": "cody-garbrandt",
+        "expect": "f1",
+        "minProb": 0.7,
+        "note": "rising contender vs faded ex-champ",
+        "shipped": {
+          "pExpected": 0.9380364842109751,
+          "pass": true,
+          "zmax": 2.7271599778625144,
+          "top": "elo+1.13",
+          "sizeGap": 0,
+          "skillOnly": 0.9380364842109751
+        },
+        "candidate": {
+          "pExpected": 0.9380364842109751,
+          "pass": true,
+          "zmax": 2.7271599778625144,
+          "top": "elo+1.13",
+          "sizeGap": 0,
+          "skillOnly": 0.9380364842109751
+        }
+      },
+      {
+        "f1": "ciryl-gane",
+        "f2": "tai-tuivasa",
+        "expect": "f1",
+        "minProb": 0.7,
+        "note": "real fight, lopsided",
+        "shipped": {
+          "pExpected": 0.9059804727907145,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 0,
+          "skillOnly": 0.9059804727907145
+        },
+        "candidate": {
+          "pExpected": 0.9059804727907145,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 0,
+          "skillOnly": 0.9059804727907145
+        }
+      },
+      {
+        "f1": "max-holloway",
+        "f2": "dan-ige",
+        "expect": "f1",
+        "minProb": 0.65,
+        "note": "elite vs gatekeeper, same division",
+        "shipped": {
+          "pExpected": 0.7794888449204207,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 0,
+          "skillOnly": 0.7794888449204207
+        },
+        "candidate": {
+          "pExpected": 0.7794888449204207,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 0,
+          "skillOnly": 0.7794888449204207
+        }
+      },
+      {
+        "f1": "movsar-evloev",
+        "f2": "calvin-kattar",
+        "expect": "f1",
+        "minProb": 0.65,
+        "note": "undefeated contender vs declining veteran",
+        "shipped": {
+          "pExpected": 0.9347877035104578,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 0,
+          "skillOnly": 0.9347877035104578
+        },
+        "candidate": {
+          "pExpected": 0.9347877035104578,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 0,
+          "skillOnly": 0.9347877035104578
+        }
+      },
+      {
+        "f1": "erin-blanchfield",
+        "f2": "katlyn-chookagian",
+        "expect": "f1",
+        "minProb": 0.65,
+        "note": "rising contender vs veteran",
+        "shipped": {
+          "pExpected": 0.7099237377921355,
+          "pass": true,
+          "zmax": 2.545515312222252,
+          "top": "elo+0.88",
+          "sizeGap": 0,
+          "skillOnly": 0.7099237377921355
+        },
+        "candidate": {
+          "pExpected": 0.7099237377921356,
+          "pass": true,
+          "zmax": 2.545515312222252,
+          "top": "elo+0.88",
+          "sizeGap": 0,
+          "skillOnly": 0.7099237377921356
+        }
+      },
+      {
+        "f1": "daniel-cormier",
+        "f2": "tai-tuivasa",
+        "expect": "f1",
+        "minProb": 0.6,
+        "note": "retired champion vs active journeyman — layoff must not dominate",
+        "shipped": {
+          "pExpected": 0.7151220758752672,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 1,
+          "skillOnly": 0.7151220758752672
+        },
+        "candidate": {
+          "pExpected": 0.7151220758752672,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.24",
+          "sizeGap": 1,
+          "skillOnly": 0.7151220758752672
+        }
+      },
+      {
+        "f1": "charles-oliveira",
+        "f2": "paddy-pimblett",
+        "expect": "f1",
+        "minProb": 0.55,
+        "note": "direction only",
+        "shipped": {
+          "pExpected": 0.5727936078823633,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+0.59",
+          "sizeGap": 0,
+          "skillOnly": 0.5727936078823633
+        },
+        "candidate": {
+          "pExpected": 0.5727936078823633,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+0.59",
+          "sizeGap": 0,
+          "skillOnly": 0.5727936078823633
+        }
+      },
+      {
+        "f1": "merab-dvalishvili",
+        "f2": "sean-omalley",
+        "expect": "f1",
+        "minProb": 0.55,
+        "note": "real rematch, direction only",
+        "shipped": {
+          "pExpected": 0.41925548921626904,
+          "pass": false,
+          "zmax": 3,
+          "top": "td_avg+0.46",
+          "sizeGap": 0,
+          "skillOnly": 0.41925548921626904
+        },
+        "candidate": {
+          "pExpected": 0.41925548921626904,
+          "pass": false,
+          "zmax": 3,
+          "top": "td_avg+0.46",
+          "sizeGap": 0,
+          "skillOnly": 0.41925548921626904
+        }
+      },
+      {
+        "f1": "anderson-silva",
+        "f2": "chael-sonnen",
+        "expect": "f1",
+        "minProb": 0.55,
+        "note": "direction only",
+        "shipped": {
+          "pExpected": 0.3760809564594594,
+          "pass": false,
+          "zmax": 2.8757486831906394,
+          "top": "elo-0.57",
+          "sizeGap": 0,
+          "skillOnly": 0.3760809564594594
+        },
+        "candidate": {
+          "pExpected": 0.3760809564594593,
+          "pass": false,
+          "zmax": 2.8757486831906394,
+          "top": "elo-0.57",
+          "sizeGap": 0,
+          "skillOnly": 0.3760809564594593
+        }
+      },
+      {
+        "f1": "magomed-ankalaev",
+        "f2": "jamahal-hill",
+        "expect": "f1",
+        "minProb": 0.55,
+        "note": "direction only",
+        "shipped": {
+          "pExpected": 0.8523511789541581,
+          "pass": true,
+          "zmax": 2.8961917982674574,
+          "top": "elo+1.20",
+          "sizeGap": 0,
+          "skillOnly": 0.8523511789541581
+        },
+        "candidate": {
+          "pExpected": 0.8523511789541581,
+          "pass": true,
+          "zmax": 2.8961917982674574,
+          "top": "elo+1.20",
+          "sizeGap": 0,
+          "skillOnly": 0.8523511789541581
+        }
+      },
+      {
+        "f1": "tatiana-suarez",
+        "f2": "jessica-andrade",
+        "expect": "f1",
+        "minProb": 0.55,
+        "note": "direction only",
+        "shipped": {
+          "pExpected": 0.858042357505465,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.18",
+          "sizeGap": 0,
+          "skillOnly": 0.858042357505465
+        },
+        "candidate": {
+          "pExpected": 0.858042357505465,
+          "pass": true,
+          "zmax": 3,
+          "top": "elo+1.18",
+          "sizeGap": 0,
+          "skillOnly": 0.858042357505465
+        }
+      }
+    ]
+  },
+  "ablation": null,
+  "comparison": {
+    "baseline": "src/ml/reports/baseline-phase0.json",
+    "baselineFeatures": [
+      "slpm",
+      "sapm",
+      "str_acc",
+      "str_def",
+      "td_avg",
+      "td_acc",
+      "td_def",
+      "sub_avg",
+      "kd_per15",
+      "kd_absorbed_per15",
+      "cardio_degradation",
+      "experience",
+      "win_rate",
+      "recent_win_rate",
+      "form_trend",
+      "age",
+      "reach",
+      "height",
+      "layoff_days"
+    ],
+    "deltas": [
+      {
+        "year": 2019,
+        "delta": -0.008480940188444586
+      },
+      {
+        "year": 2020,
+        "delta": -0.017388541172604688
+      },
+      {
+        "year": 2021,
+        "delta": -0.029990022628082147
+      },
+      {
+        "year": 2022,
+        "delta": -0.00910659719117124
+      },
+      {
+        "year": 2023,
+        "delta": -0.013495261385974677
+      },
+      {
+        "year": 2024,
+        "delta": -0.03408691528667718
+      },
+      {
+        "year": 2025,
+        "delta": -0.04673839209384634
+      },
+      {
+        "year": 2026,
+        "delta": 0.007949442108423632
+      }
+    ],
+    "meanDelta": -0.018917153479797152,
+    "worse": 1,
+    "keep": true
+  }
+}
