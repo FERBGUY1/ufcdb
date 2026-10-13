@@ -104,12 +104,19 @@ const slugOf = href => { const m = (href || '').match(/\/(?:fighter|events)\/([^
 function parseHistory(html) {
   const $ = cheerio.load(html);
   const rows = [];
-  let amateur = false;
+  let section = 'pro', seq = 0;                      // 'pro' | 'amateur' | 'skip' (PRO EXHIBITION etc.)
   const counts = { win: 0, loss: 0, draw: 0, nc: 0 };
+  const sections = [];
   $('div.slanted_title, div.module.fight_history').each((_, el) => {
     const t = $(el).text().replace(/\s+/g, ' ').trim().toUpperCase();
-    if ($(el).hasClass('slanted_title')) { if (/FIGHT HISTORY - AMATEUR/.test(t)) amateur = true; else if (/FIGHT HISTORY/.test(t)) amateur = false; return; }
-    let seq = 0;
+    if ($(el).hasClass('slanted_title')) {
+      if (!/FIGHT HISTORY/.test(t)) return;
+      section = /FIGHT HISTORY - PRO$/.test(t) ? 'pro' : /FIGHT HISTORY - AMATEUR$/.test(t) ? 'amateur' : 'skip';
+      sections.push(t.replace(/^FIGHT HISTORY - /, '') + (section === 'skip' ? ' (skipped)' : ''));
+      return;
+    }
+    if (section === 'skip') return;
+    const amateur = section === 'amateur';
     $(el).find('tr').each((_, tr) => {
       const td = $(tr).children('td');
       if (td.length < 6 || !td.eq(0).find('.final_result').length) return; // header row
@@ -131,7 +138,7 @@ function parseHistory(html) {
       if (!amateur && counts[result] != null) counts[result]++;
     });
   });
-  return { rows, pro: counts };
+  return { rows, pro: counts, sections };
 }
 
 function readProgress() { try { return JSON.parse(fs.readFileSync(PROGRESS, 'utf8')); } catch { return { done: {}, skipped: {} }; } }
@@ -151,38 +158,44 @@ async function main() {
   const cachedCount = fighters.filter(f => fs.existsSync(pageFile(f.sherdog_id))).length;
   console.log(`${fighters.length} fighters with a sherdog_id, ${cachedCount} pages cached, ${Object.keys(progress.done).length} done, ${Object.keys(progress.skipped).length} skipped${REPARSE ? ' (reparse: offline)' : ''}${DRY ? ' (dry run)' : ''}`);
 
-  let fetched = 0, parsed = 0, rowsWritten = 0, skipped = 0, missing = 0;
+  let fetched = 0, parsed = 0, rowsWritten = 0, skipped = 0, missing = 0, failed = 0;
   for (const f of fighters) {
     const name = `${f.first_name} ${f.last_name}`;
     const cachedBefore = fs.existsSync(pageFile(f.sherdog_id));
     if (!REPARSE && !REFRESH && progress.done[f.id] && cachedBefore) continue;
-    if (!REPARSE && !REFRESH && progress.skipped[f.id]) continue;
+    if (!REPARSE && !REFRESH && progress.skipped[f.id] && !/error/.test(progress.skipped[f.id])) continue;
     if (!cachedBefore && fetched >= LIMIT) break;
     const page = await fetchPage(f.sherdog_id);
     if (!page) continue;                                   // --reparse and no cached page
     if (!page.cached) fetched++;
     if (!page.html) { missing++; progress.skipped[f.id] = page.status; writeProgress(progress); console.log(`  ${name}: ${page.status}`); continue; }
-    const { rows, pro } = parseHistory(page.html);
+    let rows, pro, sections;
+    try { ({ rows, pro, sections } = parseHistory(page.html)); }
+    catch (e) { failed++; progress.skipped[f.id] = `parse error: ${e.message}`; writeProgress(progress); console.log(`  FAIL ${name}: parse error ${e.message} (${f.sherdog_id})`); continue; }
+    const extra = sections.filter(x => /skipped/.test(x));
     if (pro.win < (f.wins || 0) || pro.loss < (f.losses || 0)) {
       skipped++; progress.skipped[f.id] = `wrong-profile ${pro.win}-${pro.loss} vs UFC ${f.wins}-${f.losses}`; writeProgress(progress);
       console.log(`  SKIP ${name}: Sherdog ${pro.win}-${pro.loss} smaller than UFC ${f.wins}-${f.losses} (${f.sherdog_id})`);
       continue;
     }
     parsed++;
-    if (DRY) { console.log(`  [dry] ${name}: ${rows.length} rows (pro ${pro.win}-${pro.loss}-${pro.draw}${pro.nc ? ` ${pro.nc}NC` : ''}, amateur ${rows.filter(r => r.is_amateur).length})`); continue; }
+    if (DRY) { console.log(`  [dry] ${name}: ${rows.length} rows (pro ${pro.win}-${pro.loss}-${pro.draw}${pro.nc ? ` ${pro.nc}NC` : ''}, amateur ${rows.filter(r => r.is_amateur).length}${extra.length ? `; skipped sections: ${extra.join(', ')}` : ''})`); continue; }
     const payload = rows.map(r => ({ fighter_id: f.id, sherdog_id: f.sherdog_id, ...r }));
     if (haveTable) {
-      await supabase.from('sherdog_fights').delete().eq('fighter_id', f.id);
-      for (let i = 0; i < payload.length; i += 100) {
-        const { error } = await supabase.from('sherdog_fights').insert(payload.slice(i, i + 100));
-        if (error) throw new Error(`${name}: ${error.message}`);
+      let err = null;
+      const { error: delErr } = await supabase.from('sherdog_fights').delete().eq('fighter_id', f.id);
+      if (delErr) err = delErr;
+      for (let i = 0; !err && i < payload.length; i += 100) {
+        const { error } = await supabase.from('sherdog_fights').upsert(payload.slice(i, i + 100), { onConflict: 'fighter_id,is_amateur,seq' });
+        if (error) err = error;
       }
+      if (err) { failed++; progress.skipped[f.id] = `write error: ${err.message}`; writeProgress(progress); console.log(`  FAIL ${name}: ${err.message} (${f.sherdog_id})`); continue; }
     } else { fallback[f.id] = payload; fs.writeFileSync(FALLBACK, JSON.stringify(fallback)); }
     rowsWritten += payload.length;
     progress.done[f.id] = new Date().toISOString(); delete progress.skipped[f.id]; writeProgress(progress);
     if ((parsed % 50) === 0) console.log(`  ... ${parsed} parsed, ${fetched} fetched, ${rowsWritten} rows`);
   }
-  console.log(`\nDone: ${parsed} fighters parsed (${fetched} fetched, rest from cache), ${rowsWritten} rows written, ${skipped} wrong-profile skips, ${missing} missing pages`);
+  console.log(`\nDone: ${parsed} fighters parsed (${fetched} fetched, rest from cache), ${rowsWritten} rows written, ${skipped} wrong-profile skips, ${missing} missing pages, ${failed} failed (logged in progress.json "skipped")`);
 }
 
 module.exports = { parseHistory, methodClass, parseDate };
