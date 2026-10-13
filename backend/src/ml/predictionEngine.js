@@ -516,29 +516,50 @@ function computeRoundProjections(f1, f2, tl1, tl2, league, scheduledRounds = 3, 
 }
 
 // ── NARRATIVE (grounded: gets ONLY the computed factors and numbers) ───────
-async function generateNarrative(f1, f2, stats, keyFactors, methodLine) {
+const NARRATIVE_MODEL = 'claude-opus-4-8';
+
+// n: { rounds, weightClass, limitLbs, natural1, natural2, skill1 (null when no
+// size adjustment), methods1/2 ({ ko, sub, dec } = P(win by method), summing to
+// the fighter's win probability), hist1/2 }
+async function generateNarrative(f1, f2, stats, keyFactors, n, model = NARRATIVE_MODEL) {
+  const name1 = `${f1.first_name} ${f1.last_name}`, name2 = `${f2.first_name} ${f2.last_name}`;
+  const fin = m => (parseFloat(m.ko) + parseFloat(m.sub)).toFixed(1);
+  const side = (name, winPct, m, hist) =>
+    `- ${name}: wins ${winPct}% = by KO/TKO ${m.ko}% + by SUB ${m.sub}% + by DEC ${m.dec}%. ` +
+    `Total chance to win by finish (KO/TKO + SUB) ${fin(m)}%. ${hist}.`;
   const prompt = [
-    'You are an MMA analyst for UFCDB. Write a 3-paragraph fight breakdown.',
-    'STRICT RULE: cite ONLY the statistics listed below — do not invent numbers,',
-    'records, fight history, or attributes that are not listed. If a dimension',
-    'is not listed, do not speculate about it.',
+    'You are an MMA analyst for UFCDB. Write a 3-paragraph fight breakdown in plain prose.',
     '',
-    `MATCHUP: ${f1.first_name} ${f1.last_name} vs ${f2.first_name} ${f2.last_name}`,
-    `MODEL PROBABILITY: ${f1.last_name} ${stats.f1WinPct}% | ${f2.last_name} ${stats.f2WinPct}% (logistic model on per-fight statistics)`,
-    `METHOD OUTLOOK: ${methodLine}`,
+    'STRICT RULES:',
+    '- Cite ONLY the numbers and facts listed below. Do not invent numbers, records, fight history, styles or attributes. If a dimension is not listed, do not speculate about it.',
+    '- Every percentage below has a label. Keep the label when you cite it: "chance to win by KO/TKO" is not "chance to win by finish", and neither is a share of that fighter\'s wins. Do not combine, divide or re-base percentages.',
+    '- The skill-only win probability (if given) is before the size adjustment; the final win probability includes it. Never present one as the other.',
+    '- Do not predict a specific round, a specific method, or a scorecard type (unanimous, split, majority). Describe likely outcomes only through the listed method probabilities.',
+    `- The bout is at ${n.weightClass}. Name no other weight class for the bout, and do not describe it as a "<division>-to-<division> bout". A fighter's natural division may be mentioned only as listed.`,
+    '- No markdown headings, no bold titles, no bullet lists. No "in conclusion", no AI disclaimers.',
+    '',
+    `MATCHUP: ${name1} vs ${name2}`,
+    `BOUT: ${n.weightClass}${n.limitLbs ? ` (${n.limitLbs} lb limit)` : ''}, ${n.rounds} rounds scheduled.`,
+    `NATURAL DIVISION (most frequent UFC weight class): ${name1} ${n.natural1 ?? 'unknown'}; ${name2} ${n.natural2 ?? 'unknown'}.`,
+    `FINAL WIN PROBABILITY: ${name1} ${stats.f1WinPct}% | ${name2} ${stats.f2WinPct}%`,
+    n.skill1 != null
+      ? `SKILL-ONLY WIN PROBABILITY (same-size comparison, before the hand-set size adjustment): ${name1} ${n.skill1}% | ${name2} ${(100 - n.skill1).toFixed(1)}%`
+      : 'No size adjustment applies; the final win probability is the skill model\'s.',
+    'METHOD PROBABILITIES (unconditional; each fighter\'s three add up to that fighter\'s final win probability):',
+    side(name1, stats.f1WinPct, n.methods1, n.hist1),
+    side(name2, stats.f2WinPct, n.methods2, n.hist2),
     '',
     'THE DECIDING FACTORS (model contributions, largest first):',
     ...keyFactors.map((k, i) => `${i + 1}. ${k}`),
     '',
-    'Paragraph 1: the statistical case for the favorite, citing the factors.',
+    'Paragraph 1: the case for the favorite, citing the factors (if a size adjustment applies, say how much of the probability comes from it).',
     'Paragraph 2: the underdog\'s realistic path, citing the factors that lean their way.',
-    'Paragraph 3: how the fight likely plays out. Be concrete, no hedging boilerplate.',
-    'No "in conclusion", no AI disclaimers.',
+    'Paragraph 3: how the fight is likely to go, staying within the listed probabilities. Be concrete, no hedging boilerplate.',
   ].join('\n');
 
   const message = await anthropic.messages.create({
-    model: 'claude-opus-4-8',
-    max_tokens: 900,
+    model,
+    max_tokens: 1200,
     messages: [{ role: 'user', content: prompt }],
   });
   return message.content[0].text;
@@ -740,12 +761,18 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   const roundProjections = computeRoundProjections(f1, f2, tl1, tl2, league, scheduledRounds, size.a, size.b);
   const stats = { f1WinPct: (f1WinProb * 100).toFixed(1), f2WinPct: (f2WinProb * 100).toFixed(1) };
   const hist = m => `UFC wins ${m.history.n}: ${m.history.ko} KO/TKO, ${m.history.sub} SUB, ${m.history.dec} DEC`;
-  const methodLine = `${scheduledRounds}-round bout. ${f1.last_name}: KO ${f1Methods.ko}% / SUB ${f1Methods.sub}% / DEC ${f1Methods.dec}% (${hist(m1)}) — ${f2.last_name}: KO ${f2Methods.ko}% / SUB ${f2Methods.sub}% / DEC ${f2Methods.dec}% (${hist(m2)})`;
 
   let aiBreakdown = '';
   if (!opts.skipNarrative) {
     try {
-      aiBreakdown = await generateNarrative(f1, f2, stats, keyFactors, methodLine);
+      aiBreakdown = await generateNarrative(f1, f2, stats, keyFactors, {
+        rounds: scheduledRounds,
+        weightClass: weightClassContext?.weight_class ?? "an unspecified weight class",
+        limitLbs: bout.limitLbs,
+        natural1: weightClassContext?.f1_primary_class, natural2: weightClassContext?.f2_primary_class,
+        skill1: size.shift ? (size.pBefore * 100).toFixed(1) : null,
+        methods1: f1Methods, methods2: f2Methods, hist1: hist(m1), hist2: hist(m2),
+      }, opts.narrativeModel);
     } catch (e) {
       console.error('AI narrative failed:', e.message);
       aiBreakdown = fallbackNarrative(name1, name2, parseFloat(stats.f1WinPct), parseFloat(stats.f2WinPct), factors, sizeNote);
