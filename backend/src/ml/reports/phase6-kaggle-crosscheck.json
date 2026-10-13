@@ -1,0 +1,3252 @@
+{
+ "generatedAt": "2026-10-12T23:58:35.470Z",
+ "csvRows": 7177,
+ "matched": 6816,
+ "both": 6295,
+ "csvOnly": 280,
+ "inside": 5898,
+ "near": 263,
+ "far": [
+  {
+   "date": "2023-06-03",
+   "fight": "Muhammad Naimov vs Jamie Mullarkey",
+   "csv": "360 / 260",
+   "bfoClose": "340…380 / -500…-455",
+   "bfoOpen": "390 / -590",
+   "gap": 0.542
+  },
+  {
+   "date": "2024-03-02",
+   "fight": "Ludovit Klein vs AJ Cunningham",
+   "csv": "140 / 800",
+   "bfoClose": "-1350…-910 / 600…800",
+   "bfoOpen": "-835 / 575",
+   "gap": 0.484
+  },
+  {
+   "date": "2016-07-09",
+   "fight": "Amanda Nunes vs Miesha Tate",
+   "csv": "-325 / 265",
+   "bfoClose": "240…265 / -325…-280",
+   "bfoOpen": "220 / -280",
+   "gap": 0.471
+  },
+  {
+   "date": "2025-01-18",
+   "fight": "Islam Makhachev vs Renato Moicano",
+   "csv": "-350 / -165",
+   "bfoClose": "-1205…-835 / 540…750",
+   "bfoOpen": "-600 / 440",
+   "gap": 0.466
+  },
+  {
+   "date": "2024-12-07",
+   "fight": "Vicente Luque vs Themba Gorimbo",
+   "csv": "-650 / -162",
+   "bfoClose": "125…145 / -175…-150",
+   "bfoOpen": "175 / -250",
+   "gap": 0.422
+  },
+  {
+   "date": "2010-06-12",
+   "fight": "Ben Rothwell vs Gilbert Yvel",
+   "csv": "170 / -185",
+   "bfoClose": "-185…-185 / 170…170",
+   "bfoOpen": "-150 / 110",
+   "gap": 0.279
+  },
+  {
+   "date": "2025-10-11",
+   "fight": "Luan Lacerda vs Saimon Oliveira",
+   "csv": "-390 / -108",
+   "bfoClose": "-390…-350 / 260…310",
+   "bfoOpen": "-200 / 150",
+   "gap": 0.241
+  },
+  {
+   "date": "2021-06-05",
+   "fight": "Manon Fiorot vs Tabatha Ricci",
+   "csv": "-165 / 375",
+   "bfoClose": "-625…-470 / 375…425",
+   "bfoOpen": "-450 / 350",
+   "gap": 0.202
+  },
+  {
+   "date": "2021-06-05",
+   "fight": "Montana De La Rosa vs Ariane Lipski",
+   "csv": "-114 / 195",
+   "bfoClose": "-333…-275 / 210…255",
+   "bfoOpen": "-140 / 120",
+   "gap": 0.201
+  },
+  {
+   "date": "2025-10-04",
+   "fight": "Yana Santos vs Macy Chiasson",
+   "csv": "-134 / -205",
+   "bfoClose": "155…185 / -220…-200",
+   "bfoOpen": "163 / -225",
+   "gap": 0.18
+  },
+  {
+   "date": "2013-10-09",
+   "fight": "Chris Cariaso vs Iliarde Santos",
+   "csv": "315 / -345",
+   "bfoClose": "140…140 / -170…-150",
+   "bfoOpen": "120 / -160",
+   "gap": 0.176
+  },
+  {
+   "date": "2023-12-09",
+   "fight": "HyunSung Park vs Shannon Ross",
+   "csv": "-198 / 500",
+   "bfoClose": "-700…-500 / 370…500",
+   "bfoOpen": "-345 / 275",
+   "gap": 0.169
+  },
+  {
+   "date": "2023-11-18",
+   "fight": "Myktybek Orolbai vs Uros Medic",
+   "csv": "-110 / -225",
+   "bfoClose": "-120…-110 / -110…100",
+   "bfoOpen": "-148 / 120",
+   "gap": 0.168
+  },
+  {
+   "date": "2025-09-13",
+   "fight": "Joaquim Silva vs Claudio Puelles",
+   "csv": "-210 / -134",
+   "bfoClose": "-105…118 / -140…-120",
+   "bfoOpen": "-120 / -110",
+   "gap": 0.165
+  },
+  {
+   "date": "2022-02-12",
+   "fight": "Jared Vanderaa vs Andrei Arlovski",
+   "csv": "-160 / -145",
+   "bfoClose": "120…150 / -185…-145",
+   "bfoOpen": "250 / -300",
+   "gap": 0.161
+  },
+  {
+   "date": "2025-03-29",
+   "fight": "Kevin Borjas vs Ronaldo Rodriguez",
+   "csv": "370 / -176",
+   "bfoClose": "138…170 / -205…-175",
+   "bfoOpen": "110 / -150",
+   "gap": 0.158
+  },
+  {
+   "date": "2018-07-22",
+   "fight": "Anthony Smith vs Mauricio Rua",
+   "csv": "130 / -150",
+   "bfoClose": "-150…-142 / 122…130",
+   "bfoOpen": "-175 / 135",
+   "gap": 0.152
+  },
+  {
+   "date": "2017-07-29",
+   "fight": "Calvin Kattar vs Andre Fili",
+   "csv": "155 / -175",
+   "bfoClose": "295…300 / -360…-360",
+   "bfoOpen": "230 / -310",
+   "gap": 0.146
+  },
+  {
+   "date": "2025-09-13",
+   "fight": "Santiago Luna vs Quang Le",
+   "csv": "-154 / -145",
+   "bfoClose": "-175…-150 / 120…145",
+   "bfoOpen": "110 / -138",
+   "gap": 0.137
+  },
+  {
+   "date": "2020-09-12",
+   "fight": "Ottman Azaitar vs Khama Worthy",
+   "csv": "110 / -137",
+   "bfoClose": "-152…-145 / 125…129",
+   "bfoOpen": "-125 / 105",
+   "gap": 0.134
+  },
+  {
+   "date": "2020-05-16",
+   "fight": "Miguel Baeza vs Matt Brown",
+   "csv": "-155 / -155",
+   "bfoClose": "-155…-139 / 110…135",
+   "bfoOpen": "-170 / 130",
+   "gap": 0.132
+  },
+  {
+   "date": "2023-06-24",
+   "fight": "Chepe Mariscal vs Trevor Peek",
+   "csv": "132 / -275",
+   "bfoClose": "-105…135 / -160…-120",
+   "bfoOpen": "140 / -188",
+   "gap": 0.118
+  },
+  {
+   "date": "2026-02-07",
+   "fight": "Javid Basharat vs Gianni Vazquez",
+   "csv": "-300 / 460",
+   "bfoClose": "-1100…-649 / 450…725",
+   "bfoOpen": "-800 / 575",
+   "gap": 0.116
+  },
+  {
+   "date": "2023-04-29",
+   "fight": "Marcus McGhee vs Journey Newson",
+   "csv": "138 / 110",
+   "bfoClose": "118…150 / -175…-138",
+   "bfoOpen": "315 / -380",
+   "gap": 0.104
+  },
+  {
+   "date": "2024-12-07",
+   "fight": "Shavkat Rakhmonov vs Ian Machado Garry",
+   "csv": "-210 / 295",
+   "bfoClose": "-485…-350 / 260…370",
+   "bfoOpen": "-290 / 215",
+   "gap": 0.1
+  },
+  {
+   "date": "2020-05-13",
+   "fight": "Andrei Arlovski vs Philipe Lins",
+   "csv": "130 / -150",
+   "bfoClose": "187…195 / -235…-225",
+   "bfoOpen": "175 / -205",
+   "gap": 0.092
+  },
+  {
+   "date": "2019-12-21",
+   "fight": "JunYong Park vs Marc-Andre Barriault",
+   "csv": "-138 / 105",
+   "bfoClose": "105…110 / -139…-125",
+   "bfoOpen": "100 / -130",
+   "gap": 0.092
+  },
+  {
+   "date": "2019-12-21",
+   "fight": "Raoni Barcelos vs Said Nurmagomedov",
+   "csv": "-151 / 129",
+   "bfoClose": "-111…105 / -125…-111",
+   "bfoOpen": "135 / -165",
+   "gap": 0.089
+  },
+  {
+   "date": "2020-10-03",
+   "fight": "Nassourdine Imavov vs Jordan Williams",
+   "csv": "105 / -125",
+   "bfoClose": "-140…-135 / 110…120",
+   "bfoOpen": "165 / -215",
+   "gap": 0.087
+  },
+  {
+   "date": "2020-10-24",
+   "fight": "Tai Tuivasa vs Stefan Struve",
+   "csv": "-112 / -112",
+   "bfoClose": "-160…-152 / 125…140",
+   "bfoOpen": "-105 / -115",
+   "gap": 0.084
+  },
+  {
+   "date": "2020-09-05",
+   "fight": "Michel Pereira vs Zelim Imadaev",
+   "csv": "-112 / -112",
+   "bfoClose": "-155…-145 / 125…135",
+   "bfoOpen": "-135 / 115",
+   "gap": 0.084
+  },
+  {
+   "date": "2020-07-15",
+   "fight": "Taila Santos vs Molly McCann",
+   "csv": "120 / -152",
+   "bfoClose": "170…180 / -220…-200",
+   "bfoOpen": "250 / -300",
+   "gap": 0.084
+  },
+  {
+   "date": "2020-02-08",
+   "fight": "Trevin Giles vs James Krause",
+   "csv": "-170 / 130",
+   "bfoClose": "-120…100 / -125…100",
+   "bfoOpen": "125 / -145",
+   "gap": 0.084
+  },
+  {
+   "date": "2021-02-06",
+   "fight": "Lara Procopio vs Molly McCann",
+   "csv": "140 / -177",
+   "bfoClose": "100…104 / -125…-120",
+   "bfoOpen": "300 / -400",
+   "gap": 0.083
+  },
+  {
+   "date": "2020-05-13",
+   "fight": "Drew Dober vs Alexander Hernandez",
+   "csv": "-120 / 100",
+   "bfoClose": "-175…-165 / 140…150",
+   "bfoOpen": "-140 / 120",
+   "gap": 0.083
+  },
+  {
+   "date": "2020-10-10",
+   "fight": "Tony Kelley vs Ali AlQaisi",
+   "csv": "-245 / 190",
+   "bfoClose": "-172…-157 / 137…142",
+   "bfoOpen": "110 / -130",
+   "gap": 0.078
+  },
+  {
+   "date": "2020-07-25",
+   "fight": "Francisco Trinaldo vs Jai Herbert",
+   "csv": "-134 / 108",
+   "bfoClose": "100…112 / -132…-125",
+   "bfoOpen": "-180 / 140",
+   "gap": 0.075
+  },
+  {
+   "date": "2020-06-20",
+   "fight": "Raquel Pennington vs Marion Reneau",
+   "csv": "-160 / 140",
+   "bfoClose": "-250…-222 / 180…210",
+   "bfoOpen": "-175 / 135",
+   "gap": 0.074
+  },
+  {
+   "date": "2019-12-21",
+   "fight": "Amanda Lemos vs Miranda Granger",
+   "csv": "234 / -303",
+   "bfoClose": "162…175 / -210…-189",
+   "bfoOpen": "250 / -350",
+   "gap": 0.074
+  },
+  {
+   "date": "2021-01-23",
+   "fight": "Brad Tavares vs Antonio Carlos Junior",
+   "csv": "-134 / 105",
+   "bfoClose": "100…110 / -130…-125",
+   "bfoOpen": "-120 / 100",
+   "gap": 0.073
+  },
+  {
+   "date": "2020-06-27",
+   "fight": "Kay Hansen vs Jinh Yu Frey",
+   "csv": "-175 / 138",
+   "bfoClose": "-235…-227 / 187…200",
+   "bfoOpen": "-175 / 150",
+   "gap": 0.072
+  },
+  {
+   "date": "2020-07-25",
+   "fight": "Alex Oliveira vs Peter Sobotta",
+   "csv": "-182 / 145",
+   "bfoClose": "-139…-115 / -105…110",
+   "bfoOpen": "-170 / 145",
+   "gap": 0.068
+  },
+  {
+   "date": "2021-01-23",
+   "fight": "Makhmud Muradov vs Andrew Sanchez",
+   "csv": "-143 / 115",
+   "bfoClose": "-230…-175 / 150…190",
+   "bfoOpen": "155 / -185",
+   "gap": 0.065
+  },
+  {
+   "date": "2020-10-10",
+   "fight": "Dricus Du Plessis vs Markus Perez",
+   "csv": "-167 / 133",
+   "bfoClose": "-213…-203 / 173…175",
+   "bfoOpen": "-195 / 155",
+   "gap": 0.063
+  },
+  {
+   "date": "2020-11-07",
+   "fight": "Darren Elkins vs Eduardo Garagorri",
+   "csv": "-240 / 185",
+   "bfoClose": "-333…-290 / 245…250",
+   "bfoOpen": "-225 / 190",
+   "gap": 0.061
+  },
+  {
+   "date": "2020-07-25",
+   "fight": "Robert Whittaker vs Darren Till",
+   "csv": "-130 / 107",
+   "bfoClose": "-170…-162 / 137…150",
+   "bfoOpen": "-135 / 115",
+   "gap": 0.061
+  },
+  {
+   "date": "2020-11-21",
+   "fight": "Antonina Shevchenko vs Ariane Lipski",
+   "csv": "-167 / 130",
+   "bfoClose": "-130…-120 / 100…110",
+   "bfoOpen": "-110 / -110",
+   "gap": 0.06
+  },
+  {
+   "date": "2020-07-15",
+   "fight": "Modestas Bukauskas vs Andreas Michailidis",
+   "csv": "-177 / 140",
+   "bfoClose": "-139…-120 / 100…110",
+   "bfoOpen": "-265 / 205",
+   "gap": 0.06
+  },
+  {
+   "date": "2020-09-12",
+   "fight": "Roosevelt Roberts vs Kevin Croom",
+   "csv": "-385 / 286",
+   "bfoClose": "-600…-556 / 400…450",
+   "bfoOpen": "-375 / 285",
+   "gap": 0.059
+  },
+  {
+   "date": "2020-07-15",
+   "fight": "Khamzat Chimaev vs John Phillips",
+   "csv": "-375 / 271",
+   "bfoClose": "-600…-500 / 375…450",
+   "bfoOpen": "-245 / 175",
+   "gap": 0.059
+  },
+  {
+   "date": "2020-05-13",
+   "fight": "Glover Teixeira vs Anthony Smith",
+   "csv": "155 / -175",
+   "bfoClose": "187…195 / -230…-227",
+   "bfoOpen": "135 / -165",
+   "gap": 0.058
+  },
+  {
+   "date": "2023-06-03",
+   "fight": "John Castaneda vs Muin Gafurov",
+   "csv": "-165 / 108",
+   "bfoClose": "-130…-120 / 100…108",
+   "bfoOpen": "-138 / 110",
+   "gap": 0.057
+  },
+  {
+   "date": "2020-09-19",
+   "fight": "Johnny Walker vs Ryan Spann",
+   "csv": "-125 / 100",
+   "bfoClose": "-155…-150 / 125…135",
+   "bfoOpen": "-115 / -105",
+   "gap": 0.056
+  },
+  {
+   "date": "2020-03-14",
+   "fight": "David Dvorak vs Bruno Silva",
+   "csv": "100 / -110",
+   "bfoClose": "-128…-125 / 100…108",
+   "bfoOpen": "115 / -145",
+   "gap": 0.056
+  },
+  {
+   "date": "2020-06-20",
+   "fight": "Josh Emmett vs Shane Burgos",
+   "csv": "120 / -140",
+   "bfoClose": "150…165 / -190…-175",
+   "bfoOpen": "115 / -155",
+   "gap": 0.055
+  },
+  {
+   "date": "2020-05-09",
+   "fight": "Justin Gaethje vs Tony Ferguson",
+   "csv": "158 / -180",
+   "bfoClose": "190…200 / -250…-230",
+   "bfoOpen": "155 / -180",
+   "gap": 0.054
+  },
+  {
+   "date": "2020-11-28",
+   "fight": "Miguel Baeza vs Takashi Sato",
+   "csv": "-175 / 140",
+   "bfoClose": "-222…-210 / 175…182",
+   "bfoOpen": "-190 / 165",
+   "gap": 0.053
+  },
+  {
+   "date": "2020-10-24",
+   "fight": "Shavkat Rakhmonov vs Alex Oliveira",
+   "csv": "-112 / -112",
+   "bfoClose": "-140…-139 / 110…120",
+   "bfoOpen": "130 / -150",
+   "gap": 0.053
+  },
+  {
+   "date": "2020-08-15",
+   "fight": "Livinha Souza vs Ashley Yoder",
+   "csv": "-162 / 130",
+   "bfoClose": "-200…-189 / 162…170",
+   "bfoOpen": "-180 / 150",
+   "gap": 0.053
+  },
+  {
+   "date": "2020-11-07",
+   "fight": "Yan Xiaonan vs Claudia Gadelha",
+   "csv": "-155 / 125",
+   "bfoClose": "-200…-180 / 155…170",
+   "bfoOpen": "110 / -130",
+   "gap": 0.052
+  },
+  {
+   "date": "2020-07-11",
+   "fight": "Marcin Tybura vs Maxim Grishin",
+   "csv": "-112 / -112",
+   "bfoClose": "-139…-134 / 110…127",
+   "bfoOpen": "-145 / 115",
+   "gap": 0.052
+  },
+  {
+   "date": "2023-11-04",
+   "fight": "Elves Brener vs Kaynan Kruschewsky",
+   "csv": "-160 / 195",
+   "bfoClose": "-260…-200 / 160…200",
+   "bfoOpen": "-200 / 163",
+   "gap": 0.051
+  },
+  {
+   "date": "2020-03-14",
+   "fight": "Gilbert Burns vs Demian Maia",
+   "csv": "-170 / 160",
+   "bfoClose": "-161…-140 / 120…130",
+   "bfoOpen": "-150 / 110",
+   "gap": 0.05
+  },
+  {
+   "date": "2019-12-21",
+   "fight": "Alexandre Pantoja vs Matt Schnell",
+   "csv": "-181 / 159",
+   "bfoClose": "-315…-227 / 187…260",
+   "bfoOpen": "-160 / 130",
+   "gap": 0.05
+  },
+  {
+   "date": "2020-06-27",
+   "fight": "Maurice Greene vs Gian Villante",
+   "csv": "-230 / 180",
+   "bfoClose": "-290…-278 / 225…245",
+   "bfoOpen": "-215 / 185",
+   "gap": 0.049
+  },
+  {
+   "date": "2020-07-18",
+   "fight": "Rafael Fiziev vs Marc Diakiese",
+   "csv": "135 / -167",
+   "bfoClose": "165…180 / -220…-190",
+   "bfoOpen": "195 / -230",
+   "gap": 0.048
+  },
+  {
+   "date": "2020-06-20",
+   "fight": "Marc-Andre Barriault vs Oskar Piechota",
+   "csv": "100 / -120",
+   "bfoClose": "-139…-121 / 101…110",
+   "bfoOpen": "-115 / -115",
+   "gap": 0.048
+  },
+  {
+   "date": "2020-01-18",
+   "fight": "Holly Holm vs Raquel Pennington",
+   "csv": "-125 / 105",
+   "bfoClose": "-155…-152 / 125…135",
+   "bfoOpen": "-290 / 230",
+   "gap": 0.048
+  },
+  {
+   "date": "2020-11-21",
+   "fight": "Sasha Palatnikov vs Louis Cosce",
+   "csv": "325 / -455",
+   "bfoClose": "430…450 / -625…-560",
+   "bfoOpen": "275 / -365",
+   "gap": 0.047
+  },
+  {
+   "date": "2020-11-28",
+   "fight": "Parker Porter vs Josh Parisian",
+   "csv": "160 / -200",
+   "bfoClose": "195…200 / -250…-235",
+   "bfoOpen": "135 / -155",
+   "gap": 0.046
+  },
+  {
+   "date": "2020-07-15",
+   "fight": "Tim Elliott vs Ryan Benoit",
+   "csv": "-141 / 112",
+   "bfoClose": "-164…-155 / 135…143",
+   "bfoOpen": "-190 / 165",
+   "gap": 0.046
+  },
+  {
+   "date": "2020-07-15",
+   "fight": "Jimmie Rivera vs Cody Stamann",
+   "csv": "-141 / 112",
+   "bfoClose": "-117…-111 / -111…-103",
+   "bfoOpen": "-135 / 115",
+   "gap": 0.046
+  },
+  {
+   "date": "2020-08-29",
+   "fight": "Zak Cummings vs Alessio Di Chirico",
+   "csv": "-109 / -114",
+   "bfoClose": "110…113 / -139…-130",
+   "bfoOpen": "-140 / 120",
+   "gap": 0.045
+  },
+  {
+   "date": "2020-07-11",
+   "fight": "Karol Rosa vs Vanessa Melo",
+   "csv": "-250 / 195",
+   "bfoClose": "-330…-303 / 240…270",
+   "bfoOpen": "-210 / 160",
+   "gap": 0.045
+  },
+  {
+   "date": "2020-11-21",
+   "fight": "Tim Means vs Mike Perry",
+   "csv": "120 / -150",
+   "bfoClose": "-105…102 / -125…-115",
+   "bfoOpen": "130 / -150",
+   "gap": 0.044
+  },
+  {
+   "date": "2020-10-31",
+   "fight": "Bryce Mitchell vs Andre Fili",
+   "csv": "-150 / 120",
+   "bfoClose": "-125…-117 / -103…101",
+   "bfoOpen": "-110 / -110",
+   "gap": 0.044
+  },
+  {
+   "date": "2020-09-12",
+   "fight": "Alexandr Romanov vs Roque Martinez",
+   "csv": "-360 / 275",
+   "bfoClose": "-500…-455 / 350…375",
+   "bfoOpen": "-400 / 300",
+   "gap": 0.044
+  },
+  {
+   "date": "2020-08-08",
+   "fight": "Darren Stewart vs Maki Pitolo",
+   "csv": "-155 / 125",
+   "bfoClose": "-190…-175 / 150…165",
+   "bfoOpen": "-150 / 110",
+   "gap": 0.044
+  },
+  {
+   "date": "2023-06-24",
+   "fight": "Sedriques Dumas vs Cody Brundage",
+   "csv": "180 / -164",
+   "bfoClose": "116…150 / -175…-140",
+   "bfoOpen": "-110 / -120",
+   "gap": 0.043
+  },
+  {
+   "date": "2020-09-26",
+   "fight": "Ketlen Vieira vs Sijara Eubanks",
+   "csv": "-190 / 150",
+   "bfoClose": "-227…-210 / 180…187",
+   "bfoOpen": "-280 / 240",
+   "gap": 0.043
+  },
+  {
+   "date": "2020-08-01",
+   "fight": "Jamall Emmers vs Vince Cachero",
+   "csv": "-360 / 265",
+   "bfoClose": "-500…-450 / 333…400",
+   "bfoOpen": "-265 / 185",
+   "gap": 0.043
+  },
+  {
+   "date": "2020-03-14",
+   "fight": "Brandon Moreno vs Jussier Formiga",
+   "csv": "140 / -150",
+   "bfoClose": "155…165 / -190…-180",
+   "bfoOpen": "145 / -185",
+   "gap": 0.043
+  },
+  {
+   "date": "2025-05-17",
+   "fight": "Luana Santos vs Tainara Lisboa",
+   "csv": "-148 / 150",
+   "bfoClose": "-188…-177 / 140…154",
+   "bfoOpen": "-105 / -115",
+   "gap": 0.042
+  },
+  {
+   "date": "2020-11-07",
+   "fight": "Andrei Arlovski vs Tanner Boser",
+   "csv": "235 / -305",
+   "bfoClose": "290…320 / -400…-365",
+   "bfoOpen": "220 / -260",
+   "gap": 0.042
+  },
+  {
+   "date": "2020-07-18",
+   "fight": "Grant Dawson vs Nad Narimani",
+   "csv": "-250 / 195",
+   "bfoClose": "-310…-277 / 237…255",
+   "bfoOpen": "-260 / 220",
+   "gap": 0.042
+  },
+  {
+   "date": "2020-05-30",
+   "fight": "Jamahal Hill vs Klidson Abreu",
+   "csv": "-117 / -103",
+   "bfoClose": "-155…-139 / 110…135",
+   "bfoOpen": "-175 / 135",
+   "gap": 0.042
+  },
+  {
+   "date": "2020-11-28",
+   "fight": "Norma Dumont vs Ashlee Evans-Smith",
+   "csv": "110 / -137",
+   "bfoClose": "130…137 / -164…-150",
+   "bfoOpen": "110 / -130",
+   "gap": 0.041
+  },
+  {
+   "date": "2020-08-08",
+   "fight": "Andrew Sanchez vs Wellington Turman",
+   "csv": "130 / -162",
+   "bfoClose": "110…110 / -139…-130",
+   "bfoOpen": "130 / -160",
+   "gap": 0.041
+  },
+  {
+   "date": "2020-07-11",
+   "fight": "Davey Grant vs Martin Day",
+   "csv": "130 / -162",
+   "bfoClose": "-110…110 / -139…-110",
+   "bfoOpen": "-110 / -110",
+   "gap": 0.041
+  },
+  {
+   "date": "2020-10-31",
+   "fight": "Jason Witt vs Cole Williams",
+   "csv": "-148 / 119",
+   "bfoClose": "-175…-170 / 140…155",
+   "bfoOpen": "125 / -145",
+   "gap": 0.04
+  },
+  {
+   "date": "2020-10-10",
+   "fight": "Tracy Cortez vs Stephanie Egger",
+   "csv": "-205 / 160",
+   "bfoClose": "-172…-147 / 127…140",
+   "bfoOpen": "-305 / 225",
+   "gap": 0.04
+  },
+  {
+   "date": "2020-10-03",
+   "fight": "Dusko Todorovic vs Dequan Townsend",
+   "csv": "-335 / 245",
+   "bfoClose": "-430…-400 / 300…345",
+   "bfoOpen": "-305 / 225",
+   "gap": 0.04
+  },
+  {
+   "date": "2020-08-15",
+   "fight": "Merab Dvalishvili vs John Dodson",
+   "csv": "-240 / 188",
+   "bfoClose": "-280…-275 / 225…240",
+   "bfoOpen": "-170 / 145",
+   "gap": 0.04
+  },
+  {
+   "date": "2020-07-11",
+   "fight": "Jiri Prochazka vs Volkan Oezdemir",
+   "csv": "129 / -159",
+   "bfoClose": "152…170 / -200…-177",
+   "bfoOpen": "130 / -150",
+   "gap": 0.04
+  },
+  {
+   "date": "2020-11-14",
+   "fight": "Khaos Williams vs Abdul Razak Alhassan",
+   "csv": "185 / -240",
+   "bfoClose": "142…170 / -200…-162",
+   "bfoOpen": "135 / -175",
+   "gap": 0.039
+  },
+  {
+   "date": "2020-10-10",
+   "fight": "Tom Breese vs KB Bhullar",
+   "csv": "-275 / 210",
+   "bfoClose": "-227…-210 / 175…187",
+   "bfoOpen": "-215 / 165",
+   "gap": 0.039
+  },
+  {
+   "date": "2020-09-26",
+   "fight": "Brandon Royval vs Kai Kara-France",
+   "csv": "188 / -240",
+   "bfoClose": "170…170 / -200…-200",
+   "bfoOpen": "160 / -185",
+   "gap": 0.039
+  },
+  {
+   "date": "2020-09-19",
+   "fight": "Khamzat Chimaev vs Gerald Meerschaert",
+   "csv": "-400 / 300",
+   "bfoClose": "-625…-485 / 375…450",
+   "bfoOpen": "-500 / 385",
+   "gap": 0.039
+  },
+  {
+   "date": "2019-12-21",
+   "fight": "SeungWoo Choi vs Suman Mokhtarian",
+   "csv": "-275 / 200",
+   "bfoClose": "-350…-303 / 240…290",
+   "bfoOpen": "-160 / 130",
+   "gap": 0.039
+  },
+  {
+   "date": "2020-06-27",
+   "fight": "Youssef Zalal vs Jordan Griffin",
+   "csv": "-114 / -106",
+   "bfoClose": "-139…-130 / 110…115",
+   "bfoOpen": "-125 / 105",
+   "gap": 0.038
+  },
+  {
+   "date": "2020-06-20",
+   "fight": "Lauren Murphy vs Roxanne Modafferi",
+   "csv": "105 / -125",
+   "bfoClose": "-135…-111 / -111…115",
+   "bfoOpen": "125 / -165",
+   "gap": 0.038
+  },
+  {
+   "date": "2023-10-21",
+   "fight": "Islam Makhachev vs Alexander Volkanovski",
+   "csv": "-350 / 220",
+   "bfoClose": "-286…-230 / 190…220",
+   "bfoOpen": "-290 / 215",
+   "gap": 0.037
+  },
+  {
+   "date": "2020-07-18",
+   "fight": "Brett Johns vs Montel Jackson",
+   "csv": "170 / -215",
+   "bfoClose": "200…235 / -275…-250",
+   "bfoOpen": "140 / -160",
+   "gap": 0.037
+  },
+  {
+   "date": "2019-12-21",
+   "fight": "Chan Sung Jung vs Frankie Edgar",
+   "csv": "-151 / 129",
+   "bfoClose": "-210…-175 / 150…175",
+   "bfoOpen": "-175 / 150",
+   "gap": 0.037
+  },
+  {
+   "date": "2021-02-06",
+   "fight": "Beneil Dariush vs Diego Ferreira",
+   "csv": "105 / -125",
+   "bfoClose": "-140…-110 / -110…120",
+   "bfoOpen": "105 / -125",
+   "gap": 0.036
+  },
+  {
+   "date": "2020-10-24",
+   "fight": "Magomed Ankalaev vs Ion Cutelaba",
+   "csv": "-335 / 250",
+   "bfoClose": "-400…-380 / 300…320",
+   "bfoOpen": "-310 / 260",
+   "gap": 0.036
+  },
+  {
+   "date": "2020-10-24",
+   "fight": "Casey Kenney vs Nathaniel Wood",
+   "csv": "-177 / 140",
+   "bfoClose": "-152…-147 / 125…127",
+   "bfoOpen": "-145 / 125",
+   "gap": 0.036
+  },
+  {
+   "date": "2020-09-12",
+   "fight": "Billy Quarantillo vs Kyle Nelson",
+   "csv": "-250 / 195",
+   "bfoClose": "-303…-270 / 230…250",
+   "bfoOpen": "-300 / 250",
+   "gap": 0.036
+  },
+  {
+   "date": "2020-03-14",
+   "fight": "Renato Moicano vs Damir Hadzovic",
+   "csv": "-345 / 315",
+   "bfoClose": "-455…-430 / 345…350",
+   "bfoOpen": "-325 / 250",
+   "gap": 0.036
+  },
+  {
+   "date": "2019-12-21",
+   "fight": "Volkan Oezdemir vs Aleksandar Rakic",
+   "csv": "145 / -175",
+   "bfoClose": "123…125 / -152…-143",
+   "bfoOpen": "115 / -145",
+   "gap": 0.036
+  },
+  {
+   "date": "2020-11-14",
+   "fight": "Kanako Murata vs Randa Markos",
+   "csv": "-200 / 155",
+   "bfoClose": "-240…-222 / 180…200",
+   "bfoOpen": "-140 / 120",
+   "gap": 0.035
+  },
+  {
+   "date": "2020-09-26",
+   "fight": "Hakeem Dawodu vs Zubaira Tukhugov",
+   "csv": "115 / -143",
+   "bfoClose": "-110…100 / -125…-110",
+   "bfoOpen": "140 / -160",
+   "gap": 0.035
+  },
+  {
+   "date": "2020-09-19",
+   "fight": "Mackenzie Dern vs Randa Markos",
+   "csv": "-177 / 140",
+   "bfoClose": "-210…-189 / 162…175",
+   "bfoOpen": "-330 / 270",
+   "gap": 0.035
+  },
+  {
+   "date": "2020-07-18",
+   "fight": "Joel Alvarez vs Joe Duffy",
+   "csv": "250 / -335",
+   "bfoClose": "205…225 / -278…-240",
+   "bfoOpen": "225 / -305",
+   "gap": 0.035
+  },
+  {
+   "date": "2020-07-15",
+   "fight": "Lerone Murphy vs Ricardo Ramos",
+   "csv": "130 / -162",
+   "bfoClose": "150…160 / -185…-175",
+   "bfoOpen": "120 / -140",
+   "gap": 0.035
+  },
+  {
+   "date": "2020-07-15",
+   "fight": "Liana Jojua vs Diana Belbita",
+   "csv": "155 / -195",
+   "bfoClose": "180…185 / -222…-220",
+   "bfoOpen": "125 / -145",
+   "gap": 0.035
+  },
+  {
+   "date": "2024-11-23",
+   "fight": "Zhang Mingyang vs Ozzy Diaz",
+   "csv": "-225 / 210",
+   "bfoClose": "-275…-265 / 205…210",
+   "bfoOpen": "-335 / 250",
+   "gap": 0.034
+  },
+  {
+   "date": "2020-11-21",
+   "fight": "Brandon Moreno vs Brandon Royval",
+   "csv": "-190 / 150",
+   "bfoClose": "-164…-140 / 120…137",
+   "bfoOpen": "-205 / 175",
+   "gap": 0.034
+  },
+  {
+   "date": "2020-10-03",
+   "fight": "Germaine de Randamie vs Julianna Pena",
+   "csv": "-150 / 122",
+   "bfoClose": "-189…-160 / 140…162",
+   "bfoOpen": "-185 / 160",
+   "gap": 0.034
+  },
+  {
+   "date": "2020-08-15",
+   "fight": "Danny Chavez vs TJ Brown",
+   "csv": "130 / -167",
+   "bfoClose": "110…125 / -145…-135",
+   "bfoOpen": "155 / -195",
+   "gap": 0.034
+  },
+  {
+   "date": "2020-07-25",
+   "fight": "Tom Aspinall vs Jake Collier",
+   "csv": "-278 / 220",
+   "bfoClose": "-400…-333 / 250…325",
+   "bfoOpen": "-170 / 145",
+   "gap": 0.034
+  },
+  {
+   "date": "2021-06-05",
+   "fight": "Sean Woodson vs Youssef Zalal",
+   "csv": "-200 / 160",
+   "bfoClose": "-175…-145 / 125…140",
+   "bfoOpen": "-115 / -105",
+   "gap": 0.032
+  },
+  {
+   "date": "2020-09-05",
+   "fight": "Ovince Saint Preux vs Alonzo Menifield",
+   "csv": "110 / -134",
+   "bfoClose": "125…140 / -160…-152",
+   "bfoOpen": "-105 / -115",
+   "gap": 0.032
+  },
+  {
+   "date": "2020-07-25",
+   "fight": "Paul Craig vs Gadzhimurad Antigulov",
+   "csv": "-137 / 110",
+   "bfoClose": "-155…-147 / 125…135",
+   "bfoOpen": "105 / -125",
+   "gap": 0.032
+  },
+  {
+   "date": "2020-07-11",
+   "fight": "Petr Yan vs Jose Aldo",
+   "csv": "-215 / 175",
+   "bfoClose": "-270…-250 / 200…230",
+   "bfoOpen": "-240 / 205",
+   "gap": 0.032
+  },
+  {
+   "date": "2020-03-07",
+   "fight": "Mark Madsen vs Austin Hubbard",
+   "csv": "-215 / 195",
+   "bfoClose": "-320…-250 / 200…260",
+   "bfoOpen": "-750 / 450",
+   "gap": 0.032
+  },
+  {
+   "date": "2019-12-21",
+   "fight": "Charles Jourdain vs Dooho Choi",
+   "csv": "220 / -280",
+   "bfoClose": "250…335 / -420…-333",
+   "bfoOpen": "220 / -280",
+   "gap": 0.032
+  },
+  {
+   "date": "2020-11-07",
+   "fight": "Alexandr Romanov vs Marcos Rogerio de Lima",
+   "csv": "-455 / 330",
+   "bfoClose": "-556…-495 / 395…400",
+   "bfoOpen": "-300 / 250",
+   "gap": 0.031
+  },
+  {
+   "date": "2020-09-12",
+   "fight": "Ed Herman vs Mike Rodriguez",
+   "csv": "195 / -250",
+   "bfoClose": "225…235 / -278…-270",
+   "bfoOpen": "145 / -170",
+   "gap": 0.031
+  },
+  {
+   "date": "2020-07-15",
+   "fight": "Jack Shore vs Aaron Phillips",
+   "csv": "-715 / 475",
+   "bfoClose": "-1000…-900 / 600…705",
+   "bfoOpen": "-400 / 330",
+   "gap": 0.031
+  },
+  {
+   "date": "2020-06-27",
+   "fight": "Julian Erosa vs Sean Woodson",
+   "csv": "325 / -455",
+   "bfoClose": "390…400 / -556…-500",
+   "bfoOpen": "310 / -375",
+   "gap": 0.031
+  },
+  {
+   "date": "2020-05-30",
+   "fight": "Brandon Royval vs Tim Elliott",
+   "csv": "142 / -162",
+   "bfoClose": "118…125 / -152…-138",
+   "bfoOpen": "140 / -180",
+   "gap": 0.031
+  },
+  {
+   "date": "2020-05-13",
+   "fight": "Ben Rothwell vs Ovince Saint Preux",
+   "csv": "112 / -132",
+   "bfoClose": "125…132 / -152…-150",
+   "bfoOpen": "105 / -125",
+   "gap": 0.031
+  },
+  {
+   "date": "2021-06-05",
+   "fight": "Kamuela Kirk vs Makwan Amirkhani",
+   "csv": "180 / -230",
+   "bfoClose": "160…170 / -200…-185",
+   "bfoOpen": "225 / -305",
+   "gap": 0.03
+  }
+ ],
+ "medianGap": 0,
+ "unmatched": [
+  {
+   "date": "2026-03-07",
+   "red": "Sumudaerji",
+   "blue": "Jesus Aguilar",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2026-01-31",
+   "red": "Kaan Ofli",
+   "blue": "Yizha",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2026-01-31",
+   "red": "Sulangrangbo",
+   "blue": "Lawrence Lui",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2025-10-25",
+   "red": "Jaqueline Amorim",
+   "blue": "Mizuki",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2025-10-18",
+   "red": "Cody Gibson",
+   "blue": "Aoriqileng",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2025-08-23",
+   "red": "Sumudaerji",
+   "blue": "Kevin Borjas",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2025-08-23",
+   "red": "Maheshate",
+   "blue": "Gauge Young",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2025-08-23",
+   "red": "Rongzhu",
+   "blue": "Austin Hubbard",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2025-08-23",
+   "red": "Yizha",
+   "blue": "Westin Wilson",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2025-08-02",
+   "red": "Rodolfo Vieira",
+   "blue": "Tresean Gore",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2025-07-19",
+   "red": "Dan Ige",
+   "blue": "Patricio Freire",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2025-06-21",
+   "red": "Daria Zhelezniakova",
+   "blue": "Melissa Mullins",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2025-06-07",
+   "red": "Ariane da Silva",
+   "blue": "Wang Cong",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2025-04-26",
+   "red": "Da'Mon Blackshear",
+   "blue": "Alatengheili",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2025-04-12",
+   "red": "Yair Rodriguez",
+   "blue": "Patricio Freire",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2025-04-12",
+   "red": "Sumudaerji",
+   "blue": "Mitch Raposo",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2025-03-15",
+   "red": "Carlos Vera",
+   "blue": "Josias Musasa",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2025-02-08",
+   "red": "Justin Tafa",
+   "blue": "Tallison Teixeira",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2025-02-08",
+   "red": "Rongzhu",
+   "blue": "Kody Steele",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2024-11-23",
+   "red": "Maheshate",
+   "blue": "Nikolas Motta",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2024-11-02",
+   "red": "Ariane da Silva",
+   "blue": "Jasmine Jasudavicius",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2024-10-19",
+   "red": "Charles Johnson",
+   "blue": "Sumudaerji",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2024-09-28",
+   "red": "Ailin Perez",
+   "blue": "Daria Zhelezniakova",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2024-09-14",
+   "red": "Raul Rosas Jr.",
+   "blue": "Aoriqileng",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2024-09-07",
+   "red": "Rongzhu",
+   "blue": "Chris Padilla",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2024-09-07",
+   "red": "Yizha",
+   "blue": "Gabriel Santos",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2024-08-24",
+   "red": "Zachary Reese",
+   "blue": "Jose Daniel Medina",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2024-06-08",
+   "red": "Julian Marquez",
+   "blue": "Zachary Reese",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2024-05-18",
+   "red": "Alatengheili",
+   "blue": "Kleydson Rodrigues",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2024-04-27",
+   "red": "Ariane da Silva",
+   "blue": "Karine Silva",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2024-04-27",
+   "red": "Gabriel Benitez",
+   "blue": "Maheshate",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2024-03-23",
+   "red": "Karl Williams",
+   "blue": "Justin Tafa",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2024-03-23",
+   "red": "Montserrat Rendon",
+   "blue": "Daria Zhelezniakova",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2024-03-09",
+   "red": "Katlyn Cerminara",
+   "blue": "Maycee Barber",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2024-02-17",
+   "red": "Rinya Nakamura",
+   "blue": "Carlos Vera",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2024-02-10",
+   "red": "Rodolfo Vieira",
+   "blue": "Armen Petrosyan",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2023-12-16",
+   "red": "Casey O'Neill",
+   "blue": "Ariane da Silva",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2023-12-09",
+   "red": "Tim Elliott",
+   "blue": "Sumudaerji",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2023-12-02",
+   "red": "Zachary Reese",
+   "blue": "Cody Brundage",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2023-10-14",
+   "red": "Chris Gutierrez",
+   "blue": "Alatengheili",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2023-10-07",
+   "red": "Aoriqileng",
+   "blue": "Johnny Munoz",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2023-09-23",
+   "red": "Mizuki",
+   "blue": "Hannah Goldy",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2023-09-23",
+   "red": "Tamires Vidal",
+   "blue": "Montserrat Rendon",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2023-09-09",
+   "red": "Justin Tafa",
+   "blue": "Austen Lane",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2023-07-01",
+   "red": "Ariane da Silva",
+   "blue": "Melissa Gatto",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2023-06-10",
+   "red": "Aiemann Zahabi",
+   "blue": "Aoriqileng",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2023-05-20",
+   "red": "Maheshate",
+   "blue": "Viacheslav Borshchev",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2023-03-11",
+   "red": "Ariane da Silva",
+   "blue": "JJ Aldrich",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2023-02-11",
+   "red": "Justin Tafa",
+   "blue": "Parker Porter",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2023-02-04",
+   "red": "JeongYeong Lee",
+   "blue": "Yizha",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2022-12-17",
+   "red": "Drew Dober",
+   "blue": "Bobby Green",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2022-12-17",
+   "red": "Rafa Garcia",
+   "blue": "Maheshate",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2022-09-10",
+   "red": "Chad Anheliger",
+   "blue": "Alatengheili",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2022-08-20",
+   "red": "Aoriqileng",
+   "blue": "Jay Perrin",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2022-07-16",
+   "red": "Matt Schnell",
+   "blue": "Sumudaerji",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2022-07-02",
+   "red": "Ian Garry",
+   "blue": "Gabe Green",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2022-06-11",
+   "red": "Maheshate",
+   "blue": "Steve Garcia",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2022-04-23",
+   "red": "Aoriqileng",
+   "blue": "Cameron Else",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2022-04-16",
+   "red": "Alatengheili",
+   "blue": "Kevin Croom",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2022-04-09",
+   "red": "Mackenzie Dern",
+   "blue": "Tecia Torres",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2022-04-09",
+   "red": "Ian Garry",
+   "blue": "Darian Weeks",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2022-02-26",
+   "red": "Islam Makhachev",
+   "blue": "Bobby Green",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2022-02-26",
+   "red": "Rongzhu",
+   "blue": "Ignacio Bahamondes",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2022-02-12",
+   "red": "Bobby Green",
+   "blue": "Nasrat Haqparast",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-12-18",
+   "red": "Justin Tafa",
+   "blue": "Harry Hunsucker",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-11-20",
+   "red": "Cody Durden",
+   "blue": "Aoriqileng",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-11-06",
+   "red": "Al Iaquinta",
+   "blue": "Bobby Green",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-11-06",
+   "red": "Ian Garry",
+   "blue": "Jordan Williams",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-09-18",
+   "red": "Rong Zhu",
+   "blue": "Brandon Jenkins",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-08-07",
+   "red": "Tecia Torres",
+   "blue": "Angela Hill",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-08-07",
+   "red": "Bobby Green",
+   "blue": "Rafael Fiziev",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-07-17",
+   "red": "Amanda Lemos",
+   "blue": "Montserrat Conejo",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-07-10",
+   "red": "Irene Aldana",
+   "blue": "Yana Kunitskaya",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-06-12",
+   "red": "Lauren Murphy",
+   "blue": "Joanne Calderwood",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-05-08",
+   "red": "Marina Rodriguez",
+   "blue": "Michelle Waterson",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-05-01",
+   "red": "Kai Kamaka",
+   "blue": "TJ Brown",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-04-24",
+   "red": "Danaa Batgerel",
+   "blue": "Kevin Natividad",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-04-24",
+   "red": "Kazula Vargas",
+   "blue": "Rong Zhu",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-04-24",
+   "red": "Aori Qileng",
+   "blue": "Jeff Molina",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-04-24",
+   "red": "Na Liang",
+   "blue": "Ariane Carnelossi",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-04-10",
+   "red": "Da-Un Jung",
+   "blue": "William Knight",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-03-20",
+   "red": "Cheyanne Buys",
+   "blue": "Montserrat Conejo",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-02-20",
+   "red": "Ketlen Vieira",
+   "blue": "Yana Kunitskaya",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-02-13",
+   "red": "Gabe Green",
+   "blue": "Philip Rowe",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-01-23",
+   "red": "Jessica Eye",
+   "blue": "Joanne Calderwood",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-01-20",
+   "red": "Su Mudaerji",
+   "blue": "Zarrukh Adashev",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2021-01-16",
+   "red": "Carlos Felipe",
+   "blue": "Justin Tafa",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-12-12",
+   "red": "Tecia Torres",
+   "blue": "Sam Hughes",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-11-28",
+   "red": "Jonathan Pearce",
+   "blue": "Kai Kamaka",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-11-28",
+   "red": "Su Mudaerji",
+   "blue": "Malcolm Gordon",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-10-31",
+   "red": "Bobby Green",
+   "blue": "Thiago Moises",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-10-24",
+   "red": "Jacob Malkoun",
+   "blue": "Phillip Hawes",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-10-03",
+   "red": "Casey Kenney",
+   "blue": "Heili Alateng",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-09-12",
+   "red": "Michelle Waterson",
+   "blue": "Angela Hill",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-09-12",
+   "red": "Bobby Green",
+   "blue": "Alan Patrick",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-08-22",
+   "red": "Amanda Lemos",
+   "blue": "Mizuki Inoue",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-08-08",
+   "red": "Yana Kunitskaya",
+   "blue": "Julija Stoliarenko",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-08-08",
+   "red": "Nasrat Haqparast",
+   "blue": "Alex Munoz",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-08-08",
+   "red": "Irwin Rivera",
+   "blue": "Ali Qaisi",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-08-01",
+   "red": "Joanne Calderwood",
+   "blue": "Jennifer Maia",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-08-01",
+   "red": "Lando Vannata",
+   "blue": "Bobby Green",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-07-11",
+   "red": "Raulian Paiva",
+   "blue": "Zhalgas Zhamagulov",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-06-27",
+   "red": "Mara Romero Borella",
+   "blue": "Miranda Maverick",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-06-20",
+   "red": "Clay Guida",
+   "blue": "Bobby Green",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-06-20",
+   "red": "Tecia Torres",
+   "blue": "Brianna Van Buren",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-05-09",
+   "red": "Carla Esparza",
+   "blue": "Michelle Waterson",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-05-09",
+   "red": "Uriah Hall",
+   "blue": "Jacare Souza",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-03-14",
+   "red": "Elizeu Dos Santos",
+   "blue": "Aleksei Kunchenko",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-03-14",
+   "red": "Veronica Macedo",
+   "blue": "Bea Malecki",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-03-07",
+   "red": "Weili Zhang",
+   "blue": "Joanna Jedrzejczyk",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-03-07",
+   "red": "Danaa Batgerel",
+   "blue": "Guido Cannetti",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-02-22",
+   "red": "Jim Crute",
+   "blue": "Michal Oleksiejczuk",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-02-22",
+   "red": "Jalin Turner",
+   "blue": "Joshua Culibao",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-02-08",
+   "red": "Juan Adams",
+   "blue": "Justin Tafa",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-02-08",
+   "red": "Alex Morono",
+   "blue": "Kalinn Williams",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-02-08",
+   "red": "Austin Lingo",
+   "blue": "Youssef Zalel",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-01-25",
+   "red": "Justine Kish",
+   "blue": "Luci Pudilova",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2020-01-18",
+   "red": "Brian Kelleher",
+   "blue": "Ode Obsourne",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-12-21",
+   "red": "Da Un Jung",
+   "blue": "Mike Rodriguez",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-12-21",
+   "red": "Kyung Ho Kang",
+   "blue": "Liu Pingyuan",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-12-21",
+   "red": "Dong Hyun Ma",
+   "blue": "Omar Antonio Morales Ferrer",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-12-21",
+   "red": "Heili Alateng",
+   "blue": "Ryan Benoit",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-12-14",
+   "red": "Peter Yan",
+   "blue": "Urijah Faber",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-12-07",
+   "red": "Aspen Ladd",
+   "blue": "Yana Kunitskaya",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-11-16",
+   "red": "Francisco Trinaldo",
+   "blue": "Bobby Green",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-11-16",
+   "red": "Ariane Lipski",
+   "blue": "Isabela De Pauda",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-11-09",
+   "red": "Alekander Volkov",
+   "blue": "Greg Hardy",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-11-09",
+   "red": "Ramazan Emeev",
+   "blue": "Rocco Martin",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-11-09",
+   "red": "Grigorii Popov",
+   "blue": "Davey Grant",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-10-26",
+   "red": "Loma Lookboonmee",
+   "blue": "Alexandra Albu",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-10-26",
+   "red": "Raphael Pessoa Nunes",
+   "blue": "Jeff Hughes",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-10-12",
+   "red": "Joanna Jedrzejczyk",
+   "blue": "Michelle Waterson",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-10-05",
+   "red": "Justin Tafa",
+   "blue": "Yorgan De Castro",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-09-21",
+   "red": "Caludio Puelles",
+   "blue": "Marcos Mariano",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-09-07",
+   "red": "Joanne Calderwood",
+   "blue": "Andrea Lee",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-08-31",
+   "red": "Li Jingliang",
+   "blue": "Elizeu Dos Santos",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-08-31",
+   "red": "Song Kenan",
+   "blue": "Derrick",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-08-31",
+   "red": "Wu Yanan",
+   "blue": "Mizuki Inoue",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-08-31",
+   "red": "Su Mudaerji",
+   "blue": "Andre Soukhamthath",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-08-31",
+   "red": "Da Un Jung",
+   "blue": "Khadis Ibragimov",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-08-31",
+   "red": "Heili Alateng",
+   "blue": "Danaa Batgerel",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-08-10",
+   "red": "Vincente Luque",
+   "blue": "Mike Perry",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-08-10",
+   "red": "Luiz Garagorri",
+   "blue": "Humberto Bandenay",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-08-10",
+   "red": "Ciryl Gane",
+   "blue": "Raphael Pessoa Nunes",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-08-10",
+   "red": "Tecia Torres",
+   "blue": "Marina Rodriguez",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-08-10",
+   "red": "Veronica Macedo",
+   "blue": "Polyana Viana",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-07-27",
+   "red": "Cris Cyborg",
+   "blue": "Felicia Spencer",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-07-27",
+   "red": "Marc-Andre Barriault",
+   "blue": "Krzystof Jotko",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-07-13",
+   "red": "Liu Pingyuan",
+   "blue": "Jonathan Martinez",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-07-13",
+   "red": "Livinha Souza",
+   "blue": "Brianna Van Buren",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-07-06",
+   "red": "Caludia Gadelha",
+   "blue": "Randa Markos",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-06-29",
+   "red": "Demian Maia",
+   "blue": "Rocco Martin",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-06-08",
+   "red": "Tatiana Suarez",
+   "blue": "Nina Ansaroff",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-06-08",
+   "red": "Eddie Wineland",
+   "blue": "Grigorii Popov",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-06-08",
+   "red": "Katlyn Chookagian",
+   "blue": "Joanne Calderwood",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-03-30",
+   "red": "Karolina Kowalkiewicz",
+   "blue": "Michelle Waterson",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-03-09",
+   "red": "Marion Reneau",
+   "blue": "Yana Kunitskaya",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-03-02",
+   "red": "Tecia Torres",
+   "blue": "Weili Zhang",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-02-23",
+   "red": "Dwight Grant",
+   "blue": "Carlo Pedersoli",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-02-23",
+   "red": "Veronica Macedo",
+   "blue": "Gillian Robertson",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-02-23",
+   "red": "Damir Hadzovic",
+   "blue": "Polo Reyes",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-02-17",
+   "red": "Alexandra Albu",
+   "blue": "Emily Whitmire",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-02-09",
+   "red": "Wuliji Buren",
+   "blue": "Jonathan Martinez",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2019-01-19",
+   "red": "Joanne Calderwood",
+   "blue": "Ariane Lipski",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-12-29",
+   "red": "Cris Cyborg",
+   "blue": "Amanda Nunes",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-12-15",
+   "red": "Bobby Green",
+   "blue": "Drakkar Klose",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-12-08",
+   "red": "Claudia Gadelha",
+   "blue": "Nina Ansaroff",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-11-30",
+   "red": "Rick Glenn",
+   "blue": "Kevin Aguilar",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-11-24",
+   "red": "Weili Zhang",
+   "blue": "Jessica Aguilar",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-11-24",
+   "red": "Liu Pingyuan",
+   "blue": "Martin Day",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-11-24",
+   "red": "Su Mudaerji",
+   "blue": "Louis Smolka",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-11-17",
+   "red": "Alexandre Pantoja",
+   "blue": "Ulka Sasaki",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-10-06",
+   "red": "Michelle Waterson",
+   "blue": "Felice Herrig",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-10-06",
+   "red": "Lina Lansberg",
+   "blue": "Yana Kunitskaya",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-09-22",
+   "red": "Alex Oliveira",
+   "blue": "Carlo Pedersoli",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-09-08",
+   "red": "Roberto Sanchez",
+   "blue": "Jarred Brooks",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-08-25",
+   "red": "Joanne Calderwood",
+   "blue": "Kalindra Faria",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-08-04",
+   "red": "Danielle Taylor",
+   "blue": "Weili Zhang",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-08-04",
+   "red": "Marlon Vera",
+   "blue": "Wuliji Buren",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-07-28",
+   "red": "Joanna Jedrzejczyk",
+   "blue": "Tecia Torres",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-07-28",
+   "red": "Randa Markos",
+   "blue": "Nina Ansaroff",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-07-28",
+   "red": "Devin Powell",
+   "blue": "Alvaro Herrera",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-07-22",
+   "red": "Damian Stasiak",
+   "blue": "Liu Pingyuan",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-07-14",
+   "red": "Dennis Bermudez",
+   "blue": "Rick Glenn",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-06-23",
+   "red": "Jenel Lausa",
+   "blue": "Ulka Sasaki",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-05-27",
+   "red": "Bradley Scott",
+   "blue": "Carlo Pedersoli",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-05-19",
+   "red": "Veronica Macedo",
+   "blue": "Andrea Lee",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-04-14",
+   "red": "Michelle Waterson",
+   "blue": "Cortney Casey",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-03-03",
+   "red": "Cris Cyborg",
+   "blue": "Yana Kunitskaya",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-02-24",
+   "red": "Jessica Andrade",
+   "blue": "Tecia Torres",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-02-18",
+   "red": "Roberto Sanchez",
+   "blue": "Joby Sanchez",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-02-03",
+   "red": "Tim Johnson",
+   "blue": "Marcelo Golm",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-01-27",
+   "red": "Erik Koch",
+   "blue": "Bobby Green",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2018-01-14",
+   "red": "Matt Frevola",
+   "blue": "Polo Reyes",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-12-30",
+   "red": "Cris Cyborg",
+   "blue": "Holly Holm",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-12-30",
+   "red": "Myles Jury",
+   "blue": "Rick Glenn",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-12-02",
+   "red": "Tecia Torres",
+   "blue": "Michelle Waterson",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-11-25",
+   "red": "Wuliji Buren",
+   "blue": "Rolando Dy",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-11-11",
+   "red": "Angela Hill",
+   "blue": "Nina Ansaroff",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-09-22",
+   "red": "Jussier Formiga",
+   "blue": "Ulka Sasaki",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-09-16",
+   "red": "Justin Ledet",
+   "blue": "Zu Anyanwu",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-09-09",
+   "red": "Gavin Tucker",
+   "blue": "Rick Glenn",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-08-05",
+   "red": "Bradley Scott",
+   "blue": "Jack Hermansson",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-08-05",
+   "red": "Joseph Morales",
+   "blue": "Roberto Sanchez",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-08-05",
+   "red": "Alvaro Herrera",
+   "blue": "Jordan Rinaldi",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-07-29",
+   "red": "Cris Cyborg",
+   "blue": "Tonya Evinger",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-07-29",
+   "red": "Kailin Curran",
+   "blue": "Alexandra Albu",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-07-22",
+   "red": "Tim Johnson",
+   "blue": "Junior Albini",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-07-16",
+   "red": "Joanne Calderwood",
+   "blue": "Cynthia Calvillo",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-07-07",
+   "red": "Tecia Torres",
+   "blue": "Juliana Lima",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-06-17",
+   "red": "Justin Scoggins",
+   "blue": "Ulka Sasaki",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-06-03",
+   "red": "Luan Chagas",
+   "blue": "Jimmy Wallhead",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-05-28",
+   "red": "Nico Musoke",
+   "blue": "Bojan Velickovic",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-05-13",
+   "red": "James Vick",
+   "blue": "Polo Reyes",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-04-15",
+   "red": "Rose Namajunas",
+   "blue": "Michelle Waterson",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-04-15",
+   "red": "Bobby Green",
+   "blue": "Rashid Magomedov",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-03-18",
+   "red": "Daniel Omielanczuk",
+   "blue": "Tim Johnson",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-03-18",
+   "red": "Bradley Scott",
+   "blue": "Scott Askham",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-02-19",
+   "red": "Paul Felder",
+   "blue": "Alessandro Ricci",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-02-11",
+   "red": "Wilson Reis",
+   "blue": "Ulka Sasaki",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-02-11",
+   "red": "Rick Glenn",
+   "blue": "Phillipe Nover",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-02-04",
+   "red": "Tecia Torres",
+   "blue": "Bec Rawlings",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2017-01-15",
+   "red": "Jocelyn Jones-Lybarger",
+   "blue": "Nina Ansaroff",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-12-17",
+   "red": "Paige VanZant",
+   "blue": "Michelle Waterson",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-12-09",
+   "red": "Joe Gigliotti",
+   "blue": "Gerald Meerschaert",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-12-09",
+   "red": "Tiago Trator",
+   "blue": "Shane Burgos",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-11-26",
+   "red": "Marlon Vera",
+   "blue": "Ning Guangyou",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-11-19",
+   "red": "Tim Johnson",
+   "blue": "Alexander Volkov",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-11-05",
+   "red": "Alexa Grasso",
+   "blue": "Heather Jo Clark",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-11-05",
+   "red": "Polo Reyes",
+   "blue": "Jason Novelli",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-09-24",
+   "red": "Cris Cyborg",
+   "blue": "Lina Lansberg",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-09-24",
+   "red": "Glaico Franca",
+   "blue": "Gregor Gillespie",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-09-17",
+   "red": "Evan Dunham",
+   "blue": "Rick Glenn",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-09-17",
+   "red": "Antonio Carlos Junior",
+   "blue": "Leonardo Augusto Leleco",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-09-10",
+   "red": "Jessica Andrade",
+   "blue": "Joanne Calderwood",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-09-03",
+   "red": "Jessin Ayari",
+   "blue": "Jimmy Wallhead",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-09-03",
+   "red": "Ashlee Evans-Smith",
+   "blue": "Veronica Macedo",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-08-27",
+   "red": "Jeremy Kennedy",
+   "blue": "Alessandro Ricci",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-08-06",
+   "red": "Trevor Smith",
+   "blue": "Joe Gigliotti",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-07-07",
+   "red": "Vicente Luque",
+   "blue": "Alvaro Herrera",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-06-18",
+   "red": "Valerie Letourneau",
+   "blue": "Joanne Calderwood",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-06-04",
+   "red": "Dustin Poirier",
+   "blue": "Bobby Green",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-06-04",
+   "red": "Polo Reyes",
+   "blue": "Dong Hyun Ma",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-05-14",
+   "red": "Cris Cyborg",
+   "blue": "Leslie Smith",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-05-08",
+   "red": "Karolina Kowalkiewicz",
+   "blue": "Heather Jo Clark",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-05-08",
+   "red": "Ulka Sasaki",
+   "blue": "Willie Gates",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-04-23",
+   "red": "Glaico Franca",
+   "blue": "James Vick",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-04-16",
+   "red": "Rose Namajunas",
+   "blue": "Tecia Torres",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-04-10",
+   "red": "Tim Johnson",
+   "blue": "Marcin Tybura",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-04-10",
+   "red": "Rob Whiteford",
+   "blue": "Lucas Martins",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-02-27",
+   "red": "Bradley Scott",
+   "blue": "Krzysztof Jotko",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-02-21",
+   "red": "Anthony Smith",
+   "blue": "Leonardo Augusto Leleco",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-02-06",
+   "red": "Ovince Saint Preux",
+   "blue": "Rafael Feijao",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2016-01-02",
+   "red": "Justine Kish",
+   "blue": "Nina Ansaroff",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-12-12",
+   "red": "Tecia Torres",
+   "blue": "Jocelyn Jones-Lybarger",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-12-10",
+   "red": "Kailin Curran",
+   "blue": "Emily Peters Kagan",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-11-28",
+   "red": "Ning Guangyou",
+   "blue": "Marco Beltran",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-11-21",
+   "red": "Vernon Ramos",
+   "blue": "Alvaro Herrera",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-11-21",
+   "red": "Cesar Arzamendia",
+   "blue": "Polo Reyes",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-11-07",
+   "red": "Kevin Souza",
+   "blue": "Chas Skelly",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-10-24",
+   "red": "Darren Elkins",
+   "blue": "Rob Whiteford",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-09-05",
+   "red": "Clay Collard",
+   "blue": "Tiago Trator",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-08-08",
+   "red": "Jared Rosholt",
+   "blue": "Tim Johnson",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-08-01",
+   "red": "Glaico Franca",
+   "blue": "Fernando Bruno",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-08-01",
+   "red": "Stefan Struve",
+   "blue": "Minotauro Nogueira",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-08-01",
+   "red": "Rafael Feijao",
+   "blue": "Patrick Cummins",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-07-18",
+   "red": "Joanne Calderwood",
+   "blue": "Cortney Casey",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-07-18",
+   "red": "Rob Whiteford",
+   "blue": "Paul Redmond",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-07-12",
+   "red": "Angela Magana",
+   "blue": "Michelle Waterson",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-06-20",
+   "red": "Taylor Lapilus",
+   "blue": "Ulka Sasaki",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-06-13",
+   "red": "Tecia Torres",
+   "blue": "Angela Hill",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-05-30",
+   "red": "Wendell Oliveira",
+   "blue": "Darren Till",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-05-23",
+   "red": "Justin Scoggins",
+   "blue": "Joshua Sampo",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-05-16",
+   "red": "Gegard Mousasi",
+   "blue": "Costas Philippou",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-05-16",
+   "red": "Ning Guangyou",
+   "blue": "Royston Wee",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-05-09",
+   "red": "Dylan Andrews",
+   "blue": "Bradley Scott",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-04-25",
+   "red": "Rampage Jackson",
+   "blue": "Fabio Maldonado",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-04-11",
+   "red": "Gabriel Gonzaga",
+   "blue": "Mirko Cro Cop",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-04-11",
+   "red": "Joanne Calderwood",
+   "blue": "Maryna Moroz",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-04-11",
+   "red": "Izabela Badurek",
+   "blue": "Alexandra Albu",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-04-04",
+   "red": "Shamil Abdurakhimov",
+   "blue": "Tim Johnson",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-03-21",
+   "red": "Kevin Souza",
+   "blue": "Katsunori Kikuno",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-02-22",
+   "red": "William Patolino",
+   "blue": "Matt Dwyer",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-02-22",
+   "red": "Tiago Trator",
+   "blue": "Mike de la Torre",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2015-01-24",
+   "red": "Nico Musoke",
+   "blue": "Albert Tumenov",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-12-20",
+   "red": "Leandro Issa",
+   "blue": "Ulka Sasaki",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-12-12",
+   "red": "Bec Rawlings",
+   "blue": "Heather Jo Clark",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-12-12",
+   "red": "Joanne Calderwood",
+   "blue": "Seohee Ham",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-12-12",
+   "red": "Tecia Torres",
+   "blue": "Angela Magana",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-12-12",
+   "red": "Emily Peters Kagan",
+   "blue": "Angela Hill",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-11-22",
+   "red": "Bobby Green",
+   "blue": "Edson Barboza",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-11-22",
+   "red": "Juan Puig",
+   "blue": "Dooho Choi",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-11-15",
+   "red": "Gabriel Benitez",
+   "blue": "Humberto Brown",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-11-08",
+   "red": "Juliana Lima",
+   "blue": "Nina Ansaroff",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-11-08",
+   "red": "Diego Rivas",
+   "blue": "Rodolfo Rubio",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-10-25",
+   "red": "William Patolino",
+   "blue": "Neil Magny",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-10-04",
+   "red": "Nico Musoke",
+   "blue": "Alexander Yakovlev",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-09-13",
+   "red": "Santiago Ponzinibbio",
+   "blue": "Wendell Oliveira",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-08-23",
+   "red": "Ning Guangyou",
+   "blue": "Jianping Yang",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-08-23",
+   "red": "Roland Delorme",
+   "blue": "Ulka Sasaki",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-07-26",
+   "red": "Josh Thomson",
+   "blue": "Bobby Green",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-07-26",
+   "red": "Akbarh Arreola",
+   "blue": "Tiago Trator",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-07-19",
+   "red": "Paddy Holohan",
+   "blue": "Joshua Sampo",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-07-06",
+   "red": "Adriano Martins",
+   "blue": "Juan Puig",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-06-28",
+   "red": "Kelvin Gastelum",
+   "blue": "Nico Musoke",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-06-14",
+   "red": "Ryan Bader",
+   "blue": "Rafael Feijao",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-05-31",
+   "red": "Kevin Souza",
+   "blue": "Mark Eddiva",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-05-10",
+   "red": "Costas Philippou",
+   "blue": "Lorenz Larkin",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-04-11",
+   "red": "Minotauro Nogueira",
+   "blue": "Roy Nelson",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-03-15",
+   "red": "Bubba McDaniel",
+   "blue": "Sean Strickland",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-03-15",
+   "red": "Daniel Pineda",
+   "blue": "Rob Whiteford",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-03-08",
+   "red": "Bradley Scott",
+   "blue": "Claudio Silva",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-02-22",
+   "red": "Zach Makovsky",
+   "blue": "Joshua Sampo",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-02-15",
+   "red": "Viscardi Andrade",
+   "blue": "Nico Musoke",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-01-25",
+   "red": "Junior Hernandez",
+   "blue": "Hugo Viana",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2014-01-15",
+   "red": "Luke Rockhold",
+   "blue": "Costas Philippou",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-12-28",
+   "red": "William Patolino",
+   "blue": "Bobby Voelker",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-12-14",
+   "red": "Bobby Green",
+   "blue": "Pat Healy",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-11-30",
+   "red": "Joshua Sampo",
+   "blue": "Ryan Benoit",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-11-09",
+   "red": "Rafael Feijao",
+   "blue": "Igor Pokrajac",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-11-06",
+   "red": "Bobby Green",
+   "blue": "James Krause",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-10-26",
+   "red": "Alessio Sakara",
+   "blue": "Nico Musoke",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-10-26",
+   "red": "Jimy Hettes",
+   "blue": "Rob Whiteford",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-10-26",
+   "red": "Bradley Scott",
+   "blue": "Michael Kuiper",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-09-21",
+   "red": "Costas Philippou",
+   "blue": "Francis Carmont",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-09-04",
+   "red": "Felipe Arantes",
+   "blue": "Kevin Souza",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-09-04",
+   "red": "Lucas Martins",
+   "blue": "Junior Hernandez",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-08-28",
+   "red": "Brad Tavares",
+   "blue": "Bubba McDaniel",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-08-28",
+   "red": "Zak Cummings",
+   "blue": "Benny Alloway",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-06-08",
+   "red": "Minotauro Nogueira",
+   "blue": "Fabricio Werdum",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-06-08",
+   "red": "William Patolino",
+   "blue": "Leonardo Santos",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-06-08",
+   "red": "Thiago Silva",
+   "blue": "Rafael Feijao",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-04-13",
+   "red": "Bubba McDaniel",
+   "blue": "Gilbert Smith",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-04-06",
+   "red": "Benny Alloway",
+   "blue": "Ryan LaFlare",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-02-02",
+   "red": "Jacob Volkmann",
+   "blue": "Bobby Green",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2013-01-26",
+   "red": "Rampage Jackson",
+   "blue": "Glover Teixeira",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2012-12-29",
+   "red": "Tim Boetsch",
+   "blue": "Costas Philippou",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2012-12-14",
+   "red": "Robert Whittaker",
+   "blue": "Bradley Scott",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2012-12-14",
+   "red": "Benny Alloway",
+   "blue": "Manuel Rodriguez",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2012-11-10",
+   "red": "Tiequan Zhang",
+   "blue": "Jon Tuck",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2012-10-13",
+   "red": "Minotauro Nogueira",
+   "blue": "Dave Herman",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2012-07-07",
+   "red": "Costas Philippou",
+   "blue": "Riki Fukuda",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2012-06-23",
+   "red": "John Teixeira",
+   "blue": "Hugo Viana",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2012-03-02",
+   "red": "Court McGee",
+   "blue": "Costas Philippou",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2012-02-25",
+   "red": "Rampage Jackson",
+   "blue": "Ryan Bader",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2012-02-25",
+   "red": "Tiequan Zhang",
+   "blue": "Issei Tamura",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2011-12-10",
+   "red": "Frank Mir",
+   "blue": "Minotauro Nogueira",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2011-12-10",
+   "red": "Jared Hamman",
+   "blue": "Costas Philippou",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2011-10-29",
+   "red": "Mirko Cro Cop",
+   "blue": "Roy Nelson",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2011-10-08",
+   "red": "Tiequan Zhang",
+   "blue": "Darren Elkins",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2011-09-24",
+   "red": "Jon Jones",
+   "blue": "Rampage Jackson",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2011-08-27",
+   "red": "Minotauro Nogueira",
+   "blue": "Brendan Schaub",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2011-08-06",
+   "red": "Jorge Rivera",
+   "blue": "Costas Philippou",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2011-05-28",
+   "red": "Rampage Jackson",
+   "blue": "Matt Hamill",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2011-03-19",
+   "red": "Mirko Cro Cop",
+   "blue": "Brendan Schaub",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2011-03-19",
+   "red": "Costas Philippou",
+   "blue": "Nick Catone",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2011-02-26",
+   "red": "Tiequan Zhang",
+   "blue": "Jason Reinhardt",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2010-11-20",
+   "red": "Rampage Jackson",
+   "blue": "Lyoto Machida",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2010-09-25",
+   "red": "Frank Mir",
+   "blue": "Mirko Cro Cop",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2010-06-12",
+   "red": "Mirko Cro Cop",
+   "blue": "Pat Barry",
+   "why": "no-db-fight"
+  },
+  {
+   "date": "2010-05-29",
+   "red": "Rampage Jackson",
+   "blue": "Rashad Evans",
+   "why": "no-db-fight"
+  }
+ ]
+}

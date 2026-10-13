@@ -13,9 +13,9 @@
  *   - model: accuracy, log loss, Brier
  *   - baselines fit the same way on one or two features: win-rate pick,
  *     younger pick, win-rate+age
- *   - market: de-vigged closing consensus from the odds table on the fights
- *     that have one, with the model scored on that same subset (skipped and
- *     said so while the odds table is empty)
+ *   - market: de-vigged closing consensus (BestFightOdds lines file, else the
+ *     odds table) on the fights that have one, with the model scored on that
+ *     same subset (skipped and said so when no lines match)
  *   - pooled calibration (10 bins) and accuracy per confidence label using the
  *     exact rule predictionEngine.js applies
  *
@@ -52,8 +52,16 @@
  *   --out PATH               write the JSON report
  *   --baseline PATH          compare against a saved report
  *   --no-sanity              skip the sanity set
+ *   --market PATH            closing-lines file (default src/ml/data/market-lines.json,
+ *                            from scrapers/bestfightodds-lines.js) · --no-market
  *
- * Writes NOTHING to the database and never touches model-v3.json.
+ * MARKET: the de-vigged closing consensus is scored on the test fights that
+ * have a line, with the model and a 50/50 logit blend on the same fights, plus
+ * flat-stake ROI (1 unit whenever model probability × decimal close > 1) at the
+ * consensus close and at the best available close, with a bootstrap 95% CI.
+ * These lines are for internal benchmarking only and are never served.
+ *
+ * Writes NOTHING to the database and never touches the model file.
  * Run: node -r dotenv/config src/ml/evaluate.js [flags]
  */
 require('dotenv').config();
@@ -98,6 +106,8 @@ const GBM_OPTS = {
 };
 const OUT = opt('out', null);
 const BASELINE = opt('baseline', null);
+// Closing lines for the market baseline (written by scrapers/bestfightodds-lines.js; internal only)
+const MARKET_PATH = flag('no-market') ? null : opt('market', path.join(__dirname, 'data', 'market-lines.json'));
 const SANITY = !flag('no-sanity');
 const SANITY_PATH = path.join(__dirname, 'sanitySet.json');
 const { MODEL_PATH } = require('./trainModel');
@@ -149,13 +159,25 @@ function scoreSubset(probs, ys) {
 }
 
 // ── Market: de-vigged closing consensus per fight id ──────────────────────
+// Entry per fight (oriented to DB fighter1): { p1 (de-vigged), i1, i2 (implied
+// WITH vig at the consensus close = the price a flat-stake bettor pays),
+// best1, best2 (best available decimal price at close, when a range is known) }
 const implied = american => (american > 0 ? 100 / (american + 100) : Math.abs(american) / (Math.abs(american) + 100));
-function buildMarket(oddsRows) {
-  // one line per (fight, bookmaker): prefer line_type 'closing', else the latest recorded_at
+function buildMarket(oddsRows, lines) {
+  const out = new Map();
+  // 1) BestFightOdds lines file (src/scrapers/bestfightodds-lines.js): closing range per side.
+  //    Consensus implied = mean of implied(closeMin), implied(closeMax); best price = the lower implied.
+  for (const [fid, L] of Object.entries(lines || {})) {
+    const side = s => { const v = [s.closeMin, s.closeMax].filter(x => x != null).map(implied); return v.length ? { mean: v.reduce((a, b) => a + b, 0) / v.length, best: Math.min(...v) } : null; };
+    const a = side(L.f1), b = side(L.f2);
+    if (!a || !b) continue;
+    out.set(fid, { p1: a.mean / (a.mean + b.mean), i1: a.mean, i2: b.mean, best1: 1 / a.best, best2: 1 / b.best, source: 'bfo' });
+  }
+  // 2) odds table (live sync), one line per (fight, bookmaker): prefer 'closing', else latest; averaged across books.
   const best = new Map();
   const isClosing = o => o.line_type === 'closing';
-  for (const o of oddsRows) {
-    if (o.fighter1_odds == null || o.fighter2_odds == null) continue;
+  for (const o of oddsRows || []) {
+    if (o.fighter1_odds == null || o.fighter2_odds == null || out.has(o.fight_id)) continue;
     const key = `${o.fight_id}|${o.bookmaker}`;
     const cur = best.get(key);
     const better = !cur
@@ -163,16 +185,72 @@ function buildMarket(oddsRows) {
       || (isClosing(o) === isClosing(cur) && (o.recorded_at || '') > (cur.recorded_at || ''));
     if (better) best.set(key, o);
   }
-  const byFight = new Map(); // fight_id -> {p1, books}
+  const byFight = new Map();
   for (const o of best.values()) {
     const i1 = implied(o.fighter1_odds), i2 = implied(o.fighter2_odds);
-    const p1 = i1 / (i1 + i2); // proportional de-vig
-    if (!byFight.has(o.fight_id)) byFight.set(o.fight_id, { sum: 0, n: 0 });
-    const m = byFight.get(o.fight_id); m.sum += p1; m.n++;
+    if (!byFight.has(o.fight_id)) byFight.set(o.fight_id, { s1: 0, s2: 0, n: 0, b1: 0, b2: 0 });
+    const m = byFight.get(o.fight_id); m.s1 += i1; m.s2 += i2; m.n++; m.b1 = Math.max(m.b1, 1 / i1); m.b2 = Math.max(m.b2, 1 / i2);
   }
-  const out = new Map();
-  for (const [fid, m] of byFight) out.set(fid, { p1: m.sum / m.n, books: m.n });
+  for (const [fid, m] of byFight) {
+    const i1 = m.s1 / m.n, i2 = m.s2 / m.n;
+    out.set(fid, { p1: i1 / (i1 + i2), i1, i2, best1: m.b1, best2: m.b2, source: `odds-table(${m.n})` });
+  }
   return out;
+}
+
+// Flat-stake betting against the closing price: 1 unit on a side whenever the
+// model's probability times the decimal price exceeds 1 + edge (positive EV
+// after the vig). `price` = 'consensus' (pay the mean close) or 'best' (best
+// available close). Returns per-bet profits so callers can bootstrap.
+function flatStake(items, { edge = 0, price = 'consensus' } = {}) {
+  const profits = [];
+  for (const it of items) {
+    const dA = price === 'best' ? it.bestA : 1 / it.iA, dB = price === 'best' ? it.bestB : 1 / it.iB;
+    const evA = it.pModel * dA - 1, evB = (1 - it.pModel) * dB - 1;
+    if (evA <= edge && evB <= edge) continue;
+    const onA = evA >= evB;
+    const won = onA ? it.y === 1 : it.y === 0;
+    profits.push(won ? (onA ? dA : dB) - 1 : -1);
+  }
+  const units = profits.reduce((s, v) => s + v, 0);
+  return { bets: profits.length, units, roi: profits.length ? units / profits.length : null, profits };
+}
+function bootstrapRoi(profits, reps = 2000, seed = 11) {
+  if (profits.length < 10) return null;
+  let a = seed >>> 0; const rand = () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const rois = [];
+  for (let r = 0; r < reps; r++) { let s = 0; for (let i = 0; i < profits.length; i++) s += profits[Math.floor(rand() * profits.length)]; rois.push(s / profits.length); }
+  rois.sort((x, y) => x - y);
+  return { lo: rois[Math.floor(0.025 * reps)], hi: rois[Math.floor(0.975 * reps)] };
+}
+// Items for the market comparison on a set of rows (oriented to the row's A side).
+function marketItems(rows, probs, market) {
+  const items = [];
+  rows.forEach((r, i) => {
+    const m = market.get(r.fightId); if (!m) return;
+    items.push({ y: r.y, pModel: probs[i], pMarket: r.flip ? 1 - m.p1 : m.p1,
+      iA: r.flip ? m.i2 : m.i1, iB: r.flip ? m.i1 : m.i2, bestA: r.flip ? m.best2 : m.best1, bestB: r.flip ? m.best1 : m.best2, year: r.date.slice(0, 4) });
+  });
+  return items;
+}
+const logit = p => Math.log(p / (1 - p));
+function marketSummary(items) {
+  if (!items.length) return null;
+  const y = items.map(it => it.y);
+  const blend = items.map(it => sigmoid(0.5 * logit(Math.min(1 - 1e-6, Math.max(1e-6, it.pModel))) + 0.5 * logit(it.pMarket)));
+  const consensus = flatStake(items), best = flatStake(items, { price: 'best' }), edge5 = flatStake(items, { edge: 0.05 });
+  const marketFav = flatStake(items.map(it => ({ ...it, pModel: it.pMarket })), {}); // sanity: betting the market's own numbers
+  return {
+    n: items.length,
+    market: scoreSubset(items.map(it => it.pMarket), y), model: scoreSubset(items.map(it => it.pModel), y), blend: scoreSubset(blend, y),
+    agree: items.filter(it => (it.pModel > 0.5) === (it.pMarket > 0.5)).length / items.length,
+    roi: {
+      consensus: { bets: consensus.bets, units: consensus.units, roi: consensus.roi, ci95: bootstrapRoi(consensus.profits) },
+      best: { bets: best.bets, units: best.units, roi: best.roi, ci95: bootstrapRoi(best.profits) },
+      edge5: { bets: edge5.bets, units: edge5.units, roi: edge5.roi, ci95: bootstrapRoi(edge5.profits) },
+      marketOwn: { bets: marketFav.bets, units: marketFav.units, roi: marketFav.roi },
+    },
+  };
 }
 
 // ── Folds ─────────────────────────────────────────────────────────────────
@@ -194,12 +272,8 @@ function runFolds(rows, names, market, { quiet = false } = {}) {
         fold.baselines[label] = { accuracy: bf.metrics.accuracy, logloss: bf.metrics.logloss };
       }
       if (market && market.size) {
-        const mp = [], my = [], modelP = [];
-        test.forEach((r, i) => {
-          const m = market.get(r.fightId); if (!m) return;
-          mp.push(r.flip ? 1 - m.p1 : m.p1); my.push(r.y); modelP.push(fit.probs[i]);
-        });
-        if (mp.length) fold.market = { n: mp.length, market: scoreSubset(mp, my), modelOnSubset: scoreSubset(modelP, my) };
+        const s = marketSummary(marketItems(test, fit.probs, market));
+        if (s) fold.market = { n: s.n, market: s.market, modelOnSubset: s.model, blend: s.blend, agree: s.agree, roi: s.roi };
       }
     }
     test.forEach((r, i) => { pooled.p.push(fit.probs[i]); pooled.y.push(r.y); pooled.z.push(fit.zmax[i]); pooled.rows.push(r); });
@@ -298,8 +372,9 @@ async function main() {
     loadAll('weight_classes', 'id, name, limit_lbs'),
   ]);
   const { rows, timelines, fighterById, priors, elo, limitByWc, skippedInexperienced, imputedWc, missingWc } = buildDataset(fights, events, fighters, { minPriorStatsFights: MIN_PRIOR, cfg: CFG, weightClasses });
-  const market = buildMarket(oddsRows);
-  console.log(`Rows: ${rows.length} usable fights (skipped ${skippedInexperienced} with a side under ${MIN_PRIOR} prior stats-fights)  |  market lines on ${market.size} fights  |  bout weight class imputed ${imputedWc}, unknown ${missingWc}`);
+  const lines = MARKET_PATH && fs.existsSync(MARKET_PATH) ? JSON.parse(fs.readFileSync(MARKET_PATH, 'utf8')) : null;
+  const market = buildMarket(oddsRows, lines);
+  console.log(`Rows: ${rows.length} usable fights (skipped ${skippedInexperienced} with a side under ${MIN_PRIOR} prior stats-fights)  |  market lines on ${market.size} fights (${lines ? Object.keys(lines).length + ' from ' + path.basename(MARKET_PATH) : 'no lines file'}, odds table ${oddsRows.length} rows)  |  bout weight class imputed ${imputedWc}, unknown ${missingWc}`);
 
   // ── Main run
   const { folds, pooled } = runFolds(rows, SELECTED, market);
@@ -321,17 +396,25 @@ async function main() {
   const bAcc = label => pct(mean(folds.map(f => f.baselines[label].accuracy)));
   console.log(`Baseline mean accuracy: win_rate ${bAcc('win_rate only')}  age ${bAcc('age only')}  win_rate+age ${bAcc('win_rate+age')}`);
 
-  // market pooled
+  // market pooled (same subset for market and model)
   const mFolds = folds.filter(f => f.market);
   let marketPooled = null;
   if (mFolds.length) {
-    const mp = [], my = [], mm = [];
-    // pooled market comparison from rows (same subset for both)
-    pooled.rows.forEach((r, i) => { const m = market.get(r.fightId); if (!m) return; mp.push(r.flip ? 1 - m.p1 : m.p1); my.push(r.y); mm.push(pooled.p[i]); });
-    marketPooled = { n: mp.length, market: scoreSubset(mp, my), model: scoreSubset(mm, my) };
-    console.log(`Market (de-vigged closing consensus) on ${mp.length} fights: market acc ${pct(marketPooled.market.accuracy)} logloss ${f4(marketPooled.market.logloss)}  |  model on same fights: acc ${pct(marketPooled.model.accuracy)} logloss ${f4(marketPooled.model.logloss)}`);
+    marketPooled = marketSummary(marketItems(pooled.rows, pooled.p, market));
+    const mp = marketPooled;
+    const roiLine = (label, r) => `  ${label.padEnd(22)} bets ${String(r.bets).padStart(5)}  units ${(r.units >= 0 ? '+' : '') + r.units.toFixed(1).padStart(7)}  ROI ${r.roi == null ? '  —  ' : ((r.roi >= 0 ? '+' : '') + (100 * r.roi).toFixed(1) + '%')}${r.ci95 ? `  95% CI [${(100 * r.ci95.lo).toFixed(1)}%, ${(100 * r.ci95.hi).toFixed(1)}%]` : ''}`;
+    console.log(`\n======== MARKET (de-vigged BestFightOdds closing consensus) on ${mp.n} test fights ========`);
+    console.log(`market: acc ${pct(mp.market.accuracy)} logloss ${f4(mp.market.logloss)} brier ${f4(mp.market.brier)}  |  model on the same fights: acc ${pct(mp.model.accuracy)} logloss ${f4(mp.model.logloss)} brier ${f4(mp.model.brier)}  |  Δ logloss model − market ${(mp.model.logloss - mp.market.logloss >= 0 ? '+' : '')}${(mp.model.logloss - mp.market.logloss).toFixed(4)}`);
+    console.log(`50/50 logit blend of model and market: logloss ${f4(mp.blend.logloss)} (${mp.blend.logloss < mp.market.logloss ? 'model adds information beyond the market' : 'model adds nothing beyond the market'})  |  model and market pick the same side ${pct(mp.agree)} of the time`);
+    console.log('Flat stake, 1 unit per bet, bet whenever model probability × decimal close > 1 (positive EV after vig):');
+    console.log(roiLine('at consensus close', mp.roi.consensus));
+    console.log(roiLine('at best available close', mp.roi.best));
+    console.log(roiLine('edge ≥ 5% (consensus)', mp.roi.edge5));
+    console.log(roiLine('market betting itself', mp.roi.marketOwn) + '   (sanity: should be ≈ 0 bets, or ≈ −vig)');
+    console.log('per fold: year    n   market   model   blend  | ROI@consensus (bets)  ROI@best (bets)');
+    for (const f of mFolds) console.log(`          ${f.year} ${String(f.market.n).padStart(5)}   ${f4(f.market.market.logloss)}  ${f4(f.market.modelOnSubset.logloss)}  ${f4(f.market.blend.logloss)}  | ${((f.market.roi.consensus.roi || 0) * 100).toFixed(1).padStart(6)}% (${f.market.roi.consensus.bets})   ${((f.market.roi.best.roi || 0) * 100).toFixed(1).padStart(6)}% (${f.market.roi.best.bets})`);
   } else {
-    console.log('Market baseline: SKIPPED — no odds matched to test fights (odds table has ' + oddsRows.length + ' rows).');
+    console.log('Market baseline: SKIPPED — no odds matched to test fights (lines file ' + (lines ? Object.keys(lines).length : 0) + ' fights, odds table ' + oddsRows.length + ' rows).');
   }
 
   // calibration + confidence (pooled)

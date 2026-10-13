@@ -256,10 +256,14 @@ and scorer. It writes nothing to the DB and never touches the model file.
 - **Reports**: per-fold and pooled accuracy / log loss / Brier; baselines fit the same
   way on `win_rate`, `age`, and both; pooled calibration; accuracy per confidence label;
   count of rows with a standardized feature beyond ±3.
-- **Market baseline**: de-vigged closing consensus from the `odds` table (prefers
-  `line_type='closing'`, else latest line per bookmaker; proportional de-vig averaged
-  across books). `odds.fighter1_odds` refers to DB `fighter1_id`; the harness re-orients it
-  through the row's hash flip. Reported as skipped while the table is empty.
+- **Market baseline**: de-vigged closing consensus, from `data/market-lines.json`
+  (BestFightOdds closing range per side → mean implied, proportional de-vig; best price =
+  low end of the range) and, for fights without a line there, the `odds` table (prefers
+  `line_type='closing'`, else latest line per bookmaker, averaged across books). Lines are
+  oriented to DB `fighter1_id`; the harness re-orients through the row's hash flip. Reports
+  market / model / 50-50 logit blend log loss on the same fights, pick agreement, and
+  flat-stake ROI (bet when model p × decimal close > 1) at the consensus and best close
+  with a bootstrap 95% CI, per fold and pooled.
 - **Sanity set** (`sanitySet.json`): lopsided / cross-weight matchups served full-career as
   of today through both the shipped model (with its stored config) and the candidate.
   Pass = expected side gets ≥ `minProb`. Judgment list keyed by fighter slug; edit freely.
@@ -284,6 +288,7 @@ and scorer. It writes nothing to the DB and never touches the model file.
 | `phase1-candidate.json` | +pro_win_rate, pro_fights; v4 config; min-prior 0 | 64.2% / logloss 0.6417 | 11/27 |
 | `phase1-2.json` | 18 features (see below); Elo K 100 ×1.5 finishes; min-prior 0 | 64.8% / logloss 0.6298 | 19/27 |
 | `phase2-age-elo.json` | **shipped v4**: the 18 + `age_elo`; size prior in sanity | 65.2% / logloss 0.6283 | 25/27 |
+| `phase6-market.json` | shipped v4 + market baseline (2,458 fights with a closing line) | model 0.6273 vs market 0.6065 | 25/27 |
 
 Phase-2 findings (2026-10-12): opponent-adjusted striking alone −0.0046 (passes the gate
 on its own); Elo alone −0.0007 at K 40 but keeps improving with larger steps (K 60 −0.0019,
@@ -379,6 +384,48 @@ inputs as the logistic model (`--l2` sweeps the logistic penalty). Results vs th
 (+0.011 to +0.020). Even an additive booster cannot beat the linear fit, so the structure
 is near-linear at this sample size and the plan's ship rule (GBM must win by ≥ 0.005 in
 every fold) is nowhere near met. Keep logistic, L2 = 1e-3, zero intercept.
+
+**Phase 6 — market benchmark (2026-10-12): the model is 0.021 log loss BEHIND the
+closing line and adds nothing to it.** Closing lines come from BestFightOdds fighter
+pages via `scrapers/bestfightodds-lines.js` (INTERNAL BENCHMARKING ONLY — the lines live
+in `src/ml/data/market-lines.json`, are read by `evaluate.js` alone, and must never be
+served by a route or shown on the site; BFO's terms are a bare "as is" disclaimer and
+robots.txt allows all, scrape pace 2 s/request). One fighter page lists open + closing
+range (min…max across books) + event + date for every bout, so one page covers both
+sides of each of that fighter's fights. Identity is resolved along the FIGHT GRAPH: a
+page is accepted for a DB fighter only when its rows match that fighter's DB fights by
+date ±1 (BFO shows the US-evening date) and opponent name; each matched row then pins
+the opponent's BFO id to the DB opponent id exactly, so same-name fighters (Anthony
+Romero ×2, Bruno Silva ×2, Mike Davis, Jean Silva, Joey Gomez, Michael McDonald) are
+never name-matched. Raw HTML is cached under `backend/.cache/bestfightodds` (gitignored)
+so runs are resumable; `--rematch --limit 0` re-parses the cache offline after a matcher
+change. Coverage: 7,303 / 7,682 decided fights since 2010 (95.1%); the first run was
+killed by the OS memory guard at fighter 1,100 with ~379 fights uncovered, mostly
+fighters whose id is known but whose page was never fetched — re-run the script (no
+flags) to finish. Known gaps: BFO keeps duplicate profiles for some fighters (Zhang
+Weili's mapped page stops in 2021), and cancelled/rebooked bouts stay on BFO under the
+original opponent (the bulk of `unmatchedBfoRows`). Cross-check vs the Kaggle "Ultimate
+UFC Dataset" (`crosscheckMarketLines.js --csv ufc-master.csv`, GitHub mirror, no login):
+7,177 rows, 95.0% match a DB fight; of 6,295 fights with both sources 93.7% of Kaggle
+lines fall inside the BFO closing range and 4.2% within 0.03 implied prob; the 2.1%
+"far" rows are Kaggle corner swaps / bad rows (Nunes–Tate, Makhachev–Moicano) and 2020
+rows that look like openers. Harness (`reports/phase6-market.json`, shipped v4 setup):
+
+| on the 2,458 scored test fights 2019–2026 with a line | market (de-vigged close) | model v4 | 50/50 logit blend |
+|---|---|---|---|
+| accuracy | 67.8% | 65.5% | — |
+| log loss | 0.6065 | 0.6273 (+0.0208) | 0.6079 |
+| 2021+ only (1,914 fights) | 0.6023 | 0.6238 (+0.0215) | 0.6038 |
+
+Model beats the close in ONE fold (2021: 0.6339 vs 0.6357) and agrees with it on the
+pick 77% of the time. Flat stake, 1 unit whenever model p × decimal close > 1: at the
+consensus close 2,113 bets, −73 units, ROI −3.5% (95% CI −8.6% … +1.6%); at the best
+available close 2,332 bets, +38 units, +1.6% (CI −3.8% … +6.9%); edge ≥ 5% filter does
+not help (−4.4%). Verdict against the plan's rules: NOT "beats the market"; "sellable"
+rule (within 0.02 of the close) missed by 0.001; far from "drawing board" (≥ 0.04).
+The blend being no better than the market alone is the key fact: everything the model
+knows is already priced in. Harness flags: `--market PATH` (default the lines file),
+`--no-market`.
 
 Phase-1 findings (2026-10-12): shrinkage alone −0.002, pro record alone −0.0027, layoff cap
 −0.0006, win-rate shrink −0.0005, decay and clipping ≈0 alone but decay helps in
