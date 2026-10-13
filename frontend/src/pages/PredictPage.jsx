@@ -24,6 +24,8 @@ export default function PredictPage() {
   const [f1, setF1] = useState(null);
   const [f2, setF2] = useState(null);
   const [weightClass, setWeightClass] = useState('');
+  // null = auto (5 when either fighter is a current champion, else 3); the user can override.
+  const [rounds, setRounds] = useState(null);
   const [prediction, setPrediction] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -42,7 +44,7 @@ export default function PredictPage() {
       if (fighter2) setF2(fighter2);
       if (fighter1 && fighter2) {
         setLoading(true); setError(null); setPrediction(null);
-        getPrediction(fighter1.slug, fighter2.slug, null)
+        getPrediction(fighter1.slug, fighter2.slug, null, null)
           .then(setPrediction)
           .catch(e => setError(e.response?.data?.error || 'Prediction failed. Try again.'))
           .finally(() => setLoading(false));
@@ -54,7 +56,7 @@ export default function PredictPage() {
     if (!f1 || !f2) return;
     setLoading(true); setError(null); setPrediction(null);
     try {
-      const data = await getPrediction(f1.slug, f2.slug, weightClass || null);
+      const data = await getPrediction(f1.slug, f2.slug, weightClass || null, rounds);
       setPrediction(data);
     } catch (e) {
       setError(e.response?.data?.error || 'Prediction failed. Try again.');
@@ -64,6 +66,9 @@ export default function PredictPage() {
   };
 
   const canPredict = f1 && f2 && f1.slug !== f2.slug;
+  // Toggle display: explicit choice, else the auto default (champion -> 5), else what the server used.
+  const autoRounds = (f1?.is_champion || f2?.is_champion) ? 5 : 3;
+  const shownRounds = rounds ?? prediction?.scheduled_rounds ?? autoRounds;
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-8">
@@ -85,7 +90,23 @@ export default function PredictPage() {
         <FighterSelector label="Fighter 2" selected={f2} onSelect={setF2} onClear={() => { setF2(null); setPrediction(null); }} />
       </div>
 
-      <div className="flex justify-center mb-6">
+      <div className="flex flex-wrap justify-center gap-3 mb-6">
+        <div className="flex items-center gap-3 bg-dark-3 border border-white/[0.06] rounded-lg px-4 py-2.5">
+          <span className="text-[10px] tracking-[0.2em] text-white/30 uppercase">Rounds</span>
+          <div className="flex rounded overflow-hidden border border-white/[0.08]">
+            {[3, 5].map(n => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => { setRounds(n); setPrediction(null); }}
+                className={`px-3 py-1 text-sm font-display tracking-widest transition-colors ${shownRounds === n ? 'bg-gold text-dark-DEFAULT' : 'text-white/50 hover:text-white'}`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+          <span className="text-[10px] text-white/25">{rounds == null ? (autoRounds === 5 ? 'auto · title fight' : 'auto') : 'manual'}</span>
+        </div>
         <div className="flex items-center gap-3 bg-dark-3 border border-white/[0.06] rounded-lg px-4 py-2.5">
           <span className="text-[10px] tracking-[0.2em] text-white/30 uppercase">Weight Class</span>
           <select
@@ -347,6 +368,9 @@ function PredictionResult({ prediction, f1Name, f2Name }) {
         </p>
       </div>
 
+      {p.scheduled_rounds === 5 && (
+        <p className="text-[11px] text-white/30 text-center">Five-round bout: win probability is unchanged (five-round features did not pass the model gate); method shares add the round 4–5 finish chance from UFC five-round fight data.</p>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="card p-5">
           <div className="text-[10px] tracking-[0.2em] text-white/30 uppercase mb-4">{f1?.first_name} {f1?.last_name} wins by...</div>
@@ -368,8 +392,8 @@ function PredictionResult({ prediction, f1Name, f2Name }) {
 
       {p.round_projections?.length > 0 && (
         <div className="card p-5">
-          <div className="text-[10px] tracking-[0.2em] text-white/30 uppercase mb-1">Round by Round Projection</div>
-          <p className="text-[11px] text-white/30 mb-4">Projected significant strikes attempted per minute — each fighter's round-1 pace and round-to-round trend, shrunk toward the league</p>
+          <div className="text-[10px] tracking-[0.2em] text-white/30 uppercase mb-1">Round by Round Projection · {p.round_projections.length} rounds</div>
+          <p className="text-[11px] text-white/30 mb-4">Projected significant strikes attempted per minute — each fighter's round-1 pace and round-to-round trend, shrunk toward the league{p.round_projections.length > 3 ? ' (rounds 4–5 from each fighter’s own championship-round output where they have it)' : ''}</p>
           <div className="grid grid-cols-[3.5rem_1fr_3.5rem] gap-3 mb-3">
             <span className="text-[10px] tracking-wider text-gold uppercase text-right truncate">{f1?.last_name}</span>
             <span />

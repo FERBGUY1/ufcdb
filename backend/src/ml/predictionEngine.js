@@ -110,13 +110,25 @@ async function getData() {
 //                  (paired, full 5:00 rounds only, so finishes and selection into
 //                  later rounds do not bias it). ~1.09 / 1.13 / 1.18 / 1.25 for R2-R5.
 //   r1Pace  league sig attempts per minute in round 1
+//   finishHazard[r]  { ko, sub, n }: among 5-round bouts that REACHED round r,
+//                  the share ending in that round by KO/TKO or SUB (n = bouts
+//                  reaching it). Rounds 4-5 drive the 5-round method extension.
 function leagueBaselines(timelines) {
   const m = { ko: 0, sub: 0, dec: 0 };
   const rr = {}; let r1Att = 0, r1Sec = 0;
+  const hz = {}; for (let r = 1; r <= 5; r++) hz[r] = { ko: 0, sub: 0, n: 0 };
   for (const tl of timelines.values()) {
     for (const e of tl) {
       const k = methodKey(e.method);
       if (e.result === 'win' && k) m[k]++;
+      // each decided fight appears exactly once as a 'win' entry
+      if (e.result === 'win' && k && e.scheduledRounds === 5) {
+        const fr = k === 'dec' ? 5 : e.finishRound;
+        if (fr != null) for (let r = 1; r <= Math.min(5, fr); r++) {
+          hz[r].n++;
+          if (k !== 'dec' && fr === r) hz[r][k]++;
+        }
+      }
       const r1 = e.rounds.find(r => r.no === 1);
       if (!r1 || r1.me.sig_att == null) continue;
       r1Att += r1.me.sig_att; r1Sec += r1.sec;
@@ -131,7 +143,9 @@ function leagueBaselines(timelines) {
   const n = m.ko + m.sub + m.dec || 1;
   const roundRatio = { 1: 1 };
   for (let r = 2; r <= 5; r++) roundRatio[r] = rr[r]?.b ? rr[r].a / rr[r].b : 1;
-  return { method: { ko: m.ko / n, sub: m.sub / n, dec: m.dec / n }, roundRatio, r1Pace: r1Sec ? r1Att / (r1Sec / 60) : 8 };
+  const finishHazard = {};
+  for (let r = 1; r <= 5; r++) finishHazard[r] = { ko: hz[r].n ? hz[r].ko / hz[r].n : 0, sub: hz[r].n ? hz[r].sub / hz[r].n : 0, n: hz[r].n };
+  return { method: { ko: m.ko / n, sub: m.sub / n, dec: m.dec / n }, roundRatio, finishHazard, r1Pace: r1Sec ? r1Att / (r1Sec / 60) : 8 };
 }
 const methodKey = m => (!m ? null : /KO/i.test(m) ? 'ko' : /SUB/i.test(m) ? 'sub' : /DEC/i.test(m) ? 'dec' : null);
 
@@ -361,6 +375,33 @@ function applyCutToMethods(m, depletedMove) {
   return { ...m, cutShift: f, koBefore: s.ko, shares: { ko: s.ko + f * (s.sub + s.dec), sub: s.sub * (1 - f), dec: s.dec * (1 - f) } };
 }
 
+// Five-round extension. A fighter's method shares come from a mostly 3-round
+// history, so they describe "how the fight ends inside 15 minutes". In a 5-round
+// bout the decision share must survive rounds 4 and 5 as well: for each extra
+// round the league finish hazard (finishHazard[r], 5-round bouts that reached
+// round r) is scaled by this fighter's own finish propensity relative to the
+// league (own share / league share, clamped) and that slice of the decision
+// path becomes a KO/TKO or SUB path. Probability is conserved, so the shares
+// still sum to 1 and the win probability is untouched.
+const PROPENSITY_MIN = 0.25, PROPENSITY_MAX = 3;
+
+function extendMethodsToRounds(m, rounds, league) {
+  if (!(rounds > 3)) return { ...m, roundsExt: null };
+  const L = league.method;
+  const s = { ...m.shares };
+  const before = { ...m.shares };
+  const prop = k => Math.min(PROPENSITY_MAX, Math.max(PROPENSITY_MIN, L[k] ? s[k] / L[k] : 1));
+  for (let r = 4; r <= Math.min(5, rounds); r++) {
+    const h = league.finishHazard[r];
+    if (!h || !h.n) continue;
+    const hKo = Math.min(0.5, h.ko * prop('ko')), hSub = Math.min(0.5, h.sub * prop('sub'));
+    const moved = s.dec * Math.min(1, hKo + hSub);
+    const tot = hKo + hSub || 1;
+    s.ko += moved * (hKo / tot); s.sub += moved * (hSub / tot); s.dec -= moved;
+  }
+  return { ...m, shares: s, roundsExt: { before, rounds } };
+}
+
 const methodPcts = m => ({
   ko: (m.shares.ko * m.winProb * 100).toFixed(1),
   sub: (m.shares.sub * m.winProb * 100).toFixed(1),
@@ -374,6 +415,13 @@ const methodPcts = m => ({
 // else 3) and an isTitle flag. A title bout in their history -> 5; otherwise the
 // max scheduled rounds across their shared bouts (captures 5-round main events).
 // Never-fought pairings have no reliable signal -> default 3 (never 5).
+// Default for the Predict page: 5 when either fighter is a current champion
+// (title fights are five rounds), else whatever the pair's history says.
+function defaultRounds(f1, f2, tl1) {
+  if (f1.is_champion || f2.is_champion) return 5;
+  return scheduledRoundsForMatchup(tl1, f2.id);
+}
+
 function scheduledRoundsForMatchup(tl1, id2) {
   const shared = (tl1 || []).filter(e => e.oppId === id2);
   if (!shared.length) return 3;
@@ -548,6 +596,11 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   }
   const weightClassContext = await computeWeightClassContext(f1, f2, weightClassId);
 
+  // Rounds requested (3 or 5), else the default. The cache row has no rounds
+  // column; a row's round_projections length records what it was computed for,
+  // so a 5-round request never serves a 3-round row and vice versa.
+  const wantRounds = opts.scheduledRounds === 5 || opts.scheduledRounds === 3 ? opts.scheduledRounds : null;
+
   if (!opts.skipCache) {
     const cacheFilter = 'and(fighter1_id.eq.' + fighter1Id + ',fighter2_id.eq.' + fighter2Id + '),and(fighter1_id.eq.' + fighter2Id + ',fighter2_id.eq.' + fighter1Id + ')';
     let query = supabase
@@ -562,10 +615,11 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
       ? query.is('weight_class_id', null)
       : query.eq('weight_class_id', weightClassId);
     const { data: rows } = await query;
-    const cached = pickCached(rows, fighter1Id);
+    const { timelines: tls } = await getData();
+    const rounds = wantRounds || defaultRounds(f1, f2, tls.get(fighter1Id) || []);
+    const cached = pickCached((rows || []).filter(r => (r.round_projections?.length || 3) === rounds), fighter1Id);
     if (cached) {
-      const { timelines: tls } = await getData();
-      return { ...cached, fighter1: f1, fighter2: f2, weight_class_context: weightClassContext,
+      return { ...cached, scheduled_rounds: rounds, fighter1: f1, fighter2: f2, weight_class_context: weightClassContext,
         style_profiles: { fighter1: styleProfile(snapshot(tls.get(fighter1Id) || [])), fighter2: styleProfile(snapshot(tls.get(fighter2Id) || [])) } };
     }
   }
@@ -576,7 +630,7 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   // Bout context the model was trained with: scheduled rounds (caller may
   // pass opts.scheduledRounds for a known 5-round bout; otherwise inferred
   // from the pair's shared history) and the bout's weight limit.
-  const scheduledRounds = opts.scheduledRounds || scheduledRoundsForMatchup(tl1, fighter2Id);
+  const scheduledRounds = wantRounds || defaultRounds(f1, f2, tl1);
   const bout = { scheduledRounds, weightClassId: weightClassId ?? null, limitLbs: weightClassId != null ? (limitByWc[weightClassId] ?? null) : null };
   const today = new Date().toISOString().split('T')[0];
 
@@ -642,9 +696,18 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
 
   // Method: each side's own finish history; a depleted opponent (extreme or
   // unrealistic cut) moves part of this side's SUB/DEC share to KO/TKO.
-  const m1 = applyCutToMethods(computeMethodBreakdown(tl1, tl2, f1WinProb, league), size.b);
-  const m2 = applyCutToMethods(computeMethodBreakdown(tl2, tl1, f2WinProb, league), size.a);
+  const m1 = applyCutToMethods(extendMethodsToRounds(computeMethodBreakdown(tl1, tl2, f1WinProb, league), scheduledRounds, league), size.b);
+  const m2 = applyCutToMethods(extendMethodsToRounds(computeMethodBreakdown(tl2, tl1, f2WinProb, league), scheduledRounds, league), size.a);
   const f1Methods = methodPcts(m1), f2Methods = methodPcts(m2);
+  if (scheduledRounds > 3) {
+    const pct = (sh, wp) => (sh * wp * 100).toFixed(1);
+    const fin = m => `${pct(m.roundsExt.before.ko + m.roundsExt.before.sub, m.winProb)}% → ${pct(m.shares.ko + m.shares.sub, m.winProb)}%`;
+    const h4 = league.finishHazard[4], h5 = league.finishHazard[5];
+    keyFactors.push(
+      `Five-round bout — win probability is unchanged: five-round experience and championship-round cardio features did not pass the model's evaluation gate, so the model has no learned five-round effect. ` +
+      `Method shares do account for the extra time: in UFC five-round bouts, ${((h4.ko + h4.sub) * 100).toFixed(1)}% of fights reaching round 4 end there (${(h4.ko * 100).toFixed(1)}% KO/TKO, ${(h4.sub * 100).toFixed(1)}% SUB, n=${h4.n}) and ${((h5.ko + h5.sub) * 100).toFixed(1)}% of those reaching round 5 end there (n=${h5.n}); ` +
+      `each fighter's decision path gives up that share, scaled by their own finish rate relative to the league. Chance of a finish: ${name1} ${fin(m1)}, ${name2} ${fin(m2)}.`);
+  }
   for (const [m, name, oppName] of [[m1, name1, name2], [m2, name2, name1]]) {
     if (!m.cutShift) continue;
     const ko = p => (p * m.winProb * 100).toFixed(1);
@@ -657,7 +720,7 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   const roundProjections = computeRoundProjections(f1, f2, tl1, tl2, league, scheduledRounds, size.a, size.b);
   const stats = { f1WinPct: (f1WinProb * 100).toFixed(1), f2WinPct: (f2WinProb * 100).toFixed(1) };
   const hist = m => `UFC wins ${m.history.n}: ${m.history.ko} KO/TKO, ${m.history.sub} SUB, ${m.history.dec} DEC`;
-  const methodLine = `${f1.last_name}: KO ${f1Methods.ko}% / SUB ${f1Methods.sub}% / DEC ${f1Methods.dec}% (${hist(m1)}) — ${f2.last_name}: KO ${f2Methods.ko}% / SUB ${f2Methods.sub}% / DEC ${f2Methods.dec}% (${hist(m2)})`;
+  const methodLine = `${scheduledRounds}-round bout. ${f1.last_name}: KO ${f1Methods.ko}% / SUB ${f1Methods.sub}% / DEC ${f1Methods.dec}% (${hist(m1)}) — ${f2.last_name}: KO ${f2Methods.ko}% / SUB ${f2Methods.sub}% / DEC ${f2Methods.dec}% (${hist(m2)})`;
 
   let aiBreakdown = '';
   if (!opts.skipNarrative) {
@@ -701,7 +764,7 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
       .upsert(prediction, { onConflict: 'fighter1_id,fighter2_id,weight_class_id' });
   }
 
-  return { ...prediction, fighter1: f1, fighter2: f2, weight_class_context: weightClassContext,
+  return { ...prediction, scheduled_rounds: scheduledRounds, fighter1: f1, fighter2: f2, weight_class_context: weightClassContext,
     style_profiles: { fighter1: styleProfile(snap1), fighter2: styleProfile(snap2) } };
 }
 

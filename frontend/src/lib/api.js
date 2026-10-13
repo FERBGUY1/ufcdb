@@ -27,8 +27,9 @@ export const getConsensusOdds = (id)     => api.get(`/odds/${id}/consensus`).the
 export const getSiteStats = () => api.get('/stats/overview').then(r=>r.data);
 
 // ── PREDICTIONS ──────────────────────────────────────────
-export const getPrediction = (slug1, slug2, wcSlug) =>
-  api.post('/predict', { fighter1_slug: slug1, fighter2_slug: slug2, ...(wcSlug && { weight_class_slug: wcSlug }) }).then(r=>r.data);
+// rounds: 3 | 5 | null (null = server default: 5 if either fighter is a champion, else 3)
+export const getPrediction = (slug1, slug2, wcSlug, rounds = null) =>
+  api.post('/predict', { fighter1_slug: slug1, fighter2_slug: slug2, ...(wcSlug && { weight_class_slug: wcSlug }), ...(rounds && { rounds }) }).then(r=>r.data);
 
 // ── RANKINGS ─────────────────────────────────────────────
 export const getAllRankings = ()       => api.get('/rankings/all').then(r=>r.data);
