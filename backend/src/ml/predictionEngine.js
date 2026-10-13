@@ -302,7 +302,9 @@ function proseList(items) {
 // Only intuitive-direction edges are woven into "the case" / "the path" so the
 // prose never reads backwards; counterintuitive factors still show as evidence
 // rows but are omitted here. Purely factual — pick, probability, and numbers.
-function fallbackNarrative(name1, name2, f1Pct, f2Pct, factors) {
+// sizeNote (from the size/weight-cut prior, or null): { favoured, before, after,
+// reason } — percentages for `favoured` on skill alone and after the prior.
+function fallbackNarrative(name1, name2, f1Pct, f2Pct, factors, sizeNote = null) {
   const favIsF1 = f1Pct >= f2Pct;
   const favName = favIsF1 ? name1 : name2;
   const dogName = favIsF1 ? name2 : name1;
@@ -311,16 +313,32 @@ function fallbackNarrative(name1, name2, f1Pct, f2Pct, factors) {
   const item = f => `${f.phrase} (${f.nums})`;
   const favSup = factors.filter(f => f.leader === favName && f.leaderBetter);
   const dogSup = factors.filter(f => f.leader === dogName && f.leaderBetter);
+  const margin = favPct - dogPct;
+  const pct = p => `${p.toFixed(1)}%`;
 
-  const s1 = `The model makes ${favName} the pick at ${favPct.toFixed(1)}% to ${dogName}'s ${dogPct.toFixed(1)}%.`;
-  const s2 = favSup.length
-    ? `Its case is built on ${proseList(favSup.map(item))}.`
-    : `Its edge is thin and rests on small statistical margins rather than any one dominant advantage.`;
+  const s1 = `The model makes ${favName} the pick at ${pct(favPct)} to ${dogName}'s ${pct(dogPct)}.`;
+  let s2;
+  if (sizeNote && sizeNote.favoured === favName) {
+    // the prior moved the odds toward the favourite: say how much is size, not skill
+    const skill = sizeNote.before >= 50
+      ? `${favName} would be ${pct(sizeNote.before)}`
+      : `${dogName} would be the pick at ${pct(100 - sizeNote.before)}`;
+    s2 = `Most of that comes from size, not skill: on the fight statistics alone ${skill}, and a hand-set weight-cut adjustment (${sizeNote.reason}) moves ${favName} to ${pct(sizeNote.after)}.` +
+      (favSup.length ? ` On the statistics, ${favName} also has ${proseList(favSup.slice(0, 2).map(item))}.` : '');
+  } else {
+    s2 = favSup.length
+      ? `Its case is built on ${proseList(favSup.map(item))}.`
+      : margin < 12
+        ? `Its edge is thin and rests on small statistical margins rather than any one dominant advantage.`
+        : `No single statistic carries it; the edge comes from many small margins adding up.`;
+    if (sizeNote) s2 += ` A hand-set weight-cut adjustment (${sizeNote.reason}) pulls it toward ${dogName}, from ${pct(100 - sizeNote.before)} on statistics alone.`;
+  }
   const s3 = dogSup.length
     ? ` ${dogName}'s path runs through ${proseList(dogSup.slice(0, 2).map(item))}.`
     : '';
-  const margin = favPct - dogPct;
-  const s4 = margin >= 25 ? ` The model reads this as a clear edge for ${favName}.`
+  const sizeDriven = sizeNote && sizeNote.favoured === favName && sizeNote.before < 60;
+  const s4 = sizeDriven ? ` The verdict rests on the size assumption rather than on fight data.`
+           : margin >= 25 ? ` The model reads this as a clear edge for ${favName}.`
            : margin >= 12 ? ` On balance it gives ${favName} the nod.`
            : ` It rates the matchup close, with ${favName} a slight favorite.`;
   return s1 + ' ' + s2 + s3 + s4;
@@ -663,6 +681,7 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   };
   const factors = computeFactors(name1, name2, vals1, vals2, contributions, rawZ, sample);
   const keyFactors = factors.map(f => f.row);
+  let sizeNote = null;
   if (size.shift) {
     const favoured = size.shift > 0 ? name1 : name2;
     const pFavBefore = size.shift > 0 ? size.pBefore : 1 - size.pBefore;
@@ -678,6 +697,7 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
     };
     const parts = [describe(name1, size.a), describe(name2, size.b)].filter(Boolean);
     const unrealistic = size.a.cantMakeWeight ? name1 : size.b.cantMakeWeight ? name2 : null;
+    sizeNote = { favoured, before: pFavBefore * 100, after: pFavAfter * 100, reason: parts.join("; ") };
     keyFactors.unshift(
       (unrealistic ? `Weight cut not realistic — ` : `Size adjustment — `) +
       `assumption, not learned from fight data: ${parts.join('; ')}. ` +
@@ -728,7 +748,7 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
       aiBreakdown = await generateNarrative(f1, f2, stats, keyFactors, methodLine);
     } catch (e) {
       console.error('AI narrative failed:', e.message);
-      aiBreakdown = fallbackNarrative(name1, name2, parseFloat(stats.f1WinPct), parseFloat(stats.f2WinPct), factors);
+      aiBreakdown = fallbackNarrative(name1, name2, parseFloat(stats.f1WinPct), parseFloat(stats.f2WinPct), factors, sizeNote);
     }
   }
 
