@@ -76,6 +76,12 @@ const FEATURES = [
   //    serving leaves both null (= a full camp for every hypothetical). Shipped in v5 (2026-10-13). ──
   'replacement',        // 1 = stepped in as a late replacement (Wikipedia Background prose), 0 = original booking
   'notice_days',        // days of notice, capped at 60 (60 = a full camp; replacement with unknown timing = 21)
+  // ── Contender Series (scrapers/wiki-dwcs.js -> dwcs_results). Set by the trainer from the fighter's
+  //    latest DWCS appearance before the bout; non-alumni are 0 on all four. Null at serving = neutral. ──
+  'dwcs',               // 1 = fought on Dana White's Contender Series before this bout
+  'dwcs_won',           // 1 = won that DWCS bout
+  'dwcs_finish',        // 1 = won it by KO/TKO/submission
+  'dwcs_days_to_debut', // days from the DWCS bout to the UFC debut, capped at 730 (0 for non-alumni)
 ];
 
 // Pairwise features are built from BOTH sides in diffVector (antisymmetric
@@ -178,6 +184,10 @@ function sideValues(snap, snapRecent, fighter, asOfDate, cfg = DEFAULT_CONFIG, u
     style_label: ctx.styleLabel ?? null,         // not a model feature; carried for the caller
     replacement: ctx.notice ? ctx.notice.replacement : null, // set by the trainer from short-notice.json; null at serving = neutral
     notice_days: ctx.notice ? ctx.notice.days : null,
+    dwcs: ctx.dwcs ? ctx.dwcs.dwcs : null,                     // set by the trainer from dwcs_results; null at serving = neutral
+    dwcs_won: ctx.dwcs ? ctx.dwcs.won : null,
+    dwcs_finish: ctx.dwcs ? ctx.dwcs.finish : null,
+    dwcs_days_to_debut: ctx.dwcs ? ctx.dwcs.daysToDebut : null,
   };
 }
 

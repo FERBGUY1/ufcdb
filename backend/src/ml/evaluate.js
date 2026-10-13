@@ -70,7 +70,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { loadAll, loadShortNotice, sigmoid, trainLogistic, evaluate, buildDataset, sideFeatures, FIGHT_COLS, FIGHTER_COLS, MIN_PRIOR_STATS_FIGHTS } = require('./trainModel');
+const { loadAll, loadShortNotice, loadDwcs, sigmoid, trainLogistic, evaluate, buildDataset, sideFeatures, FIGHT_COLS, FIGHTER_COLS, MIN_PRIOR_STATS_FIGHTS } = require('./trainModel');
 const { FEATURES, DEFAULT_CONFIG, diffVector, standardize, careerContext } = require('./features');
 const { computeElo, eloOptions } = require('./eloEngine');
 const { applySizePrior } = require('./sizePrior');
@@ -381,7 +381,7 @@ async function main() {
     loadAll('odds', 'fight_id, bookmaker, fighter1_odds, fighter2_odds, line_type, recorded_at'),
     loadAll('weight_classes', 'id, name, limit_lbs'),
   ]);
-  const { rows, timelines, fighterById, priors, elo, limitByWc, skippedInexperienced, imputedWc, missingWc } = buildDataset(fights, events, fighters, { minPriorStatsFights: MIN_PRIOR, cfg: CFG, weightClasses, shortNotice: await loadShortNotice() });
+  const { rows, timelines, fighterById, priors, elo, limitByWc, skippedInexperienced, imputedWc, missingWc } = buildDataset(fights, events, fighters, { minPriorStatsFights: MIN_PRIOR, cfg: CFG, weightClasses, shortNotice: await loadShortNotice(), dwcs: await loadDwcs() });
   const lines = MARKET_PATH && fs.existsSync(MARKET_PATH) ? JSON.parse(fs.readFileSync(MARKET_PATH, 'utf8')) : null;
   const market = buildMarket(oddsRows, lines);
   { // late-replacement coverage and raw win rates (fight_replacements table)
@@ -427,6 +427,22 @@ async function main() {
     console.log(roiLine('at best available close', mp.roi.best));
     console.log(roiLine('edge ≥ 5% (consensus)', mp.roi.edge5));
     console.log(roiLine('market betting itself', mp.roi.marketOwn) + '   (sanity: should be ≈ 0 bets, or ≈ −vig)');
+    // model vs market by prior UFC stats-fights of the THINNER side (0 = a debutant on the card)
+    const bucketOf = n => (n === 0 ? '0' : n <= 2 ? '1-2' : n <= 5 ? '3-5' : '6+');
+    const byExp = {};
+    pooled.rows.forEach((r, i) => {
+      const m = market.get(r.fightId); if (!m) return;
+      const pMarket = r.flip ? 1 - m.p1 : m.p1;
+      const key = bucketOf(Math.min(r.priorA, r.priorB));
+      const o = byExp[key] || (byExp[key] = { n: 0, Lm: 0, Lk: 0, cm: 0, ck: 0 });
+      o.n++; o.Lm += ll(pooled.p[i], r.y); o.Lk += ll(pMarket, r.y);
+      if ((pooled.p[i] > 0.5 ? 1 : 0) === r.y) o.cm++; if ((pMarket > 0.5 ? 1 : 0) === r.y) o.ck++;
+    });
+    console.log('\nmodel vs market by prior UFC stats-fights of the thinner side:  bucket |    n | market ll | model ll |   Δ     | market acc | model acc');
+    for (const k of ['0', '1-2', '3-5', '6+']) { const o = byExp[k]; if (!o) continue;
+      const d = o.Lm / o.n - o.Lk / o.n;
+      console.log(`  ${k.padStart(6)} | ${String(o.n).padStart(4)} |   ${f4(o.Lk / o.n)}  |  ${f4(o.Lm / o.n)}  | ${d >= 0 ? '+' : ''}${d.toFixed(4)} |   ${pct(o.ck / o.n)}   |  ${pct(o.cm / o.n)}`); }
+    marketPooled.byExperience = Object.fromEntries(Object.entries(byExp).map(([k, o]) => [k, { n: o.n, market: o.Lk / o.n, model: o.Lm / o.n, marketAcc: o.ck / o.n, modelAcc: o.cm / o.n }]));
     console.log('per fold: year    n   market   model   blend  | ROI@consensus (bets)  ROI@best (bets)');
     for (const f of mFolds) console.log(`          ${f.year} ${String(f.market.n).padStart(5)}   ${f4(f.market.market.logloss)}  ${f4(f.market.modelOnSubset.logloss)}  ${f4(f.market.blend.logloss)}  | ${((f.market.roi.consensus.roi || 0) * 100).toFixed(1).padStart(6)}% (${f.market.roi.consensus.bets})   ${((f.market.roi.best.roi || 0) * 100).toFixed(1).padStart(6)}% (${f.market.roi.best.bets})`);
   } else {
