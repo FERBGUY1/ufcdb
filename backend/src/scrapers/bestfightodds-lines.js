@@ -124,7 +124,10 @@ async function suggest(name) {
   if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
   if (fetches >= LIMIT) return null;
   fetches++;
-  const data = await paced(`${BASE}/api/suggest?q=${encodeURIComponent(name)}`);
+  // ASCII-fold the query: the endpoint 500s on some diacritics (Uroš Jurišić)
+  const q = name.replace(/[łŁ]/g, 'l').normalize('NFD').replace(/[̀-ͯ]/g, '');
+  let data;
+  try { data = await paced(`${BASE}/api/suggest?q=${encodeURIComponent(q)}`); } catch (e) { console.warn(`  ! suggest failed for ${name}: ${e.message}`); data = []; }
   const list = Array.isArray(data) ? data.filter(x => x.type === 'Fighter').map(x => {
     const m = (x.url || '').match(/\/fighters\/(.*)-(\d+)$/);
     return m ? { name: x.name, slug: m[1], bfoId: +m[2] } : null;
@@ -326,7 +329,9 @@ async function main() {
       if (score > pickScore) { pick = id; pickScore = score; }
     }
     if (!pick) break;
-    const r = idMap.has(pick) ? await processFighter(pick) : await resolveBySuggest(pick);
+    let r;
+    try { r = idMap.has(pick) ? await processFighter(pick) : await resolveBySuggest(pick); }
+    catch (e) { console.warn(`  ! ${fullName(fighterById.get(pick))}: ${e.message} — skipped`); noPage.set(pick, `error: ${e.message}`); processed.add(pick); save(); continue; }
     if (r === 'limited') { limited = true; deferred.add(pick); continue; }
     n++;
     if (n % 25 === 0) {
