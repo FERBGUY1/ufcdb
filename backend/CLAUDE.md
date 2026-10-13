@@ -208,7 +208,7 @@ so it always classifies as stale even when it is on the source card).
 
 ## Predictor (`src/ml/`)
 
-**Shipped model: `model-v4.json`** (written by `trainModel.js`, read by `predictionEngine.js`).
+**Shipped model: `model-v5.json`** (written by `trainModel.js`, read by `predictionEngine.js`; v4 + the two late-replacement features, see below).
 The file carries the feature list, standardization, weights, the **config** it was trained
 under and the **league priors**, so serving always matches training:
 
@@ -242,7 +242,7 @@ on `fights` (`fighterN_quality_score`) are still null — Elo lives in the model
 for the model, raw `snapshot()` for round projections. Confidence: `high`/`medium`/`low` by
 probability margin, capped at `medium` when `weight_class_context.has_size_mismatch`, forced
 `low` when a side has <2 stats-fights or <30 min of stat time. Rate-stat factor rows carry a
-"thin sample" note under 30 min. Cache rows are keyed by `model_version` (`v4`); old `v3`
+"thin sample" note under 30 min. Cache rows are keyed by `model_version` (`v5`); older
 rows are simply never matched.
 
 ### Evaluation (`evaluate.js`, `npm run eval:predictor`)
@@ -289,6 +289,7 @@ and scorer. It writes nothing to the DB and never touches the model file.
 | `phase1-2.json` | 18 features (see below); Elo K 100 ×1.5 finishes; min-prior 0 | 64.8% / logloss 0.6298 | 19/27 |
 | `phase2-age-elo.json` | **shipped v4**: the 18 + `age_elo`; size prior in sanity | 65.2% / logloss 0.6283 | 25/27 |
 | `phase6-market.json` | shipped v4 + market baseline (2,480 fights with a closing line) | model 0.6274 vs market 0.6064 | 25/27 |
+| `phase8-short-notice.json` | **shipped v5**: v4 + `replacement`, `notice_days` (training-only context) | 0.6284 on this subset; 0.6385 vs 0.6415 on all 3,929 | 25/27 |
 
 Phase-2 findings (2026-10-12): opponent-adjusted striking alone −0.0046 (passes the gate
 on its own); Elo alone −0.0007 at K 40 but keeps improving with larger steps (K 60 −0.0019,
@@ -439,6 +440,36 @@ rule (within 0.02 of the close) missed by 0.001; far from "drawing board" (≥ 0
 The blend being no better than the market alone is the key fact: everything the model
 knows is already priced in. Harness flags: `--market PATH` (default the lines file),
 `--no-market`.
+
+**Short-notice replacements — SHIPPED as model-v5 (2026-10-13).** Source:
+Wikipedia event pages, "Background" prose, via the MediaWiki wikitext API
+(`scrapers/wiki-short-notice.js`, descriptive User-Agent, 1.5 s/request, 429 backoff,
+cache `backend/.cache/wiki-short-notice`, gitignored). Parses "replaced by X" / "X stepped
+in / filled in / took the fight"; notice days from the same or previous sentence (explicit
+date = the withdrawal announcement, "two weeks before", "day of the weigh-ins"); each name
+is matched to a fighter on that DB card (full name, else unique surname). Output
+`src/ml/data/short-notice.json` (`fights[fightId] = { fighterId, days, cue, sentence }`,
+committed; TRAINING DATA ONLY). Coverage: 740 events since 2005 → 731 mapped, 708 with a
+Background section; 1,247 mentions → 975 matched (unmatched are mostly bouts later
+scrapped); 948 fights with a replacement, 424 with a notice time, 243 ≤ 21 days.
+Replacements win 40.4% (n=928), ≤ 21-day replacements 34.4% (n=241). `npm run weekly` reruns
+the scraper (`--since` the first applied card's year; old pages come from the cache) and the
+JSON must be committed afterwards.
+
+Features (`features.js`, filled by `trainModel.noticeFor`): `replacement` (0/1) and
+`notice_days` (capped at 60; 60 = full camp; replaced with unknown timing = 21). At serving
+both are null → diff 0, so every hypothetical assumes a full camp and the Predict page is
+unchanged (sanity 25/27 before and after; no FACTOR_META, the null filter drops them). A
+binary `short_notice` (≤ 21 days) was redundant (+0.0003 if removed, 6/8 folds) and deleted.
+Gate vs the shipped 19 (full 3,929-fight scoring, baseline 0.6415): `replacement` alone
+−0.0023 (0 folds worse), `notice_days` −0.0028 (1), both −0.0030 (1: 2023 +0.0010) →
+pooled 0.6385 (64.0%). The gain is entirely on thin-history rows: on the min-prior-2 subset
+v5 is 0.6284 vs v4 0.6283 (+0.0003 mean, 4 folds worse). Coefficients: replacement +0.137,
+notice_days +0.283 (standardized). Market benchmark rerun (`reports/phase8-short-notice.json`,
+2,480 fights with a line): market 0.6064, model 0.6277 (+0.0213, was +0.0210), blend 0.6079,
+pick agreement 77.7%, ROI −2.7% at the consensus close / +2.3% at the best close (both CIs
+span 0) — the market verdict is unchanged. `model-v4.json` deleted; cache rows are keyed
+`v5` (fight_predictions cleared before deploy).
 
 **Decision quality in Elo (2026-10-13): gated, nothing shipped.** `eloEngine.js` takes
 `decision` = `none` | `method` (U-DEC ×1, M-DEC ×midpoint, S-DEC ×floor on K) | `cards` (K ×

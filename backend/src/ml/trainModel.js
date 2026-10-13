@@ -1,6 +1,6 @@
 /**
  * trainModel.js — train the shipped predictor (logistic regression) and write
- * src/ml/model-v4.json.
+ * src/ml/model-v5.json.
  *
  * Dataset: every completed fight with a winner (TRAIN_MIN_PRIOR prior
  * stats-fights per side; 0 = debutants included). Features are computed with
@@ -19,7 +19,7 @@
  * set, market baseline) use src/ml/evaluate.js — it imports the dataset
  * builder, trainer and scorer from here so the two can never drift.
  *
- * Output: src/ml/model-v3.json (weights, standardization, metrics) — read by
+ * Output: src/ml/model-v5.json (weights, standardization, metrics) — read by
  * predictionEngine.js. Writes NOTHING to the database.
  *
  * Run: node -r dotenv/config src/ml/trainModel.js
@@ -36,7 +36,21 @@ const { FEATURES, DEFAULT_CONFIG, sideFeatures, ufcResultsOnOrAfter, diffVector,
 const SPLIT_DATE = '2024-01-01';
 const MIN_PRIOR_STATS_FIGHTS = 2;   // harness default (Phase-0 comparability)
 const PRIOR_CUTOFF = '2019-01-01'; // league priors use only fights before the first evaluation fold
-const MODEL_PATH = path.join(__dirname, 'model-v4.json');
+const MODEL_PATH = path.join(__dirname, 'model-v5.json');
+// Late replacements per fight (scrapers/wiki-short-notice.js). Shipped in v5 (2026-10-13): replacement + notice_days
+// passed the gate (-0.0030 mean, worse only 2023 +0.0010); a binary short_notice (<= 21 days) was redundant with them.
+// Optional file: without it every row is a full camp (feature diff 0).
+const SHORT_NOTICE_PATH = path.join(__dirname, 'data', 'short-notice.json');
+const SHORT_NOTICE_DAYS = 21;
+function loadShortNotice() {
+  if (!fs.existsSync(SHORT_NOTICE_PATH)) return {};
+  return JSON.parse(fs.readFileSync(SHORT_NOTICE_PATH, 'utf8')).fights || {};
+}
+// Per-side notice context for a training row: a full camp unless this fighter was the replacement.
+function noticeFor(rec, fighterId) {
+  if (!rec || rec.fighterId !== fighterId) return { replacement: 0, days: 60 };
+  return { replacement: 1, days: rec.days != null ? Math.min(60, rec.days) : SHORT_NOTICE_DAYS };
+}
 
 // What the SHIPPED model is trained with (Phases 1+2, chosen with evaluate.js
 // on 2026-10-12: pooled logloss 0.6482 -> 0.6417 (Phase 1) -> 0.6317 (Phase 2)
@@ -163,6 +177,7 @@ function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIO
   const timelines = annotateOpponentPriors(buildTimelines(fights, eventById));
   const priors = cfg.shrinkMinutes > 0 ? computePriors(timelines, PRIOR_CUTOFF) : null;
   const elo = computeElo(fights, eventById, eloOptions(cfg));
+  const shortNotice = loadShortNotice();
   // style-vs-style record, point-in-time per fight (styleEngine)
   const styleHist = buildStylePairHistory(fights, eventById, timelines, { halfLifeDays: cfg.halfLifeDays, shrinkMinutes: cfg.shrinkMinutes, priors });
 
@@ -193,6 +208,9 @@ function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIO
     // pre-fight style-vs-style edge, stored for DB fighter1; A is fighter1 unless flipped
     const e1 = styleHist.edgeByFight.get(f.id) ?? 0;
     a.style_pair_edge = flip ? -e1 : e1; b.style_pair_edge = -a.style_pair_edge;
+    const na = noticeFor(shortNotice[f.id], aId), nb = noticeFor(shortNotice[f.id], bId);
+    Object.assign(a, { replacement: na.replacement, notice_days: na.days });
+    Object.assign(b, { replacement: nb.replacement, notice_days: nb.days });
     rows.push({
       date: ev.date, fightId: f.id, weightClassId: wcId, method: f.method || null, bout,
       x: diffVector(a, b), y: label, a, b, flip, minPriorStats: Math.min(prior1, prior2),
@@ -202,7 +220,7 @@ function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIO
 }
 
 async function main() {
-  console.log('Predictor v4 training\n');
+  console.log('Predictor v5 training\n');
   const events = await loadAll('events', 'id, date');
   const fights = await loadAll('fights', FIGHT_COLS);
   const fighters = await loadAll('fighters', FIGHTER_COLS);
@@ -270,7 +288,7 @@ async function main() {
   }
 
   fs.writeFileSync(MODEL_PATH, JSON.stringify({
-    version: 'v4',
+    version: 'v5',
     trainedAt: new Date().toISOString(),
     splitDate: SPLIT_DATE,
     minPriorStatsFights: TRAIN_MIN_PRIOR,

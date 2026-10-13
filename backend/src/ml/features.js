@@ -72,6 +72,10 @@ const FEATURES = [
   'style_pair_edge',    // historical win rate of own style label vs opponent's, before the fight, minus 50% (antisymmetric)
   'pair_td_threat',     // PAIRWISE: own TD/15 x (100 - opp TD defense) — computed in diffVector from both sides
   'pair_strike_threat', // PAIRWISE: own SLpM x (100 - opp striking defense)
+  // ── Late replacements (scrapers/wiki-short-notice.js -> data/short-notice.json). Training-only context:
+  //    serving leaves both null (= a full camp for every hypothetical). Shipped in v5 (2026-10-13). ──
+  'replacement',        // 1 = stepped in as a late replacement (Wikipedia Background prose), 0 = original booking
+  'notice_days',        // days of notice, capped at 60 (60 = a full camp; replacement with unknown timing = 21)
 ];
 
 // Pairwise features are built from BOTH sides in diffVector (antisymmetric
@@ -172,6 +176,8 @@ function sideValues(snap, snapRecent, fighter, asOfDate, cfg = DEFAULT_CONFIG, u
     style_ctrl: snap.ctrl_pct ?? null,
     style_pair_edge: ctx.stylePairEdge ?? null, // set by the caller once both labels are known
     style_label: ctx.styleLabel ?? null,         // not a model feature; carried for the caller
+    replacement: ctx.notice ? ctx.notice.replacement : null, // set by the trainer from short-notice.json; null at serving = neutral
+    notice_days: ctx.notice ? ctx.notice.days : null,
   };
 }
 

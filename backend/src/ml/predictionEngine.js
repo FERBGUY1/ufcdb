@@ -1,7 +1,7 @@
 /**
- * AI Fight Prediction Engine — v4
+ * AI Fight Prediction Engine — v5
  *
- * Serves the trained logistic model (src/ml/model-v4.json, produced by
+ * Serves the trained logistic model (src/ml/model-v5.json, produced by
  * trainModel.js): real per-fight stats -> statsEngine snapshots under the
  * model's stored config (shrinkage toward league priors, recency decay,
  * layoff cap, z-clipping) -> standardized feature differentials -> calibrated
@@ -22,8 +22,8 @@ const { styleProfile } = require('./styleEngine');
 const { FEATURES, DEFAULT_CONFIG, sideFeatures, diffVector, standardize } = require('./features');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const MODEL = require(path.join(__dirname, 'model-v4.json'));
-const MODEL_VERSION = MODEL.version || 'v4';
+const MODEL = require(path.join(__dirname, 'model-v5.json'));
+const MODEL_VERSION = MODEL.version || 'v5';
 const CFG = { ...DEFAULT_CONFIG, ...(MODEL.config || {}) };
 const PRIORS = MODEL.priors || null;
 const MODEL_IDX = MODEL.features.map(n => FEATURES.indexOf(n)); // model subset -> FEATURES positions

@@ -17,7 +17,9 @@
  *      a main/prelim boundary and are left for a human.
  *   4. If any event was applied: rankings.js -> computeCareerStats.js ->
  *      computeRatings.js (both scoped to the applied cards' fighters) ->
- *      fix-fighter-records.js -> validate.js. These still run when a later event
+ *      fix-fighter-records.js -> wiki-short-notice.js (late-replacement lookup for
+ *      the predictor's training data, src/ml/data/short-notice.json — commit it) ->
+ *      validate.js. These still run when a later event
  *      was unclean, so the events that did land are never left half-processed.
  *
  * Output is one line per step; full child output goes to a log file in the OS temp
@@ -222,6 +224,13 @@ async function main() {
   r = run(['src/scrapers/fix-fighter-records.js']);
   m = lastMatch(r.out, /Done -- (\d+) updated, (\d+) errors/);
   step('fix-fighter-records.js', m ? `${m[1]} fighters updated, ${m[2]} errors` : `exit ${r.status}, no completion line`, r.status === 0 && !!m && m[2] === '0');
+
+  // Late replacements for the new cards (Wikipedia Background prose) -> src/ml/data/short-notice.json.
+  // Earlier events are served from the cache, so only the new pages are fetched.
+  const sinceYear = applied.map(e => e.ev.date).sort()[0].slice(0, 4);
+  r = run(['src/scrapers/wiki-short-notice.js', '--since', sinceYear]);
+  m = lastMatch(r.out, /Fights with a replacement on file: (\d+); with days known: (\d+)/);
+  step('wiki-short-notice.js', m ? `${m[1]} replacement bouts on file (${m[2]} with notice days) — commit src/ml/data/short-notice.json` : `exit ${r.status}, no completion line`, r.status === 0 && !!m);
 
   r = run(['src/validate.js']);
   const pass = /All checks passed/.test(r.out);

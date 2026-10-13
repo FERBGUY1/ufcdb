@@ -384,6 +384,12 @@ async function main() {
   const { rows, timelines, fighterById, priors, elo, limitByWc, skippedInexperienced, imputedWc, missingWc } = buildDataset(fights, events, fighters, { minPriorStatsFights: MIN_PRIOR, cfg: CFG, weightClasses });
   const lines = MARKET_PATH && fs.existsSync(MARKET_PATH) ? JSON.parse(fs.readFileSync(MARKET_PATH, 'utf8')) : null;
   const market = buildMarket(oddsRows, lines);
+  { // short-notice data coverage and raw win rates (data/short-notice.json)
+    const isRep = (v, maxDays) => v.replacement === 1 && (maxDays == null || (v.notice_days != null && v.notice_days <= maxDays));
+    const side = (r, maxDays) => (isRep(r.a, maxDays) && !isRep(r.b) ? 'a' : isRep(r.b, maxDays) && !isRep(r.a) ? 'b' : null);
+    const tally = maxDays => { let n = 0, w = 0; for (const r of rows) { const s = side(r, maxDays); if (!s) continue; n++; if ((s === 'a') === (r.y === 1)) w++; } return n ? `${n} fights, wins ${pct(w / n)}` : 'none'; };
+    console.log(`Short-notice data: replacement ${tally(null)}  |  notice <= 21 days ${tally(21)}`);
+  }
   console.log(`Rows: ${rows.length} usable fights (skipped ${skippedInexperienced} with a side under ${MIN_PRIOR} prior stats-fights)  |  market lines on ${market.size} fights (${lines ? Object.keys(lines).length + ' from ' + path.basename(MARKET_PATH) : 'no lines file'}, odds table ${oddsRows.length} rows)  |  bout weight class imputed ${imputedWc}, unknown ${missingWc}`);
 
   // ── Main run
