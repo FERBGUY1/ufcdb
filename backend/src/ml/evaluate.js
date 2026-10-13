@@ -326,10 +326,14 @@ function runSanity(timelines, fighterById, candidate, fights, events, limitByWc 
     return { names: m.features, mu: m.mu, sigma: m.sigma, w: m.w, b: m.b, cfg, priors: m.priors || null, elo };
   })() : null;
   const today = new Date().toISOString().slice(0, 10);
-  // Bout context as the Predict page derives it: the bout is in fighter1's
-  // natural division (modal weight class over the full career), 3 rounds.
-  const boutFor = f => {
-    const wc = careerContext(timelines.get(f.id) || [], today, null, limitByWc).modalWeightClassId;
+  // Bout context as the Predict page derives it when no weight is given: the
+  // bout is in the HEAVIER fighter's natural division (modal weight class over
+  // the full career; the smaller fighter moves up), 3 rounds.
+  const boutFor = (f, g) => {
+    const wcOf = x => careerContext(timelines.get(x.id) || [], today, null, limitByWc).modalWeightClassId;
+    const w1 = wcOf(f), w2 = wcOf(g);
+    const l1 = w1 != null ? limitByWc[w1] ?? -1 : -1, l2 = w2 != null ? limitByWc[w2] ?? -1 : -1;
+    const wc = l2 > l1 ? w2 : (w1 ?? w2);
     return { scheduledRounds: 3, weightClassId: wc, limitLbs: wc != null ? (limitByWc[wc] ?? null) : null };
   };
   // full career (no cutoff), decay measured back from today
@@ -339,14 +343,14 @@ function runSanity(timelines, fighterById, candidate, fights, events, limitByWc 
     const A = bySlug.get(pr.f1), B = bySlug.get(pr.f2);
     if (!A || !B) { results.push({ ...pr, missing: !A ? pr.f1 : pr.f2 }); continue; }
     const want = pr.expect === 'f2' ? 'f2' : 'f1';
-    const bout = boutFor(A);
+    const bout = boutFor(A, B);
     // The size prior (sizePrior.js) is applied here exactly as the engine
     // applies it at serving time. It never touches the fold evaluation above.
     const one = model => {
       if (!model) return null;
       const va = vals(A, model, bout), vb = vals(B, model, bout);
       const s = serveWith(model, va, vb);
-      const size = applySizePrior(s.p, va.natural_limit, vb.natural_limit);
+      const size = applySizePrior(s.p, va.natural_limit, vb.natural_limit, bout.limitLbs);
       const pExp = want === 'f1' ? size.p : 1 - size.p;
       const skillExp = want === 'f1' ? s.p : 1 - s.p;
       return { pExpected: pExp, pass: pExp >= pr.minProb, zmax: s.zmax, top: `${s.top.f}${s.top.c >= 0 ? '+' : ''}${s.top.c.toFixed(2)}`, sizeGap: size.gap, skillOnly: skillExp };

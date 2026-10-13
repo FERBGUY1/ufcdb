@@ -315,16 +315,28 @@ DB rows are untouched, `fix-fight-weight-class.js` would need the ufcstats gate 
 fix them properly); serving reads `opts.scheduledRounds` or the pair's shared history, and
 the bout weight class the route derived.
 
-**Size prior (`sizePrior.js`, user decision 2026-10-12).** A hand-set log-odds shift
-toward the naturally bigger fighter, applied ON TOP of the model's skill estimate at serving
-time and in the sanity set, never inside the fold evaluation. Gap = divisions between the
-two NATURAL divisions (modal weight class) on the ladder 115/125/135/145/155/170/185/205/265.
-Gap 0–1: nothing (Volkanovski–Makhachev 1 reads 45/55 on skill, Makhachev won). Gap ≥ 2:
-`1.10·x + 0.05·x²` with x = gap − 1 → +1.15 at 2 divisions (Makhachev vs Chimaev 41%, vs
-Strickland 69%), +5.2 at 5 (Topuria vs Ngannou 0.8/99.2). Shown as the first key factor
-("Size adjustment (assumption, not learned from fight data) … moved X from a% on skill alone
-to b%"); confidence forced to `low` for gap ≥ 2. Sanity set 25/27 with it (the two misses are
-same-division direction-only pairs).
+**Size / weight-cut prior (`sizePrior.js`, user decisions 2026-10-12, v2 bout-weight-aware).**
+A hand-set log-odds shift applied ON TOP of the model's skill estimate at serving time and
+in the sanity set, never inside the fold evaluation. Both fighters' NATURAL divisions (modal
+weight class) and the BOUT limit sit on the ladder 115/125/135/145/155/170/185/205/265
+(fractional rung for a catchweight, so both effects apply proportionally). Each fighter
+moves from natural to bout weight and pays a penalty; net shift toward A = penalty(B) −
+penalty(A), so equal moves cancel:
+- moving UP u divisions: 0 for u ≤ 1; `1.10·x + 0.05·x²`, x = u − 1 → 1.15 / 2.40 / 3.75 /
+  5.20 at 2 / 3 / 4 / 5 (Topuria at heavyweight → Ngannou 99%; Makhachev at MW vs Chimaev
+  37%, vs Strickland 68%).
+- cutting DOWN d divisions: 0 for d ≤ 1; 2.0 at 2 ("extreme cut"); 5.0 at 3 and +1.5 per
+  further division ("not a realistic weight cut" — odds flip to the fighter at natural
+  weight, with that wording in the factor); knots interpolate linearly.
+- DJ (125) vs Chimaev (185): flyweight 99.8% DJ, bantamweight 99.1% DJ, welterweight 99.6%
+  Chimaev, middleweight 99.9% Chimaev. Skill alone says Chimaev 85.7%.
+Shown as the first key factor ("Size adjustment —" or "Weight cut not realistic —
+assumption, not learned from fight data: … moved X from a% on skill alone to b%");
+confidence forced to `low` when either fighter moves ≥ 2 divisions either way. **Default bout
+weight when the request gives none = the HEAVIER fighter's natural division** (engine and
+sanity set alike), so the default is slot-order independent and A-vs-B still mirrors B-vs-A;
+it used to be fighter1's division, which would have made DJ-vs-Chimaev and Chimaev-vs-DJ
+disagree. Sanity set 25/27 (the two misses are same-division direction-only pairs).
 
 **Mirror symmetry.** P(A beats B) must equal 1 − P(B beats A). Two things broke it: a
 fitted mean in standardization (fixed: `mu = 0`, `sigma` = RMS, in both `trainModel.fit`

@@ -412,7 +412,13 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   if (!f1 || !f2) throw new Error('One or both fighters not found');
 
   if (!weightClassId) {
-    weightClassId = (await deriveNaturalWeightClassId(f1.id)) ?? f1.primary_weight_class_id ?? null;
+    // No bout weight given: use the HEAVIER fighter's natural division, so the
+    // default does not depend on slot order (A-vs-B must mirror B-vs-A).
+    const { limitByWc: lim } = await getData();
+    const [n1, n2] = await Promise.all([deriveNaturalWeightClassId(f1.id), deriveNaturalWeightClassId(f2.id)]);
+    const c1 = n1 ?? f1.primary_weight_class_id ?? null, c2 = n2 ?? f2.primary_weight_class_id ?? null;
+    const l1 = c1 != null ? lim[c1] ?? -1 : -1, l2 = c2 != null ? lim[c2] ?? -1 : -1;
+    weightClassId = l2 > l1 ? c2 : (c1 ?? c2);
   }
   const weightClassContext = await computeWeightClassContext(f1, f2, weightClassId);
 
@@ -456,28 +462,45 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   const vals2 = sideFeatures(tl2, f2, today, null, CFG, PRIORS, elo, bout, limitByWc);
   const { p: skillProb, contributions } = predictProb(diffVector(vals1, vals2));
 
-  // Size prior (sizePrior.js): a hand-set log-odds shift toward the naturally
-  // bigger fighter once the natural-division gap is two or more divisions.
-  // It is an assumption, not learned from fight data — UFC cards hold no
-  // such bouts — so it is applied on top of the model's skill estimate and
-  // shown as its own factor. Gaps of 0-1 divisions get nothing.
-  const size = applySizePrior(skillProb, vals1.natural_limit, vals2.natural_limit);
+  // Size / weight-cut prior (sizePrior.js): a hand-set log-odds shift that
+  // depends on the BOUT weight. Each fighter moves from natural division to
+  // the bout limit: moving up 2+ divisions costs the escalating size penalty,
+  // cutting down 2 is an extreme cut, cutting 3+ is treated as a cut the
+  // fighter cannot realistically make. It is an assumption, not learned from
+  // fight data — UFC cards hold no such bouts — so it is applied on top of the
+  // model's skill estimate and shown as its own factor. Moves of 0-1 divisions
+  // get nothing. An unknown bout weight defaults to the heavier fighter's
+  // division (slot-order independent, so A-vs-B still mirrors B-vs-A).
+  const size = applySizePrior(skillProb, vals1.natural_limit, vals2.natural_limit, bout.limitLbs);
   const f1WinProb = size.p;
   const f2WinProb = 1 - f1WinProb;
-  const crossWeight = size.gap != null && size.gap >= 2;
+  const crossWeight = Math.max(Math.abs(size.a.move ?? 0), Math.abs(size.b.move ?? 0)) >= 2;
 
   const name1 = `${f1.first_name} ${f1.last_name}`, name2 = `${f2.first_name} ${f2.last_name}`;
   const factors = computeFactors(name1, name2, vals1, vals2, contributions);
   const keyFactors = factors.map(f => f.row);
-  if (crossWeight) {
-    const bigger = size.biggerIsA ? name1 : name2;
-    const pBiggerBefore = size.biggerIsA ? size.pBefore : 1 - size.pBefore;
-    const pBiggerAfter = size.biggerIsA ? size.p : 1 - size.p;
+  if (size.shift) {
+    const favoured = size.shift > 0 ? name1 : name2;
+    const pFavBefore = size.shift > 0 ? size.pBefore : 1 - size.pBefore;
+    const pFavAfter = size.shift > 0 ? size.p : 1 - size.p;
+    const divs = n => `${n.toFixed(n % 1 ? 1 : 0)} division${Math.abs(n - 1) < 1e-9 ? '' : 's'}`;
+    const describe = (name, m) => {
+      if (!m.move) return null;
+      if (m.cantMakeWeight) return `${name} would have to cut ${divs(m.down)} (natural ${m.natural} lb to a ${size.boutLimit} lb bout) — not a realistic weight cut`;
+      if (m.extremeCut) return `${name} would have to cut ${divs(m.down)} (natural ${m.natural} lb to a ${size.boutLimit} lb bout) — an extreme cut`;
+      if (m.down > 0) return `${name} drops ${divs(m.down)} (${m.natural} to ${size.boutLimit} lb) — routine, no penalty`;
+      if (m.up >= 2) return `${name} moves up ${divs(m.up)} (natural ${m.natural} lb to a ${size.boutLimit} lb bout), giving away size`;
+      return `${name} moves up ${divs(m.up)} (${m.natural} to ${size.boutLimit} lb) — no penalty`;
+    };
+    const parts = [describe(name1, size.a), describe(name2, size.b)].filter(Boolean);
+    const unrealistic = size.a.cantMakeWeight ? name1 : size.b.cantMakeWeight ? name2 : null;
     keyFactors.unshift(
-      `Size adjustment (assumption, not learned from fight data): ${bigger} is ${size.gap} divisions heavier by natural division ` +
-      `(${Math.max(vals1.natural_limit, vals2.natural_limit)} vs ${Math.min(vals1.natural_limit, vals2.natural_limit)} lb). ` +
-      `A hand-set prior of +${Math.abs(size.shift).toFixed(2)} log-odds moved ${bigger} from ${(pBiggerBefore * 100).toFixed(1)}% on skill alone to ${(pBiggerAfter * 100).toFixed(1)}%. ` +
-      `No UFC bouts span a gap this size, so the skill numbers below compare the two as if same-sized.`);
+      (unrealistic ? `Weight cut not realistic — ` : `Size adjustment — `) +
+      `assumption, not learned from fight data: ${parts.join('; ')}. ` +
+      `A hand-set prior of ${size.shift > 0 ? '+' : ''}${size.shift.toFixed(2)} log-odds moved ${favoured} from ${(pFavBefore * 100).toFixed(1)}% on skill alone to ${(pFavAfter * 100).toFixed(1)}%. ` +
+      (unrealistic
+        ? `The odds are shifted strongly toward the fighter at natural weight because ${unrealistic} could not realistically make this weight; the skill numbers below compare the two as if same-sized.`
+        : `No UFC bouts span a gap this size, so the skill numbers below compare the two as if same-sized.`));
   }
   // Thin data on either side caps confidence at low: fewer than 2 stats-fights
   // or under THIN_SAMPLE_MINUTES of stat time. A size mismatch in the bout
