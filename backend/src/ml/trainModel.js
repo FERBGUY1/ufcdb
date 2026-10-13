@@ -39,12 +39,12 @@ const PRIOR_CUTOFF = '2019-01-01'; // league priors use only fights before the f
 const MODEL_PATH = path.join(__dirname, 'model-v5.json');
 // Late replacements per fight (scrapers/wiki-short-notice.js). Shipped in v5 (2026-10-13): replacement + notice_days
 // passed the gate (-0.0030 mean, worse only 2023 +0.0010); a binary short_notice (<= 21 days) was redundant with them.
-// Optional file: without it every row is a full camp (feature diff 0).
-const SHORT_NOTICE_PATH = path.join(__dirname, 'data', 'short-notice.json');
+// Lives in the fight_replacements table (migration 2026-10-13); npm run weekly refreshes it.
+// buildDataset takes the map as an option (`shortNotice`); an empty map = every row is a full camp (feature diff 0).
 const SHORT_NOTICE_DAYS = 21;
-function loadShortNotice() {
-  if (!fs.existsSync(SHORT_NOTICE_PATH)) return {};
-  return JSON.parse(fs.readFileSync(SHORT_NOTICE_PATH, 'utf8')).fights || {};
+async function loadShortNotice() {
+  const rows = await loadAll('fight_replacements', 'fight_id, fighter_id, days, cue');
+  return Object.fromEntries(rows.map(r => [r.fight_id, { fighterId: r.fighter_id, days: r.days, cue: r.cue }]));
 }
 // Per-side notice context for a training row: a full camp unless this fighter was the replacement.
 function noticeFor(rec, fighterId) {
@@ -170,14 +170,13 @@ function imputeWeightClass(tl1, tl2, date) {
 
 const scheduledRoundsOf = f => (/5 Rnd/i.test(f.time_format || '') ? 5 : 3);
 
-function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIOR_STATS_FIGHTS, cfg = DEFAULT_CONFIG, weightClasses = [] } = {}) {
+function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIOR_STATS_FIGHTS, cfg = DEFAULT_CONFIG, weightClasses = [], shortNotice = {} } = {}) {
   const eventById = Object.fromEntries(events.map(e => [e.id, e]));
   const fighterById = Object.fromEntries(fighters.map(f => [f.id, f]));
   const limitByWc = Object.fromEntries(weightClasses.filter(w => w.limit_lbs != null).map(w => [w.id, w.limit_lbs]));
   const timelines = annotateOpponentPriors(buildTimelines(fights, eventById));
   const priors = cfg.shrinkMinutes > 0 ? computePriors(timelines, PRIOR_CUTOFF) : null;
   const elo = computeElo(fights, eventById, eloOptions(cfg));
-  const shortNotice = loadShortNotice();
   // style-vs-style record, point-in-time per fight (styleEngine)
   const styleHist = buildStylePairHistory(fights, eventById, timelines, { halfLifeDays: cfg.halfLifeDays, shrinkMinutes: cfg.shrinkMinutes, priors });
 
@@ -225,9 +224,10 @@ async function main() {
   const fights = await loadAll('fights', FIGHT_COLS);
   const fighters = await loadAll('fighters', FIGHTER_COLS);
   const weightClasses = await loadAll('weight_classes', 'id, name, limit_lbs');
+  const shortNotice = await loadShortNotice();
 
-  console.log(`Loaded ${fights.length} fights; building timelines...`);
-  const { rows, priors, skippedInexperienced, imputedWc, missingWc } = buildDataset(fights, events, fighters, { minPriorStatsFights: TRAIN_MIN_PRIOR, cfg: TRAIN_CONFIG, weightClasses });
+  console.log(`Loaded ${fights.length} fights, ${Object.keys(shortNotice).length} late replacements; building timelines...`);
+  const { rows, priors, skippedInexperienced, imputedWc, missingWc } = buildDataset(fights, events, fighters, { minPriorStatsFights: TRAIN_MIN_PRIOR, cfg: TRAIN_CONFIG, weightClasses, shortNotice });
   console.log(`Bout weight class: imputed on ${imputedWc} rows, unknown on ${missingWc}`);
   console.log(`Config: ${JSON.stringify(TRAIN_CONFIG)}  features ${TRAIN_FEATURES.length}/${FEATURES.length}`);
   console.log(`Dataset: ${rows.length} fights (skipped ${skippedInexperienced} where a fighter had <${TRAIN_MIN_PRIOR} prior stats-fights)`);
@@ -305,7 +305,7 @@ async function main() {
 }
 
 module.exports = {
-  loadAll, hashFlip, sigmoid, trainLogistic, evaluate, buildDataset, sideFeatures, ufcResultsOnOrAfter, imputeWeightClass, scheduledRoundsOf,
+  loadAll, loadShortNotice, hashFlip, sigmoid, trainLogistic, evaluate, buildDataset, sideFeatures, ufcResultsOnOrAfter, imputeWeightClass, scheduledRoundsOf,
   FIGHT_COLS, FIGHTER_COLS, MIN_PRIOR_STATS_FIGHTS, SPLIT_DATE, PRIOR_CUTOFF, TRAIN_CONFIG, TRAIN_MIN_PRIOR, TRAIN_FEATURES, MODEL_PATH,
 };
 

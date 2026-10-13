@@ -8,10 +8,9 @@
  * fighter was the replacement and (when the text says) how many days before
  * the event they were booked.
  *
- * Output (ML training data only — never served, never written to the DB):
- *   src/ml/data/short-notice.json
- *   { generatedAt, events: { mapped, parsed, unmapped: [...] },
- *     fights: { <fightId>: { fighterId, days, cue, sentence } } }
+ * Output: the fight_replacements table (migration 2026-10-13-fight-replacements.sql),
+ * one row per fight with a replacement: { fight_id, fighter_id, days, cue, sentence }.
+ * Read by the predictor's training path only (trainModel.loadShortNotice).
  *
  *   days   notice in days when the text gives one (an explicit date, "two
  *          weeks before", "on the day of the weigh-ins"); null when it only
@@ -22,6 +21,7 @@
  * is cached under backend/.cache/wiki-short-notice so re-runs are offline.
  *
  * Run: node -r dotenv/config src/scrapers/wiki-short-notice.js [--since YYYY] [--limit N] [--dry-run] [--reparse]
+ *   --reparse  ignore rows already in the table and rebuild every target event from the page cache
  */
 require('dotenv').config();
 const fs = require('fs');
@@ -36,8 +36,7 @@ const opt = (n, d) => { const i = argv.indexOf(`--${n}`); return i > -1 && argv[
 const SINCE = opt('since', '2005');
 const LIMIT = parseInt(opt('limit', '0'));
 const DRY = flag('dry-run');
-const REPARSE = flag('reparse');           // ignore the output file and rebuild from the cache
-const OUT = path.join(__dirname, '..', 'ml', 'data', 'short-notice.json');
+const REPARSE = flag('reparse');           // ignore existing table rows and rebuild from the cache
 const CACHE = path.join(__dirname, '..', '..', '.cache', 'wiki-short-notice');
 const WIKI = 'https://en.wikipedia.org';
 const http = axios.create({ timeout: 20000, headers: { 'User-Agent': 'UFCDBBot/1.0 (https://github.com/FERBGUY1/ufcdb; research use, 1 req/s)' } });
@@ -182,8 +181,9 @@ function extractReplacements(sentences, eventDate) {
   const dbEvents = events.filter(e => e.date >= `${SINCE}-01-01` && e.date <= new Date().toISOString().slice(0, 10) && fightsByEvent.has(e.id)).sort((a, b) => a.date.localeCompare(b.date));
   const targets = LIMIT ? dbEvents.slice(-LIMIT) : dbEvents;
 
-  const prev = !REPARSE && fs.existsSync(OUT) ? JSON.parse(fs.readFileSync(OUT, 'utf8')) : { fights: {} };
-  const result = { generatedAt: new Date().toISOString(), events: { candidates: targets.length, mapped: 0, parsed: 0, unmapped: [], noBackground: [] }, fights: { ...prev.fights } };
+  const prevRows = REPARSE ? [] : await loadAll('fight_replacements', 'fight_id, fighter_id, days, cue, sentence');
+  const result = { events: { candidates: targets.length, mapped: 0, parsed: 0, unmapped: [], noBackground: [] }, fights: Object.fromEntries(prevRows.map(r => [r.fight_id, { fighterId: r.fighter_id, days: r.days, cue: r.cue, sentence: r.sentence }])) };
+  const touched = new Set(); // fights (re)parsed this run: their rows are rewritten
   const stats = { mentions: 0, matched: 0, unmatchedNames: [], cue: {} };
 
   for (const ev of targets) {
@@ -223,7 +223,7 @@ function extractReplacements(sentences, eventDate) {
       stats.cue[r.cue] = (stats.cue[r.cue] || 0) + 1;
       const existing = result.fights[h.fightId];
       // keep the more informative record for a fight already recorded
-      if (!existing || (existing.days == null && r.days != null)) result.fights[h.fightId] = { fighterId: h.id, days: r.days, cue: r.cue, sentence: r.sentence };
+      if (!existing || (existing.days == null && r.days != null)) { result.fights[h.fightId] = { fighterId: h.id, days: r.days, cue: r.cue, sentence: r.sentence }; touched.add(h.fightId); }
     }
     if (LIMIT) console.log(`${ev.date} ${ev.name}: ${sentences.length} sentences, ${extractReplacements(sentences, ev.date).length} replacement mentions`);
   }
@@ -235,6 +235,13 @@ function extractReplacements(sentences, eventDate) {
   console.log(`Fights with a replacement on file: ${known.length}; with days known: ${known.filter(k => k.days != null).length}; days <= 21: ${known.filter(k => k.days != null && k.days <= 21).length}`);
   if (stats.unmatchedNames.length) console.log('Unmatched sample:\n  ' + stats.unmatchedNames.slice(0, 15).join('\n  '));
   if (result.events.unmapped.length) console.log('Unmapped sample:\n  ' + result.events.unmapped.slice(0, 10).join('\n  '));
-  result.stats = { mentions: stats.mentions, matched: stats.matched, unmatched: stats.unmatchedNames.length, cue: stats.cue };
-  if (!DRY) { fs.mkdirSync(path.dirname(OUT), { recursive: true }); fs.writeFileSync(OUT, JSON.stringify(result, null, 1)); console.log(`Wrote ${OUT}`); }
+  if (DRY) { console.log(`Dry run: ${touched.size} rows would be written to fight_replacements`); return; }
+  const rows = [...touched].map(id => ({ fight_id: id, fighter_id: result.fights[id].fighterId, days: result.fights[id].days, cue: result.fights[id].cue, sentence: result.fights[id].sentence, source: 'wikipedia', updated_at: new Date().toISOString() }));
+  let written = 0, errors = 0;
+  for (let i = 0; i < rows.length; i += 200) {
+    const { error } = await supabase.from('fight_replacements').upsert(rows.slice(i, i + 200), { onConflict: 'fight_id' });
+    if (error) { errors++; console.log(`  ! upsert: ${error.message}`); } else written += Math.min(200, rows.length - i);
+  }
+  console.log(`fight_replacements: ${written} rows upserted, ${errors} batch errors, ${Object.keys(result.fights).length} on file`);
+  if (errors) process.exitCode = 1;
 })();

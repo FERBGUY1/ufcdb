@@ -447,14 +447,15 @@ Wikipedia event pages, "Background" prose, via the MediaWiki wikitext API
 cache `backend/.cache/wiki-short-notice`, gitignored). Parses "replaced by X" / "X stepped
 in / filled in / took the fight"; notice days from the same or previous sentence (explicit
 date = the withdrawal announcement, "two weeks before", "day of the weigh-ins"); each name
-is matched to a fighter on that DB card (full name, else unique surname). Output
-`src/ml/data/short-notice.json` (`fights[fightId] = { fighterId, days, cue, sentence }`,
-committed; TRAINING DATA ONLY). Coverage: 740 events since 2005 → 731 mapped, 708 with a
+is matched to a fighter on that DB card (full name, else unique surname). Output: the
+`fight_replacements` table (`src/db/migrations/2026-10-13-fight-replacements.sql`; one row per
+fight: fighter_id, days, cue, sentence; `--reparse` rebuilds it from the page cache), read by
+`trainModel.loadShortNotice` and passed into `buildDataset` as `shortNotice`. TRAINING DATA ONLY. Coverage: 740 events since 2005 → 731 mapped, 708 with a
 Background section; 1,247 mentions → 975 matched (unmatched are mostly bouts later
 scrapped); 948 fights with a replacement, 424 with a notice time, 243 ≤ 21 days.
 Replacements win 40.4% (n=928), ≤ 21-day replacements 34.4% (n=241). `npm run weekly` reruns
-the scraper (`--since` the first applied card's year; old pages come from the cache) and the
-JSON must be committed afterwards.
+the scraper (`--since` the first applied card's year; old pages come from the cache) and upserts
+the new cards' rows — nothing to commit.
 
 Features (`features.js`, filled by `trainModel.noticeFor`): `replacement` (0/1) and
 `notice_days` (capped at 60; 60 = full camp; replaced with unknown timing = 21). At serving
