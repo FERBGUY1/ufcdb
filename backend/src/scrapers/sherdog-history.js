@@ -65,20 +65,39 @@ async function loadAll(table, cols, filter) {
 }
 
 const pageFile = id => path.join(CACHE, `${id}.html`);
+// Fetch with retries. Network errors and non-200 statuses are never fatal:
+// 3 retries at 30 s / 60 s / 120 s, one line per failure, then the fighter is
+// skipped (recorded in progress.json and retried on the next run). A 403 or
+// 429 doubles the base pace for the rest of the run (max 15 s) and says so.
+const RETRY_WAITS = process.env.SHERDOG_RETRY_MS ? process.env.SHERDOG_RETRY_MS.split(",").map(Number) : [30000, 60000, 120000]; // env override for tests
+let delay = DELAY;
+function slowDown(status, sherdogId) {
+  if (delay >= 15000) return;
+  delay = Math.min(15000, delay * 2);
+  console.log(`  HTTP ${status} for ${sherdogId}: slowing the base pace to ${delay / 1000}s between requests for the rest of this run`);
+}
 async function fetchPage(sherdogId) {
   const file = pageFile(sherdogId);
   if (!REFRESH && fs.existsSync(file)) return { html: fs.readFileSync(file, 'utf8'), cached: true };
   if (REPARSE) return null;
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const res = await http.get(`https://www.sherdog.com/fighter/${sherdogId}`);
-    await sleep(DELAY);
-    if (res.status === 200) { fs.writeFileSync(file, res.data); return { html: res.data, cached: false }; }
-    if (res.status === 404) return { html: null, cached: false, status: 404 };
-    const wait = res.status === 429 ? 60000 * (attempt + 1) : 5000 * (attempt + 1);
-    console.log(`  HTTP ${res.status} for ${sherdogId}; waiting ${wait / 1000}s`);
-    await sleep(wait);
+  let last = 'unknown error';
+  for (let attempt = 0; attempt <= RETRY_WAITS.length; attempt++) {
+    let res;
+    try { res = await http.get(`https://www.sherdog.com/fighter/${sherdogId}`); }
+    catch (e) { res = null; last = `${e.code || e.name || 'error'}: ${(e.message || '').split('\n')[0]}`; }
+    await sleep(delay);
+    if (res) {
+      if (res.status === 200) { fs.writeFileSync(file, res.data); return { html: res.data, cached: false }; }
+      if (res.status === 404) return { html: null, cached: false, status: 'HTTP 404' };
+      last = `HTTP ${res.status}`;
+      if (res.status === 403 || res.status === 429) slowDown(res.status, sherdogId);
+    }
+    if (attempt < RETRY_WAITS.length) {
+      console.log(`  ${last} for ${sherdogId}; retry ${attempt + 1}/${RETRY_WAITS.length} in ${RETRY_WAITS[attempt] / 1000}s`);
+      await sleep(RETRY_WAITS[attempt]);
+    }
   }
-  return { html: null, cached: false, status: 'gave up' };
+  return { html: null, cached: false, status: `fetch error: ${last} (gave up after ${RETRY_WAITS.length} retries)` };
 }
 
 const MONTHS = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' };
@@ -168,7 +187,7 @@ async function main() {
     const page = await fetchPage(f.sherdog_id);
     if (!page) continue;                                   // --reparse and no cached page
     if (!page.cached) fetched++;
-    if (!page.html) { missing++; progress.skipped[f.id] = page.status; writeProgress(progress); console.log(`  ${name}: ${page.status}`); continue; }
+    if (!page.html) { if (/^fetch error/.test(page.status)) failed++; else missing++; progress.skipped[f.id] = page.status; writeProgress(progress); console.log(`  SKIP ${name}: ${page.status} (${f.sherdog_id})`); continue; }
     let rows, pro, sections;
     try { ({ rows, pro, sections } = parseHistory(page.html)); }
     catch (e) { failed++; progress.skipped[f.id] = `parse error: ${e.message}`; writeProgress(progress); console.log(`  FAIL ${name}: parse error ${e.message} (${f.sherdog_id})`); continue; }
@@ -198,5 +217,5 @@ async function main() {
   console.log(`\nDone: ${parsed} fighters parsed (${fetched} fetched, rest from cache), ${rowsWritten} rows written, ${skipped} wrong-profile skips, ${missing} missing pages, ${failed} failed (logged in progress.json "skipped")`);
 }
 
-module.exports = { parseHistory, methodClass, parseDate };
+module.exports = { parseHistory, methodClass, parseDate, fetchPage, http };
 if (require.main === module) main().catch(e => { console.error('Fatal:', e); process.exit(1); });
