@@ -596,9 +596,8 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   }
   const weightClassContext = await computeWeightClassContext(f1, f2, weightClassId);
 
-  // Rounds requested (3 or 5), else the default. The cache row has no rounds
-  // column; a row's round_projections length records what it was computed for,
-  // so a 5-round request never serves a 3-round row and vice versa.
+  // Rounds requested (3 or 5), else the default. scheduled_rounds is part of
+  // the cache key, so 3- and 5-round versions of a matchup are cached separately.
   const wantRounds = opts.scheduledRounds === 5 || opts.scheduledRounds === 3 ? opts.scheduledRounds : null;
 
   if (!opts.skipCache) {
@@ -615,11 +614,12 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
       ? query.is('weight_class_id', null)
       : query.eq('weight_class_id', weightClassId);
     const { data: rows } = await query;
+    // (scheduled_rounds is matched in JS below so the default can be derived once)
     const { timelines: tls } = await getData();
     const rounds = wantRounds || defaultRounds(f1, f2, tls.get(fighter1Id) || []);
-    const cached = pickCached((rows || []).filter(r => (r.round_projections?.length || 3) === rounds), fighter1Id);
+    const cached = pickCached((rows || []).filter(r => (r.scheduled_rounds ?? 3) === rounds), fighter1Id);
     if (cached) {
-      return { ...cached, scheduled_rounds: rounds, fighter1: f1, fighter2: f2, weight_class_context: weightClassContext,
+      return { ...cached, fighter1: f1, fighter2: f2, weight_class_context: weightClassContext,
         style_profiles: { fighter1: styleProfile(snapshot(tls.get(fighter1Id) || [])), fighter2: styleProfile(snapshot(tls.get(fighter2Id) || [])) } };
     }
   }
@@ -757,14 +757,15 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
     generated_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     model_version: MODEL_VERSION,
+    scheduled_rounds: scheduledRounds,
   };
 
   if (!opts.skipCache) {
     await supabase.from('fight_predictions')
-      .upsert(prediction, { onConflict: 'fighter1_id,fighter2_id,weight_class_id' });
+      .upsert(prediction, { onConflict: 'fighter1_id,fighter2_id,weight_class_id,scheduled_rounds' });
   }
 
-  return { ...prediction, scheduled_rounds: scheduledRounds, fighter1: f1, fighter2: f2, weight_class_context: weightClassContext,
+  return { ...prediction, fighter1: f1, fighter2: f2, weight_class_context: weightClassContext,
     style_profiles: { fighter1: styleProfile(snap1), fighter2: styleProfile(snap2) } };
 }
 

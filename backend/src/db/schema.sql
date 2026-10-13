@@ -397,8 +397,9 @@ CREATE TABLE IF NOT EXISTS fight_predictions (
   generated_at      TIMESTAMPTZ DEFAULT NOW(),
   expires_at        TIMESTAMPTZ,
   model_version     TEXT DEFAULT 'v2',
+  scheduled_rounds  INTEGER NOT NULL DEFAULT 3,  -- 3 | 5; cached separately
 
-  UNIQUE(fighter1_id, fighter2_id, weight_class_id)
+  UNIQUE(fighter1_id, fighter2_id, weight_class_id, scheduled_rounds)
 );
 
 -- ── RANKINGS ─────────────────────────────────────────────
