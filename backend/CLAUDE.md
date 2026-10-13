@@ -440,20 +440,20 @@ The blend being no better than the market alone is the key fact: everything the 
 knows is already priced in. Harness flags: `--market PATH` (default the lines file),
 `--no-market`.
 
-**Decision quality in Elo (2026-10-13): gated, nothing shipped.**  takes
- =  |  (U-DEC ×1, M-DEC ×midpoint, S-DEC ×floor on K) |  (K ×
+**Decision quality in Elo (2026-10-13): gated, nothing shipped.** `eloEngine.js` takes
+`decision` = `none` | `method` (U-DEC ×1, M-DEC ×midpoint, S-DEC ×floor on K) | `cards` (K ×
 floor + (cap−floor)·dominance, dominance = mean winner margin per card per round from
-, 29-28 ×3 = 0.33, shutout = 1, 97% of decisions since 2001 have cards) |
- (same dominance as a fractional result instead of a K multiplier), with
- / ; config keys  /  / ,
-harness flags  /  / . Against the shipped v4 setup
+`judge1-3_score`, 29-28 ×3 = 0.33, shutout = 1, 97% of decisions since 2001 have cards) |
+`score` (same dominance as a fractional result instead of a K multiplier), with
+`decisionFloor` / `decisionCap`; config keys `eloDecision` / `eloDecisionFloor` / `eloDecisionCap`,
+harness flags `--elo-dec` / `--elo-dec-floor` / `--elo-dec-cap`. Against the shipped v4 setup
 (3,929 scored fights, baseline 0.6415): method floor 0.5 −0.0003 (3 folds worse), cards
 0.25/1.25 −0.0010 (3), score 0.5/1 −0.0010 (2), score 0.25/1 −0.0012 (2), score 0/1 −0.0011 (4);
 nine variants in all, every one worse in 2–4 folds (2021–22 gain, 2020 and 2026 lose), so
-none passes and  stays . Volkanovski vs Evloev moved from 37.7% to
+none passes and `eloDecision` stays `none`. Volkanovski vs Evloev moved from 37.7% to
 39–51% Volkanovski depending on the variant. **MMADecisions.com media scorecards were NOT
 scraped**: its robots.txt allows only a named list of search/social crawlers and ends with
-; there is no terms page. Do not build a scraper for it.
+`User-agent: * Disallow: /`; there is no terms page. Do not build a scraper for it.
 
 Phase-1 findings (2026-10-12): shrinkage alone −0.002, pro record alone −0.0027, layoff cap
 −0.0006, win-rate shrink −0.0005, decay and clipping ≈0 alone but decay helps in
