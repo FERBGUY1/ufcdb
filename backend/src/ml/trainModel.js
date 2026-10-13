@@ -79,6 +79,54 @@ function dwcsFor(list, fightDate, timeline) {
   return { dwcs: 1, won: last.won, finish: last.finish, daysToDebut: Math.min(DWCS_DAYS_CAP, days) };
 }
 
+// Sherdog fight history (scrapers/sherdog-history.js). Lives in sherdog_fights
+// (migration 2026-10-14); until that migration has been run the scraper's
+// fallback file is read instead. TRAINING ONLY — never served.
+// Returns { byFighter: Map fighterId -> pro rows (dated, ascending), bySherdog: Map sherdogId -> fighterId }.
+const SHERDOG_FALLBACK = path.join(__dirname, '..', '..', '.cache', 'sherdog-history', 'sherdog-fights.json');
+const isUfcEvent = name => /^(UFC|Ultimate Fighting Championship)\b/i.test(name || '');
+async function loadSherdogHistory() {
+  let rows;
+  const { error } = await supabase.from('sherdog_fights').select('fighter_id').limit(1);
+  if (!error) rows = await loadAll('sherdog_fights', 'fighter_id, sherdog_id, date, result, opponent_sherdog_id, event_name, method, is_amateur');
+  else if (fs.existsSync(SHERDOG_FALLBACK)) rows = Object.values(JSON.parse(fs.readFileSync(SHERDOG_FALLBACK, 'utf8'))).flat();
+  else return null;
+  const byFighter = new Map(), bySherdog = new Map();
+  for (const r of rows) {
+    if (r.is_amateur || !r.date) continue;
+    bySherdog.set(r.sherdog_id, r.fighter_id);
+    if (!byFighter.has(r.fighter_id)) byFighter.set(r.fighter_id, []);
+    byFighter.get(r.fighter_id).push({ date: r.date, result: r.result, opp: r.opponent_sherdog_id, ufc: isUfcEvent(r.event_name), finish: r.method === 'KO/TKO' || r.method === 'SUB' });
+  }
+  for (const list of byFighter.values()) list.sort((x, y) => (x.date < y.date ? -1 : 1));
+  return { byFighter, bySherdog };
+}
+// Exact pro record as of a date (fights strictly before it) from the Sherdog rows; null when unknown.
+function proRecordAsOf(list, date) {
+  if (!list) return null;
+  let wins = 0, losses = 0;
+  for (const e of list) { if (e.date >= date) break; if (e.result === 'win') wins++; else if (e.result === 'loss') losses++; }
+  return { wins, losses };
+}
+// Regional (non-UFC) context as of a date: finish share of wins, opponent quality, opponent UFC share.
+// Opponent quality = the opponent's own pro win rate as of that fight when their history is loaded
+// (UFC fighters only), shrunk by 2 pseudo-fights; unknown opponents count 50.
+function regionalFor(hist, fighterId, date, firstUfcByFighter) {
+  const list = hist.byFighter.get(fighterId);
+  if (!list) return null;
+  let wins = 0, finishes = 0, n = 0, qualSum = 0, ufcOpp = 0;
+  for (const e of list) {
+    if (e.date >= date || e.ufc) continue;
+    n++;
+    if (e.result === 'win') { wins++; if (e.finish) finishes++; }
+    const oppId = e.opp ? hist.bySherdog.get(e.opp) : null;
+    const rec = oppId ? proRecordAsOf(hist.byFighter.get(oppId), e.date) : null;
+    qualSum += rec ? ((rec.wins + 1) / (rec.wins + rec.losses + 2)) * 100 : 50;
+    if (oppId && firstUfcByFighter[oppId] && firstUfcByFighter[oppId] < e.date) ufcOpp++;
+  }
+  return { finishRate: ((finishes + 1) / (wins + 2)) * 100, oppQuality: n ? qualSum / n : 50, oppUfcShare: n ? (ufcOpp / n) * 100 : 0, fights: n };
+}
+
 // Per-side notice context for a training row: a full camp unless this fighter was the replacement.
 function noticeFor(rec, fighterId) {
   if (!rec || rec.fighterId !== fighterId) return { replacement: 0, days: 60 };
@@ -108,6 +156,8 @@ const TRAIN_EXCLUDED = new Set([
   'style_distance', 'style_clinch', 'style_ground', 'style_ctrl', 'style_pair_edge', 'pair_td_threat', 'pair_strike_threat',
   // Contender Series (2026-10-14): pending gate
   'dwcs', 'dwcs_won', 'dwcs_finish', 'dwcs_days_to_debut',
+  // Sherdog history (2026-10-14): pending gate
+  'regional_finish_rate', 'regional_opp_quality', 'regional_opp_ufc_share', 'pro_record_quality',
 ]);
 const TRAIN_FEATURES = FEATURES.filter(f => !TRAIN_EXCLUDED.has(f));
 
@@ -205,7 +255,7 @@ function imputeWeightClass(tl1, tl2, date) {
 
 const scheduledRoundsOf = f => (/5 Rnd/i.test(f.time_format || '') ? 5 : 3);
 
-function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIOR_STATS_FIGHTS, cfg = DEFAULT_CONFIG, weightClasses = [], shortNotice = {}, dwcs = new Map() } = {}) {
+function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIOR_STATS_FIGHTS, cfg = DEFAULT_CONFIG, weightClasses = [], shortNotice = {}, dwcs = new Map(), sherdog = null } = {}) {
   const eventById = Object.fromEntries(events.map(e => [e.id, e]));
   const fighterById = Object.fromEntries(fighters.map(f => [f.id, f]));
   const limitByWc = Object.fromEntries(weightClasses.filter(w => w.limit_lbs != null).map(w => [w.id, w.limit_lbs]));
@@ -215,6 +265,8 @@ function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIO
   // style-vs-style record, point-in-time per fight (styleEngine)
   const styleHist = buildStylePairHistory(fights, eventById, timelines, { halfLifeDays: cfg.halfLifeDays, shrinkMinutes: cfg.shrinkMinutes, priors });
 
+  const firstUfcByFighter = {};
+  if (sherdog) for (const [id, tl] of timelines) if (tl.length) firstUfcByFighter[id] = tl.reduce((m, e) => (e.date < m ? e.date : m), tl[0].date);
   const rows = [];
   let imputedWc = 0, missingWc = 0;
   let skippedInexperienced = 0;
@@ -248,6 +300,20 @@ function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIO
     const da = dwcsFor(dwcs.get(aId), ev.date, timelines.get(aId)), db = dwcsFor(dwcs.get(bId), ev.date, timelines.get(bId));
     Object.assign(a, { dwcs: da.dwcs, dwcs_won: da.won, dwcs_finish: da.finish, dwcs_days_to_debut: da.daysToDebut });
     Object.assign(b, { dwcs: db.dwcs, dwcs_won: db.won, dwcs_finish: db.finish, dwcs_days_to_debut: db.daysToDebut });
+    if (sherdog) {
+      for (const [side, id] of [[a, aId], [b, bId]]) {
+        const reg = regionalFor(sherdog, id, ev.date, firstUfcByFighter);
+        Object.assign(side, { regional_finish_rate: reg ? reg.finishRate : null, regional_opp_quality: reg ? reg.oppQuality : null, regional_opp_ufc_share: reg ? reg.oppUfcShare : null });
+        if (cfg.proRecordSource === 'sherdog') {
+          const rec = proRecordAsOf(sherdog.byFighter.get(id), ev.date);
+          if (rec) {
+            const kw = cfg.winShrinkFights || 0, n = rec.wins + rec.losses;
+            const rate = n + kw > 0 ? ((rec.wins + kw * 0.5) / (n + kw)) * 100 : null;
+            Object.assign(side, { pro_win_rate: rate, pro_fights: n, pro_record_quality: rate == null ? null : (rate - 50) * Math.min(n, 30) / 100 });
+          }
+        }
+      }
+    }
     rows.push({
       date: ev.date, fightId: f.id, weightClassId: wcId, method: f.method || null, bout,
       x: diffVector(a, b), y: label, a, b, flip, minPriorStats: Math.min(prior1, prior2), priorA: flip ? prior2 : prior1, priorB: flip ? prior1 : prior2,
@@ -264,9 +330,10 @@ async function main() {
   const weightClasses = await loadAll('weight_classes', 'id, name, limit_lbs');
   const shortNotice = await loadShortNotice();
   const dwcs = await loadDwcs();
+  const sherdog = await loadSherdogHistory();
 
   console.log(`Loaded ${fights.length} fights, ${Object.keys(shortNotice).length} late replacements; building timelines...`);
-  const { rows, priors, skippedInexperienced, imputedWc, missingWc } = buildDataset(fights, events, fighters, { minPriorStatsFights: TRAIN_MIN_PRIOR, cfg: TRAIN_CONFIG, weightClasses, shortNotice, dwcs });
+  const { rows, priors, skippedInexperienced, imputedWc, missingWc } = buildDataset(fights, events, fighters, { minPriorStatsFights: TRAIN_MIN_PRIOR, cfg: TRAIN_CONFIG, weightClasses, shortNotice, dwcs, sherdog });
   console.log(`Bout weight class: imputed on ${imputedWc} rows, unknown on ${missingWc}`);
   console.log(`Config: ${JSON.stringify(TRAIN_CONFIG)}  features ${TRAIN_FEATURES.length}/${FEATURES.length}`);
   console.log(`Dataset: ${rows.length} fights (skipped ${skippedInexperienced} where a fighter had <${TRAIN_MIN_PRIOR} prior stats-fights)`);
@@ -344,7 +411,7 @@ async function main() {
 }
 
 module.exports = {
-  loadAll, loadShortNotice, loadDwcs, hashFlip, sigmoid, trainLogistic, evaluate, buildDataset, sideFeatures, ufcResultsOnOrAfter, imputeWeightClass, scheduledRoundsOf,
+  loadAll, loadShortNotice, loadDwcs, loadSherdogHistory, hashFlip, sigmoid, trainLogistic, evaluate, buildDataset, sideFeatures, ufcResultsOnOrAfter, imputeWeightClass, scheduledRoundsOf,
   FIGHT_COLS, FIGHTER_COLS, MIN_PRIOR_STATS_FIGHTS, SPLIT_DATE, PRIOR_CUTOFF, TRAIN_CONFIG, TRAIN_MIN_PRIOR, TRAIN_FEATURES, MODEL_PATH,
 };
 

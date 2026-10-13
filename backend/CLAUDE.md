@@ -495,3 +495,33 @@ population (3,929 test fights, 62.6% / 0.6495). Ablation under v4 config: `age` 
 if removed), `str_acc`, `str_def`, `layoff_days`, `pro_fights` pass; `pro_win_rate`
 (+0.0014), `td_avg` (+0.0026), `sapm` (+0.0020) help on mean but fail the fold count.
 Cross-weight sanity pairs still fail — that is Phase 3 (size / weight-class features).
+
+**Thin-record fighters (2026-10-14).** `evaluate.js` prints model vs market log loss by
+prior UFC stats-fights of the thinner side whenever market lines are loaded (shipped v5
+config, 3,929 scored fights): debutant bucket n=799 market 0.5757 / model 0.6569
+(+0.081), 1–2 +0.027, 3–5 +0.026, 6+ +0.016 — the market's best bucket is the model's
+worst. The harness DEFAULTS are knobs-off; to reproduce the shipped setup pass
+`--min-prior 0 --score-min-prior 0 --shrink 30 --half-life 1095 --layoff-cap 730
+--win-shrink 2 --clip 3 --elo-k 100 --elo-finish 1.5 --features <the 21 in model-v5.json>`
+(pooled 0.6385). `reports/phase9-thin-gap.json`.
+- **Amateur record**: `amateur_wins/losses` are 0 on every fighter row (the sherdog-amateur
+  backfill never populated them) — not gateable until the Sherdog history is in.
+- **Contender Series** (`scrapers/wiki-dwcs.js` → `dwcs_results`, migration 2026-10-14;
+  falls back to `.cache/wiki-dwcs/dwcs-results.json` until the table exists): 10 seasons,
+  474 bouts, 778 appearances matched (693 fighters), 1,768 decided UFC fights with an
+  alumnus. Features `dwcs`, `dwcs_won`, `dwcs_finish`, `dwcs_days_to_debut` ALL FAILED the
+  gate (mean +0.0002…+0.0009, worse in 3–6 of 8 folds; debutant gap unchanged) and stay in
+  `TRAIN_EXCLUDED`. Tapology is NOT used (its robots.txt disallows Claudebot and the site is
+  Cloudflare-fronted).
+- **Sherdog fight history** (`scrapers/sherdog-history.js` → `sherdog_fights`, migration
+  2026-10-14; cache `.cache/sherdog-history/<sherdog_id>.html`, `progress.json`, fallback
+  `sherdog-fights.json`): one profile page per fighter with a `sherdog_id` (4,103),
+  1.5 s/request, resumable, `--reparse` offline, wrong-profile guard as in
+  sherdog-pro-records.js. TRAINING ONLY — never served or displayed (Sherdog ToU forbids
+  aggregating content for use elsewhere; this is internal benchmarking like the BFO lines).
+  Gate candidates (`TRAIN_EXCLUDED`, pending data): `regional_finish_rate`,
+  `regional_opp_quality` (opponents' own as-of win rate, only when the opponent is a UFC
+  fighter with a loaded page; unknown = 50), `regional_opp_ufc_share`, `pro_record_quality`
+  = (pro_win_rate − 50) × min(pro_fights, 30) / 100; plus config `proRecordSource`
+  (`--pro-record sherdog`) which swaps `pro_win_rate` / `pro_fights` to the exact as-of
+  record instead of today's pro record minus later UFC results.

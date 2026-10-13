@@ -82,6 +82,13 @@ const FEATURES = [
   'dwcs_won',           // 1 = won that DWCS bout
   'dwcs_finish',        // 1 = won it by KO/TKO/submission
   'dwcs_days_to_debut', // days from the DWCS bout to the UFC debut, capped at 730 (0 for non-alumni)
+  // ── Sherdog fight history (scrapers/sherdog-history.js -> sherdog_fights). Training-only; never served.
+  //    With cfg.proRecordSource = 'sherdog', pro_win_rate / pro_fights come from the exact pro record as of
+  //    the fight date instead of today's pro_wins/pro_losses minus later UFC results. ──
+  'regional_finish_rate',   // KO/TKO+SUB share of non-UFC pro wins before the bout (shrunk toward 50%)
+  'regional_opp_quality',   // mean pre-fight win rate of non-UFC opponents whose own history is known (else 50)
+  'regional_opp_ufc_share', // share of non-UFC opponents who had already fought in the UFC at the time
+  'pro_record_quality',     // (pro_win_rate - 50) x min(pro_fights, 30) / 100: a 20-2 outranks a 5-0
 ];
 
 // Pairwise features are built from BOTH sides in diffVector (antisymmetric
@@ -104,6 +111,7 @@ const DEFAULT_CONFIG = {
   eloDecision: 'none',  // decision-win weighting: none | method | cards | score (eloEngine)
   eloDecisionFloor: 0.5,// weight of the least convincing decision
   eloDecisionCap: 1,    // weight of a shutout decision
+  proRecordSource: 'approx', // 'approx' = pro_wins/pro_losses minus later UFC results; 'sherdog' = exact as-of record (ctx.proRecord)
 };
 
 /**
@@ -141,6 +149,8 @@ function sideValues(snap, snapRecent, fighter, asOfDate, cfg = DEFAULT_CONFIG, u
     proW = Math.max(0, fighter.pro_wins - (ufcAfter.wins || 0));
     proL = Math.max(0, fighter.pro_losses - (ufcAfter.losses || 0));
   }
+  if (cfg.proRecordSource === 'sherdog' && ctx.proRecord) { proW = ctx.proRecord.wins; proL = ctx.proRecord.losses; }
+  const proRate = proW == null ? null : shrinkRate(proW, proW + proL);
   return {
     slpm: snap.slpm, sapm: snap.sapm, str_acc: snap.str_acc, str_def: snap.str_def,
     td_avg: snap.td_avg, td_acc: snap.td_acc, td_def: snap.td_def, sub_avg: snap.sub_avg,
@@ -155,7 +165,7 @@ function sideValues(snap, snapRecent, fighter, asOfDate, cfg = DEFAULT_CONFIG, u
     height: fighter?.height_inches ?? null,
     layoff_days: layoff == null ? null : (cfg.layoffCapDays > 0 ? Math.min(layoff, cfg.layoffCapDays) : layoff),
     stats_minutes: snap.stats_seconds / 60,
-    pro_win_rate: proW == null ? null : shrinkRate(proW, proW + proL),
+    pro_win_rate: proRate,
     pro_fights: proW == null ? null : proW + proL,
     elo: elo ? elo.elo : null,
     sos: elo ? elo.sos : null,
@@ -188,6 +198,10 @@ function sideValues(snap, snapRecent, fighter, asOfDate, cfg = DEFAULT_CONFIG, u
     dwcs_won: ctx.dwcs ? ctx.dwcs.won : null,
     dwcs_finish: ctx.dwcs ? ctx.dwcs.finish : null,
     dwcs_days_to_debut: ctx.dwcs ? ctx.dwcs.daysToDebut : null,
+    regional_finish_rate: ctx.regional ? ctx.regional.finishRate : null,
+    regional_opp_quality: ctx.regional ? ctx.regional.oppQuality : null,
+    regional_opp_ufc_share: ctx.regional ? ctx.regional.oppUfcShare : null,
+    pro_record_quality: proRate == null ? null : (proRate - 50) * Math.min(proW + proL, 30) / 100,
   };
 }
 

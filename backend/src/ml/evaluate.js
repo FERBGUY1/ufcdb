@@ -55,6 +55,7 @@
  *   --out PATH               write the JSON report
  *   --baseline PATH          compare against a saved report
  *   --no-sanity              skip the sanity set
+ *   --pro-record approx|sherdog  source of pro_win_rate / pro_fights (sherdog = exact as-of record from sherdog_fights)
  *   --market PATH            closing-lines file (default src/ml/data/market-lines.json,
  *                            from scrapers/bestfightodds-lines.js) · --no-market
  *
@@ -70,7 +71,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { loadAll, loadShortNotice, loadDwcs, sigmoid, trainLogistic, evaluate, buildDataset, sideFeatures, FIGHT_COLS, FIGHTER_COLS, MIN_PRIOR_STATS_FIGHTS } = require('./trainModel');
+const { loadAll, loadShortNotice, loadDwcs, loadSherdogHistory, sigmoid, trainLogistic, evaluate, buildDataset, sideFeatures, FIGHT_COLS, FIGHTER_COLS, MIN_PRIOR_STATS_FIGHTS } = require('./trainModel');
 const { FEATURES, DEFAULT_CONFIG, diffVector, standardize, careerContext } = require('./features');
 const { computeElo, eloOptions } = require('./eloEngine');
 const { applySizePrior } = require('./sizePrior');
@@ -100,6 +101,7 @@ const CFG = {
   eloDecision: opt('elo-dec', DEFAULT_CONFIG.eloDecision),
   eloDecisionFloor: parseFloat(opt('elo-dec-floor', String(DEFAULT_CONFIG.eloDecisionFloor))),
   eloDecisionCap: parseFloat(opt('elo-dec-cap', String(DEFAULT_CONFIG.eloDecisionCap))),
+  proRecordSource: opt('pro-record', DEFAULT_CONFIG.proRecordSource), // approx | sherdog
 };
 const ABLATE = flag('ablate');
 // Model family. The baselines (win_rate / age) are always logistic.
@@ -381,7 +383,7 @@ async function main() {
     loadAll('odds', 'fight_id, bookmaker, fighter1_odds, fighter2_odds, line_type, recorded_at'),
     loadAll('weight_classes', 'id, name, limit_lbs'),
   ]);
-  const { rows, timelines, fighterById, priors, elo, limitByWc, skippedInexperienced, imputedWc, missingWc } = buildDataset(fights, events, fighters, { minPriorStatsFights: MIN_PRIOR, cfg: CFG, weightClasses, shortNotice: await loadShortNotice(), dwcs: await loadDwcs() });
+  const { rows, timelines, fighterById, priors, elo, limitByWc, skippedInexperienced, imputedWc, missingWc } = buildDataset(fights, events, fighters, { minPriorStatsFights: MIN_PRIOR, cfg: CFG, weightClasses, shortNotice: await loadShortNotice(), dwcs: await loadDwcs(), sherdog: await loadSherdogHistory() });
   const lines = MARKET_PATH && fs.existsSync(MARKET_PATH) ? JSON.parse(fs.readFileSync(MARKET_PATH, 'utf8')) : null;
   const market = buildMarket(oddsRows, lines);
   { // late-replacement coverage and raw win rates (fight_replacements table)
