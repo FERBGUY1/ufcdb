@@ -29,7 +29,7 @@ const fs = require('fs');
 const path = require('path');
 const supabase = require('../db/client');
 const { buildTimelines, computePriors, annotateOpponentPriors } = require('./statsEngine');
-const { computeElo } = require('./eloEngine');
+const { computeElo, eloOptions } = require('./eloEngine');
 const { buildStylePairHistory } = require('./styleEngine');
 const { FEATURES, DEFAULT_CONFIG, sideFeatures, ufcResultsOnOrAfter, diffVector, standardize } = require('./features');
 
@@ -62,7 +62,7 @@ const TRAIN_EXCLUDED = new Set([
 ]);
 const TRAIN_FEATURES = FEATURES.filter(f => !TRAIN_EXCLUDED.has(f));
 
-const FIGHT_COLS = 'id, event_id, fighter1_id, fighter2_id, winner_id, result, method, round, time, time_format, is_title_fight, weight_class_id, rounds_data';
+const FIGHT_COLS = 'id, event_id, fighter1_id, fighter2_id, winner_id, result, method, round, time, time_format, is_title_fight, weight_class_id, rounds_data, judge1_score, judge2_score, judge3_score';
 const FIGHTER_COLS = 'id, slug, first_name, last_name, date_of_birth, reach_inches, height_inches, pro_wins, pro_losses';
 
 async function loadAll(table, cols) {
@@ -162,7 +162,7 @@ function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIO
   const limitByWc = Object.fromEntries(weightClasses.filter(w => w.limit_lbs != null).map(w => [w.id, w.limit_lbs]));
   const timelines = annotateOpponentPriors(buildTimelines(fights, eventById));
   const priors = cfg.shrinkMinutes > 0 ? computePriors(timelines, PRIOR_CUTOFF) : null;
-  const elo = computeElo(fights, eventById, { K: cfg.eloK, finishMult: cfg.eloFinishMult });
+  const elo = computeElo(fights, eventById, eloOptions(cfg));
   // style-vs-style record, point-in-time per fight (styleEngine)
   const styleHist = buildStylePairHistory(fights, eventById, timelines, { halfLifeDays: cfg.halfLifeDays, shrinkMinutes: cfg.shrinkMinutes, priors });
 

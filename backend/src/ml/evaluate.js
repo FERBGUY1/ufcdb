@@ -45,6 +45,9 @@
  *   --clip Z                 clip standardized features at ±Z
  *   --elo-k K                Elo step (default 40)
  *   --elo-finish M           Elo K multiplier for KO/SUB wins (default 1)
+ *   --elo-dec MODE           decision-win weighting: none | method | cards | score (default none)
+ *   --elo-dec-floor F        weight of the least convincing decision (default 0.5)
+ *   --elo-dec-cap C          weight of a shutout decision (default 1)
  *   --model logistic|gbm     model family (baselines stay logistic)
  *   --l2 X                   logistic L2 penalty (default 0.001)
  *   --gbm-rounds N --gbm-depth D --gbm-lr X --gbm-l2 X --gbm-min-leaf N --gbm-subsample F
@@ -69,7 +72,7 @@ const fs = require('fs');
 const path = require('path');
 const { loadAll, sigmoid, trainLogistic, evaluate, buildDataset, sideFeatures, FIGHT_COLS, FIGHTER_COLS, MIN_PRIOR_STATS_FIGHTS } = require('./trainModel');
 const { FEATURES, DEFAULT_CONFIG, diffVector, standardize, careerContext } = require('./features');
-const { computeElo } = require('./eloEngine');
+const { computeElo, eloOptions } = require('./eloEngine');
 const { applySizePrior } = require('./sizePrior');
 const { trainGBM, predictGBM } = require('./gbm');
 
@@ -94,6 +97,9 @@ const CFG = {
   clipZ: parseFloat(opt('clip', String(DEFAULT_CONFIG.clipZ))),
   eloK: parseFloat(opt('elo-k', String(DEFAULT_CONFIG.eloK))),
   eloFinishMult: parseFloat(opt('elo-finish', String(DEFAULT_CONFIG.eloFinishMult))),
+  eloDecision: opt('elo-dec', DEFAULT_CONFIG.eloDecision),
+  eloDecisionFloor: parseFloat(opt('elo-dec-floor', String(DEFAULT_CONFIG.eloDecisionFloor))),
+  eloDecisionCap: parseFloat(opt('elo-dec-cap', String(DEFAULT_CONFIG.eloDecisionCap))),
 };
 const ABLATE = flag('ablate');
 // Model family. The baselines (win_rate / age) are always logistic.
@@ -322,7 +328,7 @@ function runSanity(timelines, fighterById, candidate, fights, events, limitByWc 
     const m = require(MODEL_PATH);
     const cfg = { ...DEFAULT_CONFIG, ...(m.config || {}) };
     const eventById = Object.fromEntries(events.map(e => [e.id, e]));
-    const elo = m.features.some(f => f.startsWith('elo') || f === 'sos') ? computeElo(fights, eventById, { K: cfg.eloK, finishMult: cfg.eloFinishMult }) : null;
+    const elo = m.features.some(f => f.startsWith('elo') || f === 'sos') ? computeElo(fights, eventById, eloOptions(cfg)) : null;
     return { names: m.features, mu: m.mu, sigma: m.sigma, w: m.w, b: m.b, cfg, priors: m.priors || null, elo };
   })() : null;
   const today = new Date().toISOString().slice(0, 10);

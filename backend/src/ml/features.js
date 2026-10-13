@@ -91,6 +91,9 @@ const DEFAULT_CONFIG = {
   clipZ: 0,             // clip standardized features at ±clipZ (0 = no clipping)
   eloK: 40,             // Elo step (eloEngine.computeElo)
   eloFinishMult: 1,     // K multiplier for KO/SUB wins (1 = off)
+  eloDecision: 'none',  // decision-win weighting: none | method | cards | score (eloEngine)
+  eloDecisionFloor: 0.5,// weight of the least convincing decision
+  eloDecisionCap: 1,    // weight of a shutout decision
 };
 
 /**

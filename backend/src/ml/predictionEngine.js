@@ -16,7 +16,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const path = require('path');
 const supabase = require('../db/client');
 const { buildTimelines, snapshot, annotateOpponentPriors } = require('./statsEngine');
-const { computeElo } = require('./eloEngine');
+const { computeElo, eloOptions } = require('./eloEngine');
 const { applySizePrior } = require('./sizePrior');
 const { styleProfile } = require('./styleEngine');
 const { FEATURES, DEFAULT_CONFIG, sideFeatures, diffVector, standardize } = require('./features');
@@ -94,10 +94,10 @@ async function getData() {
   if (dataCache && Date.now() - dataCache.loadedAt < DATA_TTL_MS) return dataCache;
   const events = await loadAll('events', 'id, date');
   const fights = await loadAll('fights',
-    'id, event_id, fighter1_id, fighter2_id, winner_id, result, method, round, time, time_format, is_title_fight, weight_class_id, rounds_data');
+    'id, event_id, fighter1_id, fighter2_id, winner_id, result, method, round, time, time_format, is_title_fight, weight_class_id, rounds_data, judge1_score, judge2_score, judge3_score');
   const eventById = Object.fromEntries(events.map(e => [e.id, e]));
   const timelines = annotateOpponentPriors(buildTimelines(fights, eventById));
-  const elo = computeElo(fights, eventById, { K: CFG.eloK, finishMult: CFG.eloFinishMult });
+  const elo = computeElo(fights, eventById, eloOptions(CFG));
   const wcs = await loadAll('weight_classes', 'id, limit_lbs');
   const limitByWc = Object.fromEntries(wcs.filter(w => w.limit_lbs != null).map(w => [w.id, w.limit_lbs]));
   dataCache = { timelines, elo, limitByWc, league: leagueBaselines(timelines), loadedAt: Date.now() };
