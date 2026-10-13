@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { search as apiSearch, fmtProRecord, proRecord, fmtHeight, getFighter, getEvents } from '../lib/api';
 import axios from 'axios';
+import StyleLabel from '../components/StyleLabel';
 
 export default function ComparePage() {
   const [searchParams] = useSearchParams();
@@ -118,7 +119,7 @@ function FighterCard({ label, selected, onSelect, onClear }) {
             </Link>
             <div className="text-xs text-white/40 mt-0.5">
               {fmtProRecord(selected)}
-              {selected.primary_style && <span className="ml-2 text-gold/60">{selected.primary_style}</span>}
+              <StyleLabel slug={selected.slug} className="ml-2 text-gold/60" />
             </div>
           </div>
           <button onClick={onClear} className="text-white/20 hover:text-white/60 transition-colors text-xs flex-shrink-0 ml-1">
@@ -176,7 +177,7 @@ function SearchBox({ onSelect }) {
               </div>
               <div className="min-w-0">
                 <div className="text-sm font-medium">{f.first_name} {f.last_name}</div>
-                <div className="text-xs text-white/40">{fmtProRecord(f)} · {f.primary_style || 'Unknown style'}</div>
+                <div className="text-xs text-white/40">{fmtProRecord(f)}</div>
               </div>
               <span className={`ml-auto text-[9px] px-2 py-0.5 rounded-full flex-shrink-0 ${f.status === 'active' ? 'bg-win/10 text-win' : 'bg-white/5 text-white/30'}`}>
                 {f.status}
@@ -263,11 +264,7 @@ function HeroSection({ f1, f2, rankings1, rankings2 }) {
             <span className="text-loss">{r1.losses}</span>
             {r1.draws > 0 && <><span className="text-white/20 mx-1">-</span><span className="text-white/40">{r1.draws}</span></>}
           </div>
-          {f1.primary_style && (
-            <span className="inline-block mt-2 text-[10px] bg-dark-4 text-gold/70 px-2.5 py-1 rounded-md border border-white/[0.06]">
-              {f1.primary_style}
-            </span>
-          )}
+          <StyleLabel slug={f1.slug} className="inline-block mt-2 text-[10px] bg-dark-4 text-gold/70 px-2.5 py-1 rounded-md border border-white/[0.06]" />
         </div>
 
         {/* VS divider */}
@@ -300,11 +297,7 @@ function HeroSection({ f1, f2, rankings1, rankings2 }) {
             <span className="text-loss">{r2.losses}</span>
             {r2.draws > 0 && <><span className="text-white/20 mx-1">-</span><span className="text-white/40">{r2.draws}</span></>}
           </div>
-          {f2.primary_style && (
-            <span className="inline-block mt-2 text-[10px] bg-dark-4 text-gold/70 px-2.5 py-1 rounded-md border border-white/[0.06]">
-              {f2.primary_style}
-            </span>
-          )}
+          <StyleLabel slug={f2.slug} className="inline-block mt-2 text-[10px] bg-dark-4 text-gold/70 px-2.5 py-1 rounded-md border border-white/[0.06]" />
         </div>
       </div>
     </div>

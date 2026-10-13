@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { getPrediction, search, fmtProRecord, getFighter } from '../lib/api';
+import StyleLabel from '../components/StyleLabel';
 
 const WEIGHT_CLASSES = [
   { slug: 'strawweight',         name: 'Strawweight' },
@@ -69,7 +70,7 @@ export default function PredictPage() {
       <div className="mb-8">
         <h1 className="page-header">FIGHT PREDICTOR</h1>
         <p className="page-sub">
-          Select any two fighters. Our engine analyzes styles, stats, cardio, and historical matchup data.
+          Select any two fighters. The model weighs UFC Elo rating, opponent-adjusted striking, age, grappling and pro record, plus a size adjustment for cross-weight bouts.
         </p>
         <div className="text-xs text-white/20 bg-dark-3 border border-white/[0.06] rounded-lg px-4 py-3 mt-3">
           Predictions are generated from historical data. Not a guarantee of outcome. Do not use for betting.
@@ -117,7 +118,7 @@ export default function PredictPage() {
       {loading && (
         <div className="text-center py-16">
           <div className="font-display text-2xl tracking-widest text-white/20 mb-3">ANALYZING FIGHTERS</div>
-          <div className="text-sm text-white/30">Comparing styles, stats, cardio, opponent quality...</div>
+          <div className="text-sm text-white/30">Rating fighters, adjusting for opponents, weighing size...</div>
           <div className="mt-6 flex justify-center gap-1.5">
             {[0,1,2].map(i => (
               <div key={i} className="w-2 h-2 bg-gold rounded-full animate-bounce" style={{animationDelay:`${i*0.15}s`}} />
@@ -161,7 +162,7 @@ function FighterSelector({ label, selected, onSelect, onClear }) {
           {selected.first_name?.toUpperCase()} {selected.last_name?.toUpperCase()}
         </Link>
         <div className="text-xs text-white/40 mt-1">{fmtProRecord(selected)}</div>
-        <div className="text-xs text-gold/70 mt-0.5">{selected.primary_style}</div>
+        <StyleLabel slug={selected.slug} className="block text-xs text-gold/70 mt-0.5" />
         <button
           onClick={onClear}
           className="mt-4 flex items-center gap-1.5 mx-auto text-xs text-white/40 hover:text-red-400 transition-colors border border-white/10 hover:border-red-500/30 rounded-lg px-3 py-1.5"
@@ -191,7 +192,7 @@ function FighterSelector({ label, selected, onSelect, onClear }) {
                 </div>
                 <div className="min-w-0">
                   <div className="text-sm font-medium">{f.first_name} {f.last_name}</div>
-                  <div className="text-xs text-white/40">{fmtProRecord(f)} · {f.primary_style || 'Unknown style'}</div>
+                  <div className="text-xs text-white/40">{fmtProRecord(f)}</div>
                 </div>
                 <span className={`ml-auto text-[9px] px-2 py-0.5 rounded-full ${f.status === 'active' ? 'bg-win/10 text-win' : 'bg-white/5 text-white/30'}`}>
                   {f.status}
@@ -322,13 +323,13 @@ function PredictionResult({ prediction, f1Name, f2Name }) {
           <div className="text-center">
             <div className="font-display text-4xl tracking-wider">{f1WinPct}%</div>
             <Link to={`/fighters/${f1?.slug}`} className="text-sm font-medium hover:text-gold transition-colors">{f1?.first_name} {f1?.last_name}</Link>
-            <div className="text-xs text-gold/60 mt-0.5">{f1?.primary_style}</div>
+            <StyleLabel slug={f1?.slug} profile={p.style_profiles?.fighter1} className="block text-xs text-gold/60 mt-0.5" />
           </div>
           <div className="font-display text-2xl text-loss tracking-widest">VS</div>
           <div className="text-center">
             <div className="font-display text-4xl tracking-wider">{f2WinPct}%</div>
             <Link to={`/fighters/${f2?.slug}`} className="text-sm font-medium hover:text-gold transition-colors">{f2?.first_name} {f2?.last_name}</Link>
-            <div className="text-xs text-gold/60 mt-0.5">{f2?.primary_style}</div>
+            <StyleLabel slug={f2?.slug} profile={p.style_profiles?.fighter2} className="block text-xs text-gold/60 mt-0.5" />
           </div>
         </div>
         <div className="relative h-3 bg-dark-5 rounded-full overflow-hidden">
@@ -340,8 +341,9 @@ function PredictionResult({ prediction, f1Name, f2Name }) {
           <span className="text-xs text-red-400">{f2?.last_name}</span>
         </div>
         <p className="text-[10px] text-white/25 leading-relaxed mt-4 pt-3 border-t border-white/[0.04] text-center">
-          Win probability from the UFCDB logistic model ({p.model_version}), trained on per-fight UFC statistics —
-          striking volume &amp; accuracy, takedowns, control time, cardio, and recent form. Generated {new Date(p.generated_at).toLocaleDateString()}.
+          Win probability from the UFCDB logistic model ({p.model_version}): point-in-time UFC Elo rating, striking adjusted
+          for the quality of opposition, age (and age against rating), accuracy and defense, grappling rates, layoff and pro record.
+          Cross-weight bouts add a hand-set size / weight-cut adjustment. Assumes a neutral venue and a full training camp for both fighters. Generated {new Date(p.generated_at).toLocaleDateString()}.
         </p>
       </div>
 
@@ -367,7 +369,7 @@ function PredictionResult({ prediction, f1Name, f2Name }) {
       {p.round_projections?.length > 0 && (
         <div className="card p-5">
           <div className="text-[10px] tracking-[0.2em] text-white/30 uppercase mb-1">Round by Round Projection</div>
-          <p className="text-[11px] text-white/30 mb-4">Projected significant strikes landed per minute</p>
+          <p className="text-[11px] text-white/30 mb-4">Projected significant strikes attempted per minute — each fighter's round-1 pace and round-to-round trend, shrunk toward the league</p>
           <div className="grid grid-cols-[3.5rem_1fr_3.5rem] gap-3 mb-3">
             <span className="text-[10px] tracking-wider text-gold uppercase text-right truncate">{f1?.last_name}</span>
             <span />

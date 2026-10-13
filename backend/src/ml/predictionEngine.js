@@ -100,9 +100,40 @@ async function getData() {
   const elo = computeElo(fights, eventById, { K: CFG.eloK, finishMult: CFG.eloFinishMult });
   const wcs = await loadAll('weight_classes', 'id, limit_lbs');
   const limitByWc = Object.fromEntries(wcs.filter(w => w.limit_lbs != null).map(w => [w.id, w.limit_lbs]));
-  dataCache = { timelines, elo, limitByWc, loadedAt: Date.now() };
+  dataCache = { timelines, elo, limitByWc, league: leagueBaselines(timelines), loadedAt: Date.now() };
   return dataCache;
 }
+
+// League baselines for the method and round engines, from the same timelines:
+//   method  share of UFC wins by KO/TKO, SUB, DEC (wins with one of those methods)
+//   roundRatio[r]  league output in round r relative to round 1 of the SAME fight
+//                  (paired, full 5:00 rounds only, so finishes and selection into
+//                  later rounds do not bias it). ~1.09 / 1.13 / 1.18 / 1.25 for R2-R5.
+//   r1Pace  league sig attempts per minute in round 1
+function leagueBaselines(timelines) {
+  const m = { ko: 0, sub: 0, dec: 0 };
+  const rr = {}; let r1Att = 0, r1Sec = 0;
+  for (const tl of timelines.values()) {
+    for (const e of tl) {
+      const k = methodKey(e.method);
+      if (e.result === 'win' && k) m[k]++;
+      const r1 = e.rounds.find(r => r.no === 1);
+      if (!r1 || r1.me.sig_att == null) continue;
+      r1Att += r1.me.sig_att; r1Sec += r1.sec;
+      if (r1.sec < 300) continue;
+      for (const r of e.rounds) {
+        if (r.no < 2 || r.no > 5 || r.sec < 300 || r.me.sig_att == null) continue;
+        if (!rr[r.no]) rr[r.no] = { a: 0, b: 0 };
+        rr[r.no].a += r.me.sig_att; rr[r.no].b += r1.me.sig_att;
+      }
+    }
+  }
+  const n = m.ko + m.sub + m.dec || 1;
+  const roundRatio = { 1: 1 };
+  for (let r = 2; r <= 5; r++) roundRatio[r] = rr[r]?.b ? rr[r].a / rr[r].b : 1;
+  return { method: { ko: m.ko / n, sub: m.sub / n, dec: m.dec / n }, roundRatio, r1Pace: r1Sec ? r1Att / (r1Sec / 60) : 8 };
+}
+const methodKey = m => (!m ? null : /KO/i.test(m) ? 'ko' : /SUB/i.test(m) ? 'sub' : /DEC/i.test(m) ? 'dec' : null);
 
 // ── MODEL ──────────────────────────────────────────────────────────────────
 const sigmoid = z => 1 / (1 + Math.exp(-z));
@@ -111,7 +142,8 @@ const sigmoid = z => 1 / (1 + Math.exp(-z));
 function predictProb(diffs) {
   const z = standardize(MODEL_IDX.map(k => diffs[k]), MODEL.mu, MODEL.sigma, CFG.clipZ);
   const score = z.reduce((s, x, j) => s + x * MODEL.w[j], MODEL.b);
-  return { p: sigmoid(score), contributions: z.map((x, j) => x * MODEL.w[j]) };
+  const rawZ = standardize(MODEL_IDX.map(k => diffs[k]), MODEL.mu, MODEL.sigma, 0);
+  return { p: sigmoid(score), contributions: z.map((x, j) => x * MODEL.w[j]), rawZ };
 }
 
 // ── FACTOR EXPLANATIONS (real numbers, computed values) ───────────────────
@@ -205,13 +237,23 @@ function thinSampleNote(feature, valsA, valsB, nameA, nameB) {
   return thin.length ? ` — thin sample: ${thin.join(', ')} of stat data` : '';
 }
 
-function computeFactors(nameA, nameB, valsA, valsB, contributions) {
+// A gap beyond CFG.clipZ standard deviations of the training matchups is an
+// outlier: the model caps it, and it usually rests on a small or unusual
+// record, so the row always says so and names each side's sample.
+//   sample: { [name]: { fights, minutes } }  UFC fights / minutes of stat data
+function outlierNote(z, nameA, nameB, sample) {
+  if (!(Math.abs(z) > CFG.clipZ)) return '';
+  const side = n => `${n} ${sample[n].fights} UFC fight${sample[n].fights === 1 ? '' : 's'} / ${Math.round(sample[n].minutes)} min of stat data`;
+  return ` — outlier: ${Math.abs(z).toFixed(1)} SD from a typical matchup gap, capped at ${CFG.clipZ} SD in the model; sample: ${side(nameA)}, ${side(nameB)}`;
+}
+
+function computeFactors(nameA, nameB, valsA, valsB, contributions, rawZ, sample) {
   return contributions
-    .map((c, j) => ({ feature: MODEL.features[j], c }))
+    .map((c, j) => ({ feature: MODEL.features[j], c, z: rawZ[j] }))
     .filter(({ feature, c }) => Math.abs(c) > 0.01 && FACTOR_META[feature] && valsA[feature] != null && valsB[feature] != null)
     .sort((a, b) => Math.abs(b.c) - Math.abs(a.c))
     .slice(0, 5)
-    .map(({ feature, c }) => {
+    .map(({ feature, c, z }) => {
       // c > 0 means the feature favors fighter A; phrase from the favored side.
       const leaderIsA = c > 0;
       const leader = leaderIsA ? nameA : nameB;
@@ -230,7 +272,7 @@ function computeFactors(nameA, nameB, valsA, valsB, contributions) {
         : (leaderBetter ? meta.advP : meta.despiteP);
       return {
         feature, leader, leaderBetter, pts, phrase, nums,
-        row: `${factorText(feature, leader, lv, tv)} (~${pts} pts of win probability)${thinSampleNote(feature, valsA, valsB, nameA, nameB)}`,
+        row: `${factorText(feature, leader, lv, tv)} (~${pts} pts of win probability)${thinSampleNote(feature, valsA, valsB, nameA, nameB)}${outlierNote(z, nameA, nameB, sample)}`,
       };
     });
 }
@@ -270,28 +312,62 @@ function fallbackNarrative(name1, name2, f1Pct, f2Pct, factors) {
   return s1 + ' ' + s2 + s3 + s4;
 }
 
-// ── METHOD BREAKDOWN (empirical finish rates, not ratings) ─────────────────
-function methodShares(timeline, asWinner) {
-  const rel = timeline.filter(e => e.result === (asWinner ? 'win' : 'loss') && e.method);
-  const share = re => rel.filter(e => re.test(e.method)).length / Math.max(rel.length, 1);
-  return { ko: share(/KO/i), sub: share(/SUB/i), dec: share(/DEC/i) };
+// ── METHOD BREAKDOWN (each fighter's own finish history, shrunk) ───────────
+// How A wins = A's own UFC win-method shares, shrunk toward the league shares
+// with METHOD_SHRINK pseudo-wins, so a fighter with no KO wins in ten stays near
+// zero instead of borrowing the opponent's history. The opponent enters only as
+// a bounded multiplier: their loss-method share (shrunk the same way) relative
+// to the league, clamped to [VULN_MIN, VULN_MAX]. Shares are renormalised and
+// scaled by A's win probability.
+const METHOD_SHRINK = 2;
+const VULN_MIN = 0.5, VULN_MAX = 1.5;
+
+function methodCounts(timeline, result) {
+  const c = { ko: 0, sub: 0, dec: 0, n: 0 };
+  for (const e of timeline) {
+    if (e.result !== result) continue;
+    const k = methodKey(e.method);
+    if (k) { c[k]++; c.n++; }
+  }
+  return c;
 }
 
-function computeMethodBreakdown(tlWinner, tlLoser, winProb) {
-  const w = methodShares(tlWinner, true);   // how this fighter wins
-  const l = methodShares(tlLoser, false);   // how the opponent loses
-  let ko = 0.65 * w.ko + 0.35 * l.ko;
-  let sub = 0.65 * w.sub + 0.35 * l.sub;
-  let dec = Math.max(0.15, 0.65 * w.dec + 0.35 * l.dec);
-  const norm = ko + sub + dec || 1;
+function computeMethodBreakdown(tlWinner, tlLoser, winProb, league) {
+  const L = league.method;
+  const w = methodCounts(tlWinner, 'win');
+  const l = methodCounts(tlLoser, 'loss');
+  const own = k => (w[k] + METHOD_SHRINK * L[k]) / (w.n + METHOD_SHRINK);
+  const vuln = k => Math.min(VULN_MAX, Math.max(VULN_MIN, ((l[k] + METHOD_SHRINK * L[k]) / (l.n + METHOD_SHRINK)) / L[k]));
+  const raw = { ko: own('ko') * vuln('ko'), sub: own('sub') * vuln('sub'), dec: own('dec') * vuln('dec') };
+  const norm = raw.ko + raw.sub + raw.dec || 1;
   return {
-    ko: ((ko / norm) * winProb * 100).toFixed(1),
-    sub: ((sub / norm) * winProb * 100).toFixed(1),
-    dec: ((dec / norm) * winProb * 100).toFixed(1),
+    shares: { ko: raw.ko / norm, sub: raw.sub / norm, dec: raw.dec / norm },
+    winProb,
+    history: w,
   };
 }
 
-// ── ROUND PROJECTIONS (real per-round cardio curves) ───────────────────────
+// Weight-cut durability shift. A fighter who has to make an extreme cut (or one
+// they cannot realistically make) comes in depleted: dehydration lowers the
+// ability to absorb strikes, so the opponent at (or nearer) natural weight
+// finishes more often. A fraction of that opponent's SUB and DEC share moves to
+// KO/TKO. Hand-set, like the size prior itself.
+const CUT_KO_SHIFT = { cantMakeWeight: 0.5, extremeCut: 0.2 };
+
+function applyCutToMethods(m, depletedMove) {
+  const f = depletedMove?.cantMakeWeight ? CUT_KO_SHIFT.cantMakeWeight : depletedMove?.extremeCut ? CUT_KO_SHIFT.extremeCut : 0;
+  if (!f) return { ...m, cutShift: 0 };
+  const s = m.shares;
+  return { ...m, cutShift: f, koBefore: s.ko, shares: { ko: s.ko + f * (s.sub + s.dec), sub: s.sub * (1 - f), dec: s.dec * (1 - f) } };
+}
+
+const methodPcts = m => ({
+  ko: (m.shares.ko * m.winProb * 100).toFixed(1),
+  sub: (m.shares.sub * m.winProb * 100).toFixed(1),
+  dec: (m.shares.dec * m.winProb * 100).toFixed(1),
+});
+
+// ── ROUND PROJECTIONS ──────────────────────────────────────────────────────
 // Scheduled rounds for a hypothetical matchup, derived from what the prediction
 // already knows: the two fighters' SHARED bout history in the loaded timelines.
 // Each timeline entry carries scheduledRounds (5 when time_format is "5 Rnd",
@@ -306,21 +382,71 @@ function scheduledRoundsForMatchup(tl1, id2) {
     : Math.max(...shared.map(e => e.scheduledRounds || 3));
 }
 
-function computeRoundProjections(f1, f2, snap1, snap2, scheduledRounds = 3) {
-  const rounds = [];
-  for (let r = 1; r <= scheduledRounds; r++) {
-    const o1 = snap1.cardio['r' + r] ?? snap1.slpm ?? 4;
-    const o2 = snap2.cardio['r' + r] ?? snap2.slpm ?? 4;
+// Output per round = the fighter's round-1 pace x their round-r / round-1 ratio.
+// The old version averaged each round over whichever fights reached it, so a
+// late round rested on a handful of (mostly high-volume, decision) fights while
+// round 1 included grappling-heavy openings and quick finishes — Chimaev's R3
+// came from 4 fights and read 11.9 against a 6.4 R1. Now:
+//   - R1 pace is shrunk toward the league R1 pace (PACE_SHRINK_MIN minutes);
+//   - the ratio is PAIRED (round r vs round 1 of the same fight, full rounds
+//     only), shrunk toward the league ratio with RATIO_SHRINK_FIGHTS pseudo-
+//     fights, and clamped to [RATIO_MIN, RATIO_MAX] — the league itself rises
+//     only ~9-25% from R1 to R2-R5.
+//   - a fighter on an extreme or unrealistic cut gets no late rise (ratio <= 1)
+//     and fades by CUT_FADE per round.
+const PACE_SHRINK_MIN = 15;
+const RATIO_SHRINK_FIGHTS = 6;
+const RATIO_MIN = 0.75, RATIO_MAX = 1.35;
+const CUT_FADE = { cantMakeWeight: { start: 0.9, perRound: 0.85 }, extremeCut: { start: 0.95, perRound: 0.93 } };
+
+function roundCurve(timeline, league, rounds, move) {
+  let r1Att = 0, r1Sec = 0;
+  const pr = {};
+  for (const e of timeline) {
+    const r1 = e.rounds.find(r => r.no === 1);
+    if (!r1 || r1.me.sig_att == null) continue;
+    r1Att += r1.me.sig_att; r1Sec += r1.sec;
+    if (r1.sec < 300 || !r1.me.sig_att) continue;
+    for (const r of e.rounds) {
+      if (r.no < 2 || r.no > 5 || r.sec < 300 || r.me.sig_att == null) continue;
+      if (!pr[r.no]) pr[r.no] = { a: 0, b: 0, n: 0 };
+      pr[r.no].a += r.me.sig_att; pr[r.no].b += r1.me.sig_att; pr[r.no].n++;
+    }
+  }
+  const pace = (r1Att + PACE_SHRINK_MIN * league.r1Pace) / (r1Sec / 60 + PACE_SHRINK_MIN);
+  const fade = move?.cantMakeWeight ? CUT_FADE.cantMakeWeight : move?.extremeCut ? CUT_FADE.extremeCut : null;
+  const out = [];
+  for (let r = 1; r <= rounds; r++) {
+    const Lr = league.roundRatio[r] ?? 1;
+    let ratio = 1;
+    if (r > 1) {
+      const p = pr[r];
+      const obs = p && p.b ? p.a / p.b : Lr;
+      const n = p ? p.n : 0;
+      ratio = Math.min(RATIO_MAX, Math.max(RATIO_MIN, (n * obs + RATIO_SHRINK_FIGHTS * Lr) / (n + RATIO_SHRINK_FIGHTS)));
+    }
+    // a depleted fighter never gets a late-round rise, only the fade
+    if (fade) ratio = Math.min(1, ratio);
+    const cut = fade ? fade.start * Math.pow(fade.perRound, r - 1) : 1;
+    out.push(pace * ratio * cut);
+  }
+  return out;
+}
+
+function computeRoundProjections(f1, f2, tl1, tl2, league, scheduledRounds = 3, move1 = null, move2 = null) {
+  const c1 = roundCurve(tl1, league, scheduledRounds, move1);
+  const c2 = roundCurve(tl2, league, scheduledRounds, move2);
+  return c1.map((o1, i) => {
+    const o2 = c2[i];
     const share = o1 / (o1 + o2 || 1);
-    rounds.push({
-      round: r,
-      f1_output: (+o1).toFixed(2),
-      f2_output: (+o2).toFixed(2),
+    return {
+      round: i + 1,
+      f1_output: o1.toFixed(2),
+      f2_output: o2.toFixed(2),
       projected_control: share > 0.52 ? `${f1.first_name} ${f1.last_name}` : share < 0.48 ? `${f2.first_name} ${f2.last_name}` : 'Even',
       f1_control_pct: (share * 100).toFixed(0),
-    });
-  }
-  return rounds;
+    };
+  });
 }
 
 // ── NARRATIVE (grounded: gets ONLY the computed factors and numbers) ───────
@@ -444,7 +570,7 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
     }
   }
 
-  const { timelines, elo, limitByWc } = await getData();
+  const { timelines, elo, limitByWc, league } = await getData();
   const tl1 = timelines.get(fighter1Id) || [];
   const tl2 = timelines.get(fighter2Id) || [];
   // Bout context the model was trained with: scheduled rounds (caller may
@@ -460,7 +586,7 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   const snap1 = snapshot(tl1), snap2 = snapshot(tl2);
   const vals1 = sideFeatures(tl1, f1, today, null, CFG, PRIORS, elo, bout, limitByWc);
   const vals2 = sideFeatures(tl2, f2, today, null, CFG, PRIORS, elo, bout, limitByWc);
-  const { p: skillProb, contributions } = predictProb(diffVector(vals1, vals2));
+  const { p: skillProb, contributions, rawZ } = predictProb(diffVector(vals1, vals2));
 
   // Size / weight-cut prior (sizePrior.js): a hand-set log-odds shift that
   // depends on the BOUT weight. Each fighter moves from natural division to
@@ -477,7 +603,11 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   const crossWeight = Math.max(Math.abs(size.a.move ?? 0), Math.abs(size.b.move ?? 0)) >= 2;
 
   const name1 = `${f1.first_name} ${f1.last_name}`, name2 = `${f2.first_name} ${f2.last_name}`;
-  const factors = computeFactors(name1, name2, vals1, vals2, contributions);
+  const sample = {
+    [name1]: { fights: tl1.length, minutes: snap1.stats_seconds / 60 },
+    [name2]: { fights: tl2.length, minutes: snap2.stats_seconds / 60 },
+  };
+  const factors = computeFactors(name1, name2, vals1, vals2, contributions, rawZ, sample);
   const keyFactors = factors.map(f => f.row);
   if (size.shift) {
     const favoured = size.shift > 0 ? name1 : name2;
@@ -497,7 +627,7 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
     keyFactors.unshift(
       (unrealistic ? `Weight cut not realistic — ` : `Size adjustment — `) +
       `assumption, not learned from fight data: ${parts.join('; ')}. ` +
-      `A hand-set prior of ${size.shift > 0 ? '+' : ''}${size.shift.toFixed(2)} log-odds moved ${favoured} from ${(pFavBefore * 100).toFixed(1)}% on skill alone to ${(pFavAfter * 100).toFixed(1)}%. ` +
+      `A hand-set prior of +${Math.abs(size.shift).toFixed(2)} log-odds toward ${favoured} moved ${favoured} from ${(pFavBefore * 100).toFixed(1)}% on skill alone to ${(pFavAfter * 100).toFixed(1)}%. ` +
       (unrealistic
         ? `The odds are shifted strongly toward the fighter at natural weight because ${unrealistic} could not realistically make this weight; the skill numbers below compare the two as if same-sized.`
         : `No UFC bouts span a gap this size, so the skill numbers below compare the two as if same-sized.`));
@@ -510,11 +640,24 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
     || snap1.stats_seconds / 60 < THIN_SAMPLE_MINUTES || snap2.stats_seconds / 60 < THIN_SAMPLE_MINUTES;
   const sizeMismatch = !!weightClassContext?.has_size_mismatch;
 
-  const f1Methods = computeMethodBreakdown(tl1, tl2, f1WinProb);
-  const f2Methods = computeMethodBreakdown(tl2, tl1, f2WinProb);
-  const roundProjections = computeRoundProjections(f1, f2, snap1, snap2, scheduledRounds);
+  // Method: each side's own finish history; a depleted opponent (extreme or
+  // unrealistic cut) moves part of this side's SUB/DEC share to KO/TKO.
+  const m1 = applyCutToMethods(computeMethodBreakdown(tl1, tl2, f1WinProb, league), size.b);
+  const m2 = applyCutToMethods(computeMethodBreakdown(tl2, tl1, f2WinProb, league), size.a);
+  const f1Methods = methodPcts(m1), f2Methods = methodPcts(m2);
+  for (const [m, name, oppName] of [[m1, name1, name2], [m2, name2, name1]]) {
+    if (!m.cutShift) continue;
+    const ko = p => (p * m.winProb * 100).toFixed(1);
+    const cut = m.cutShift === CUT_KO_SHIFT.cantMakeWeight ? 'could not realistically make the weight' : 'would be making an extreme cut';
+    keyFactors.splice(1, 0,
+      `Method adjustment — ${oppName} ${cut}; a fighter depleted by the cut absorbs strikes worse (lower durability), so ` +
+      `${Math.round(m.cutShift * 100)}% of ${name}'s submission and decision paths were moved to KO/TKO: ` +
+      `${name} by KO/TKO ${ko(m.koBefore)}% → ${ko(m.shares.ko)}%. ${oppName}'s projected output also fades each round. Hand-set assumption, not learned from fight data.`);
+  }
+  const roundProjections = computeRoundProjections(f1, f2, tl1, tl2, league, scheduledRounds, size.a, size.b);
   const stats = { f1WinPct: (f1WinProb * 100).toFixed(1), f2WinPct: (f2WinProb * 100).toFixed(1) };
-  const methodLine = `${f1.last_name}: KO ${f1Methods.ko}% / SUB ${f1Methods.sub}% / DEC ${f1Methods.dec}% — ${f2.last_name}: KO ${f2Methods.ko}% / SUB ${f2Methods.sub}% / DEC ${f2Methods.dec}%`;
+  const hist = m => `UFC wins ${m.history.n}: ${m.history.ko} KO/TKO, ${m.history.sub} SUB, ${m.history.dec} DEC`;
+  const methodLine = `${f1.last_name}: KO ${f1Methods.ko}% / SUB ${f1Methods.sub}% / DEC ${f1Methods.dec}% (${hist(m1)}) — ${f2.last_name}: KO ${f2Methods.ko}% / SUB ${f2Methods.sub}% / DEC ${f2Methods.dec}% (${hist(m2)})`;
 
   let aiBreakdown = '';
   if (!opts.skipNarrative) {
