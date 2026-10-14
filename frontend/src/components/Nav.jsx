@@ -19,6 +19,7 @@ export default function Nav() {
     { to:'/rankings', label:'Rankings' },
     { to:'/styles',   label:'Style Matchups' },
     { to:'/predict',  label:'Fight Predictor' },
+    { to:'/track-record', label:'Track Record' },
     { to:'/compare',  label:'Compare' },
   ];
 

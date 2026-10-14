@@ -44,8 +44,20 @@
  *                   Without it that case still aborts for manual review.
  *   --summary-json PATH  write a machine-readable plan/outcome to PATH on exit
  *                   (used by weekly-update.js to decide whether a dry run is clean)
+ *   --interim "1"   bout_order values to flag is_interim_title (and is_title_fight)
  *   --skip-results  stop after phase 5 (no results scraper, no bout-order fix)
  *   --delay MS      per-request delay for ufcstats fetches (default 1200)
+ *   --upcoming      sync a SCHEDULED card (upcoming-cards.js): the event is read from
+ *                   the ufcstats upcoming listing; kept rows get weight class, title
+ *                   flags and time_format synced to the source (5 rounds for bo0 and
+ *                   title bouts, else 3); a kept row that already carries a result
+ *                   aborts; phases 6 and 8 are skipped (no results, no is_complete),
+ *                   phase 7 (fix-bout-order.js for card_position) still runs.
+ *   --source-json PATH  with --upcoming: read the event + card from this file instead of
+ *                   ufcstats (the Wikipedia fallback in upcoming-cards.js). Fighters
+ *                   carry no ufcstats id, so they resolve by unique exact name (or a
+ *                   VARIANT inside a kept bout); a fighter not in the DB aborts — a
+ *                   debutant is never created from Wikipedia. --ufc-id is not used.
  *
  * Run:  node -r dotenv/config src/scrapers/backfill-event.js --ufc-id <id>
  */
@@ -71,9 +83,19 @@ const TITLE_BOS = (() => {
   const i = process.argv.indexOf('--title');
   return i > -1 ? process.argv[i + 1].split(',').map(s => parseInt(s.trim(), 10)).filter(n => !Number.isNaN(n)) : [];
 })();
+const INTERIM_BOS = (() => {
+  const i = process.argv.indexOf('--interim');
+  return i > -1 ? process.argv[i + 1].split(',').map(s => parseInt(s.trim(), 10)).filter(n => !Number.isNaN(n)) : [];
+})();
+const UPCOMING = process.argv.includes('--upcoming');
+const SOURCE_JSON = (() => { const i = process.argv.indexOf('--source-json'); return i > -1 ? process.argv[i + 1] : null; })();
+const isTitleBo = i => TITLE_BOS.includes(i) || INTERIM_BOS.includes(i);
+// ufcstats does not list scheduled rounds; every UFC main event and title bout is 5.
+const timeFormatFor = i => (i === 0 || isTitleBo(i) ? '5 Rnd (5-5-5-5-5)' : '3 Rnd (5-5-5)');
 
-if (!UFCID || !/^[0-9a-f]{16}$/.test(UFCID) || NEW_FIGHTERS.some(id => !/^[0-9a-f]{16}$/.test(id))) {
+if (SOURCE_JSON ? (!UPCOMING || UFCID) : (!UFCID || !/^[0-9a-f]{16}$/.test(UFCID)) || NEW_FIGHTERS.some(id => !/^[0-9a-f]{16}$/.test(id))) {
   console.error('Usage: backfill-event.js --ufc-id <16-hex ufcstats event id> [--apply] [--new-fighter <16-hex fighter id>,...]');
+  console.error('   or: backfill-event.js --upcoming --source-json <card.json> [--apply]');
   process.exit(1);
 }
 
@@ -160,7 +182,7 @@ const isoDate = t => {
 };
 
 async function fetchListingEntry() {
-  const $ = cheerio.load(await get(`${BASE}/statistics/events/completed?page=all`));
+  const $ = cheerio.load(await get(`${BASE}/statistics/events/${UPCOMING ? 'upcoming' : 'completed'}?page=all`));
   let hit = null;
   $('tr.b-statistics__table-row').each((_, tr) => {
     const a = $(tr).find('a.b-link[href*="/event-details/"]').first();
@@ -256,15 +278,20 @@ function runChild(label, args) {
 // ── main ────────────────────────────────────────────────────────────────────
 async function main() {
   console.log(`backfill-event ${APPLY ? '*** APPLY ***' : '*** DRY RUN — plan only, nothing written ***'}`);
-  console.log(`target ufcstats id: ${UFCID}\n`);
+  console.log(SOURCE_JSON ? `source file: ${SOURCE_JSON}\n` : `target ufcstats id: ${UFCID}${UPCOMING ? ' (upcoming)' : ''}\n`);
 
-  await solveGate();
-  const src = await fetchListingEntry();
-  if (!src) { console.error(`ABORT: ${UFCID} not found in the ufcstats completed-events listing.`); process.exit(1); }
-  console.log(`SOURCE EVENT: "${src.name}"  ${src.date}  [${src.location}]`);
-
-  await sleep(DELAY);
-  const card = await fetchSourceCard();
+  let src, card;
+  if (SOURCE_JSON) {
+    ({ card, ...src } = JSON.parse(require('fs').readFileSync(SOURCE_JSON, 'utf8')));
+    console.log(`SOURCE EVENT: "${src.name}"  ${src.date}  [${src.location || '?'}]  (${src.source || 'file'})`);
+  } else {
+    await solveGate();
+    src = await fetchListingEntry();
+    if (!src) { console.error(`ABORT: ${UFCID} not found in the ufcstats ${UPCOMING ? 'upcoming' : 'completed'}-events listing.`); process.exit(1); }
+    console.log(`SOURCE EVENT: "${src.name}"  ${src.date}  [${src.location}]`);
+    await sleep(DELAY);
+    card = await fetchSourceCard();
+  }
   console.log(`SOURCE CARD : ${card.length} bouts\n`);
   if (!card.length) { console.error('ABORT: event page has no fight rows.'); process.exit(1); }
   summary.event = { name: src.name, date: src.date, location: src.location };
@@ -303,7 +330,7 @@ async function main() {
 
   // ── phase 1: event row ────────────────────────────────────────────────────
   console.log('━━━━ PHASE 1 — EVENT ROW ━━━━');
-  let eventRow = events.find(e => e.ufc_id === UFCID) || null;
+  let eventRow = (UFCID && events.find(e => e.ufc_id === UFCID)) || null;
   let eventByDate = null;
   if (!eventRow) {
     const sameDate = events.filter(e => e.date === src.date);
@@ -321,12 +348,14 @@ async function main() {
   } else if (eventByDate) {
     eventRow = eventByDate;
     console.log(`  found by date: ${eventRow.id}  "${eventRow.name}"  ufc_id=${eventRow.ufc_id}`);
-    if (eventRow.ufc_id && eventRow.ufc_id !== UFCID) {
+    if (UFCID && eventRow.ufc_id && eventRow.ufc_id !== UFCID) {
       console.error(`ABORT: date-matched event carries a DIFFERENT ufc_id (${eventRow.ufc_id}) — resolve by hand.`);
       process.exit(1);
     }
-    eventPlan.updates.ufc_id = UFCID;
-    console.log(`  -> UPDATE ufc_id to ${UFCID}`);
+    if (UFCID && eventRow.ufc_id !== UFCID) {
+      eventPlan.updates.ufc_id = UFCID;
+      console.log(`  -> UPDATE ufc_id to ${UFCID}`);
+    }
     if (eventRow.name !== src.name) { eventPlan.updates.name = src.name; console.log(`  name differs -> UPDATE name to "${src.name}" (slug untouched)`); }
   } else {
     const [city, state, country] = src.location.split(',').map(s => s.trim());
@@ -350,7 +379,7 @@ async function main() {
   console.log('\n━━━━ PHASE 2 — CARD DIFF ━━━━');
   const { data: dbFights } = eventRow
     ? await supabase.from('fights')
-        .select('id, fighter1_id, fighter2_id, result, winner_id, method, round, time, bout_order, card_position, rounds_data, is_title_fight, judge1_score, judge2_score, judge3_score')
+        .select('id, fighter1_id, fighter2_id, result, winner_id, method, round, time, bout_order, card_position, rounds_data, is_title_fight, is_interim_title, weight_class_id, time_format, judge1_score, judge2_score, judge3_score')
         .eq('event_id', EVENT_DB_ID).order('bout_order')
     : { data: [] };
   console.log(`  DB fights on event: ${dbFights.length}`);
@@ -444,6 +473,14 @@ async function main() {
   }
   if (!stale.length) console.log('  none');
   if (deleteBlocked) { console.error('\nABORT: a stale row carries real result data — nothing written.'); process.exit(1); }
+  if (UPCOMING) {
+    const decided = pairing.filter(p => p.dbf && ((p.dbf.result && p.dbf.result !== 'upcoming') || p.dbf.winner_id));
+    if (decided.length) {
+      decided.forEach(p => console.log(`  *** kept bo${p.pageIdx} ${fname(p.dbf.fighter1_id)} vs ${fname(p.dbf.fighter2_id)} already has result=${p.dbf.result} ***`));
+      console.error('\nABORT: --upcoming on a card whose bouts already carry results — nothing written.');
+      process.exit(1);
+    }
+  }
 
   // ── phase 4 plan: fighter resolution / creation ───────────────────────────
   console.log('\n━━━━ PHASE 4 — FIGHTER RESOLUTION ━━━━');
@@ -455,6 +492,23 @@ async function main() {
   for (const p of pairing) {
     for (const sf of p.row.fighters) {
       if (resolvedId[sf.name] !== undefined) continue;
+      // --source-json (Wikipedia): no ufcstats id, so a unique exact name or a VARIANT
+      // inside a kept bout; anything else stops — debutants are never created here.
+      if (!sf.ufcId) {
+        const exacts = fighters.filter(f => norm(`${f.first_name} ${f.last_name}`) === norm(sf.name));
+        const inPair = p.dbf && [p.dbf.fighter1_id, p.dbf.fighter2_id].find(id => scoreFighter(sf, id) >= 1);
+        if (exacts.length === 1) { resolvedId[sf.name] = exacts[0].id; continue; }
+        if (exacts.length > 1 && inPair && exacts.some(f => f.id === inPair)) { resolvedId[sf.name] = inPair; continue; }
+        if (!exacts.length && inPair) {
+          resolvedId[sf.name] = inPair;
+          console.log(`  ${sf.name.padEnd(26)} -> existing ${inPair.slice(0, 8)} "${fname(inPair)}" (VARIANT within kept bout)`);
+          continue;
+        }
+        const why = exacts.length > 1 ? `${exacts.length} DB fighters share this name` : 'not in the DB (a debutant cannot be created from Wikipedia)';
+        console.log(`  ${sf.name.padEnd(26)} *** ${why} — STOP ***`);
+        summary.conflicts.push(`${sf.name}: ${why}`);
+        createBlocked = true; continue;
+      }
       // direct identity
       const byId = fighterByUfcId[sf.ufcId];
       if (byId) { resolvedId[sf.name] = byId.id; continue; }
@@ -537,20 +591,40 @@ async function main() {
   const reorders = pairing.filter(p => p.dbf && p.dbf.bout_order !== p.pageIdx)
     .map(p => ({ id: p.dbf.id, from: p.dbf.bout_order, to: p.pageIdx, label: `${p.row.fighters[0].name} vs ${p.row.fighters[1].name}` }));
   const inserts = pairing.filter(p => !p.dbf);
+  summary.inserts = inserts.map(p => `bo${p.pageIdx} ${p.row.fighters[0].name} vs ${p.row.fighters[1].name}`);
   console.log(`  reorders (${reorders.length}):`);
   reorders.forEach(r => console.log(`    ${r.id.slice(0, 8)}  bo ${r.from} -> ${r.to}  ${r.label}`));
   console.log(`  inserts (${inserts.length}):`);
   inserts.forEach(p => {
     const wc = wcByNorm[norm(p.row.wc)];
-    const title = TITLE_BOS.includes(p.pageIdx);
-    console.log(`    bo=${String(p.pageIdx).padStart(2)}  ${p.row.fighters[0].name} vs ${p.row.fighters[1].name}  wc=${wc ? wc.id : 'NULL (' + p.row.wc + ')'}  is_title_fight=${title}  result=upcoming`);
+    const title = isTitleBo(p.pageIdx);
+    console.log(`    bo=${String(p.pageIdx).padStart(2)}  ${p.row.fighters[0].name} vs ${p.row.fighters[1].name}  wc=${wc ? wc.id : 'NULL (' + p.row.wc + ')'}  is_title_fight=${title}${INTERIM_BOS.includes(p.pageIdx) ? ' (interim)' : ''}${UPCOMING ? '  ' + timeFormatFor(p.pageIdx) : ''}  result=upcoming`);
   });
-  const titleUpdates = pairing.filter(p => p.dbf && TITLE_BOS.includes(p.pageIdx) && !p.dbf.is_title_fight);
+  // Completed cards: title flags are only ever raised. Upcoming cards: kept rows
+  // follow the source (a bout can lose a belt, change weight, move to the main event).
+  const titleUpdates = UPCOMING ? [] : pairing.filter(p => p.dbf && isTitleBo(p.pageIdx) && !p.dbf.is_title_fight);
   if (titleUpdates.length) {
     console.log(`  title-flag updates on kept rows (${titleUpdates.length}):`);
     titleUpdates.forEach(p => console.log(`    ${p.dbf.id.slice(0, 8)}  bo=${p.pageIdx}  is_title_fight -> true`));
   }
+  const syncUpdates = !UPCOMING ? [] : pairing.filter(p => p.dbf).map(p => {
+    const wc = wcByNorm[norm(p.row.wc)];
+    const want = {
+      weight_class_id: wc ? wc.id : p.dbf.weight_class_id,
+      is_title_fight: isTitleBo(p.pageIdx),
+      is_interim_title: INTERIM_BOS.includes(p.pageIdx),
+      time_format: timeFormatFor(p.pageIdx),
+    };
+    const set = Object.fromEntries(Object.entries(want).filter(([k, v]) => (p.dbf[k] ?? null) !== v));
+    return { p, set };
+  }).filter(u => Object.keys(u.set).length);
+  if (UPCOMING) {
+    console.log(`  kept-row sync (${syncUpdates.length}):`);
+    syncUpdates.forEach(({ p, set }) => console.log(`    ${p.dbf.id.slice(0, 8)}  bo=${p.pageIdx}  ${Object.entries(set).map(([k, v]) => `${k} ${JSON.stringify(p.dbf[k] ?? null)} -> ${JSON.stringify(v)}`).join(', ')}`));
+  }
+  summary.syncUpdates = syncUpdates.map(({ p, set }) => `bo${p.pageIdx} ${Object.keys(set).join(',')}`);
   if (TITLE_BOS.length) console.log(`  --title bout_orders: ${TITLE_BOS.join(', ')}`);
+  if (INTERIM_BOS.length) console.log(`  --interim bout_orders: ${INTERIM_BOS.join(', ')}`);
   const bos = a => (a.length ? a.map(i => 'bo' + i).join(', ') : 'none');
   console.log(`  ufcstats UFC title bouts: ${bos(summary.titleBouts)}  |  interim: ${bos(summary.interimBouts)}  |  tournament finals (not flagged): ${bos(summary.tournamentBouts)}`);
   const finalCount = dbFights.length - stale.length + inserts.length;
@@ -560,9 +634,13 @@ async function main() {
   // ── phases 6-8 preview ────────────────────────────────────────────────────
   console.log('\n━━━━ PHASES 6-8 — RESULTS / CARD POSITION / COMPLETE ━━━━');
   const eventNameFinal = eventPlan.create ? eventPlan.create.name : (eventPlan.updates.name || eventRow.name);
-  console.log(`  6. ufcstats-fight-stats.js --write-results --ufc-id ${UFCID}`);
-  console.log(`  7. fix-bout-order.js --event "${eventNameFinal}"  (then report any null card_position)`);
-  console.log(`  8. events.is_complete -> true once all ${card.length} fights carry results`);
+  if (UPCOMING) {
+    console.log(`  --upcoming: no results, no is_complete; 7. fix-bout-order.js --event "${eventNameFinal}" (card_position)`);
+  } else {
+    console.log(`  6. ufcstats-fight-stats.js --write-results --ufc-id ${UFCID}`);
+    console.log(`  7. fix-bout-order.js --event "${eventNameFinal}"  (then report any null card_position)`);
+    console.log(`  8. events.is_complete -> true once all ${card.length} fights carry results`);
+  }
   if (SKIP_RESULTS) console.log('  (--skip-results: phases 6-8 will NOT run)');
 
   if (!APPLY) {
@@ -651,8 +729,9 @@ async function main() {
       id: crypto.randomUUID(), event_id: EVENT_DB_ID, fighter1_id: f1, fighter2_id: f2,
       winner_id: null, card_position: null, bout_order: p.pageIdx,
       weight_class_id: wc ? wc.id : null,
-      is_title_fight: TITLE_BOS.includes(p.pageIdx), is_interim_title: false,
+      is_title_fight: isTitleBo(p.pageIdx), is_interim_title: INTERIM_BOS.includes(p.pageIdx),
       result: 'upcoming', method: null, round: null, time: null,
+      ...(UPCOMING ? { time_format: timeFormatFor(p.pageIdx) } : {}),
     };
     const { error } = await supabase.from('fights').insert(row);
     console.log(`  [5] insert bo=${p.pageIdx} ${p.row.fighters[0].name} vs ${p.row.fighters[1].name}: ${error ? 'ERROR ' + error.message : 'ok'}`);
@@ -662,8 +741,27 @@ async function main() {
     const { error } = await supabase.from('fights').update({ is_title_fight: true }).eq('id', p.dbf.id);
     console.log(`  [5] title flag bo=${p.pageIdx}: ${error ? 'ERROR ' + error.message : 'ok'}`);
   }
+  for (const { p, set } of syncUpdates) {
+    const { error } = await supabase.from('fights').update(set).eq('id', p.dbf.id);
+    console.log(`  [5] sync bo=${p.pageIdx} (${Object.keys(set).join(', ')}): ${error ? 'ERROR ' + error.message : 'ok'}`);
+    if (error) process.exit(1);
+  }
+  summary.eventId = EVENT_DB_ID;
+  summary.createdIds = toCreate.map(sf => resolvedId[sf.name]).filter(Boolean);
 
   if (SKIP_RESULTS) { console.log('\n--skip-results set — stopping after phase 5.'); summary.ok = true; return; }
+
+  if (UPCOMING) {
+    runChild('fix-bout-order', ['src/scrapers/fix-bout-order.js', '--event', eventNameFinal]);
+    const { data: fin } = await supabase.from('fights').select('bout_order, card_position, fighter1_id, fighter2_id')
+      .eq('event_id', EVENT_DB_ID).order('bout_order');
+    const nullPos = fin.filter(f => !f.card_position);
+    console.log(`\n  rows: ${fin.length} (source ${card.length})${fin.length === card.length ? '' : '  *** MISMATCH ***'}  null card_position: ${nullPos.length}`);
+    summary.finalCount = fin.length;
+    summary.nullCardPosition = nullPos.map(f => f.bout_order);
+    summary.ok = true;
+    return;
+  }
 
   // 6-7. child scripts
   runChild('results scraper', ['src/scrapers/ufcstats-fight-stats.js', '--write-results', '--ufc-id', UFCID]);

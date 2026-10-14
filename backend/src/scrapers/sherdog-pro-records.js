@@ -10,7 +10,12 @@
  * Requires the pro_* columns — run src/db/migrations/2026-06-10-add-pro-record.sql
  * in the Supabase SQL editor first.
  *
- * Run: node src/scrapers/sherdog-pro-records.js [--dry-run] [--limit N]
+ * --ids ID,ID  target exactly these fighters, even when pro_wins is already set.
+ *   backfill-event.js fills pro_* from the ufcstats record when it creates a
+ *   debutant, so the default (pro_wins IS NULL) never reaches them and they never
+ *   get a sherdog_id; upcoming-cards.js and weekly-update.js pass the new ids here.
+ *
+ * Run: node src/scrapers/sherdog-pro-records.js [--dry-run] [--limit N] [--ids ID,...]
  */
 require('dotenv').config();
 const axios   = require('axios');
@@ -21,6 +26,8 @@ const DELAY   = parseInt(process.env.SCRAPE_DELAY_MS || '1500');
 const DRY_RUN = process.argv.includes('--dry-run');
 const limitArg = process.argv.indexOf('--limit');
 const LIMIT   = limitArg !== -1 ? parseInt(process.argv[limitArg + 1]) : Infinity;
+const idsArg  = process.argv.indexOf('--ids');
+const IDS     = idsArg !== -1 ? process.argv[idsArg + 1].split(',').map(s => s.trim()).filter(Boolean) : null;
 
 const http = axios.create({
   timeout: 20000,
@@ -138,9 +145,20 @@ async function scrapeProRecord(url) {
   }
 }
 
-// All fighters not yet scraped (pro_wins is null), paginated past the 1000-row cap
+// All fighters not yet scraped (pro_wins is null), paginated past the 1000-row cap;
+// with --ids, exactly those fighters (batches of 100 for the .in() URL limit)
 async function fetchTargets() {
   const all = [];
+  if (IDS) {
+    for (let i = 0; i < IDS.length; i += 100) {
+      const { data, error } = await supabase.from('fighters')
+        .select('id, first_name, last_name, sherdog_id, wins, losses, draws, no_contests')
+        .in('id', IDS.slice(i, i + 100));
+      if (error) throw new Error(`DB error: ${error.message}`);
+      all.push(...(data || []));
+    }
+    return all;
+  }
   let page = 0;
   while (true) {
     const { data, error } = await supabase
@@ -174,7 +192,7 @@ async function main() {
   }
 
   const targets = await fetchTargets();
-  console.log(`${targets.length} fighters without a pro record${LIMIT < Infinity ? ` (limiting to ${LIMIT})` : ''}\n`);
+  console.log(`${targets.length} fighters ${IDS ? 'from --ids' : 'without a pro record'}${LIMIT < Infinity ? ` (limiting to ${LIMIT})` : ''}\n`);
 
   let updated = 0, noMatch = 0, mismatch = 0, failed = 0;
 
@@ -191,6 +209,7 @@ async function main() {
       profileUrl = await searchSherdog(f.first_name, f.last_name);
       if (!profileUrl) {
         noMatch++;
+        if (IDS) console.log(`  NO MATCH: ${name}`);
         continue;
       }
     }
@@ -215,7 +234,7 @@ async function main() {
 
     if (DRY_RUN) {
       updated++;
-      console.log(`  [dry] ${name}: ${rec.pro_wins}-${rec.pro_losses}-${rec.pro_draws}${rec.pro_nc ? ` (${rec.pro_nc} NC)` : ''}`);
+      console.log(`  [dry] ${name} ${profileUrl}: ${rec.pro_wins}-${rec.pro_losses}-${rec.pro_draws}${rec.pro_nc ? ` (${rec.pro_nc} NC)` : ''}`);
       continue;
     }
 
@@ -232,6 +251,7 @@ async function main() {
       console.log(`  ERROR ${name}: ${upErr.message}`);
     } else {
       updated++;
+      if (IDS) console.log(`  ${name}: ${rec.pro_wins}-${rec.pro_losses}-${rec.pro_draws}  ${profileUrl}`);
       if (updated % 25 === 0)
         console.log(`  Updated ${updated}/${Math.min(targets.length, LIMIT)} (no match: ${noMatch}, mismatch: ${mismatch}, failed: ${failed})`);
     }

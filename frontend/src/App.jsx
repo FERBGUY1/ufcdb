@@ -6,6 +6,7 @@ import FighterPage from './pages/FighterPage';
 import EventsPage  from './pages/EventsPage';
 import EventPage   from './pages/EventPage';
 import PredictPage from './pages/PredictPage';
+import TrackRecordPage from './pages/TrackRecordPage';
 import StylesPage  from './pages/StylesPage';
 import ComparePage from './pages/ComparePage';
 import RankingsPage from './pages/RankingsPage';
@@ -25,6 +26,7 @@ export default function App() {
           <Route path="/events"           element={<EventsPage />} />
           <Route path="/events/:slug"     element={<EventPage />} />
           <Route path="/predict"          element={<PredictPage />} />
+          <Route path="/track-record"     element={<TrackRecordPage />} />
           <Route path="/styles"           element={<StylesPage />} />
           <Route path="/compare"          element={<ComparePage />} />
           <Route path="/rankings"         element={<RankingsPage />} />

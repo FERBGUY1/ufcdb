@@ -404,7 +404,8 @@ async function fetchWikiFightOrder(wikiUrl) {
           .replace(/\([a-z]{1,2}\)/gi, '').replace(/\[\w+\]/g, '').trim();
         if (!f1raw || !f2raw || f1raw.length > 60 || f2raw.length > 60) return;
 
-        buckets[currentSection].push({ f1: f1raw, f2: f2raw });
+        const wc = f1Idx > 0 ? $(cells[f1Idx - 1]).text().replace(/\s+/g, ' ').trim() : null;
+        buckets[currentSection].push({ f1: f1raw, f2: f2raw, wc });
       });
     });
 
@@ -441,7 +442,7 @@ async function fetchWikiFightOrder(wikiUrl) {
       } else {
         cardPosition = deriveCardPosition(i, total);
       }
-      return { f1: f.f1, f2: f.f2, boutOrder: i, cardPosition };
+      return { f1: f.f1, f2: f.f2, wc: f.wc, boutOrder: i, cardPosition };
     });
 
   } catch (e) {
@@ -764,4 +765,5 @@ module.exports = {
   rowSectionHeader,
   detectTableSection,
   fetchWikiFightOrder,
+  fetchWikiEventList,
 };

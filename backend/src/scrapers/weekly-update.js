@@ -21,8 +21,14 @@
  *      the predictor's training data, fight_replacements table) ->
  *      sherdog-pro-records.js + sherdog-history.js (Sherdog profile and fight
  *      history for new fighters; the predictor trains on the exact pre-UFC
- *      record, training-only) -> validate.js. These still run when a later event
+ *      record, training-only; card fighters still without a sherdog_id are looked up
+ *      by id, since debutants created by backfill-event.js already carry a pro record)
+ *      -> grade-predictions.js -> validate.js. These still run when a later event
  *      was unclean, so the events that did land are never left half-processed.
+ *
+ *   5. grade-predictions.js fills results into prediction_log for every complete
+ *      event with ungraded picks. Runs even when no event was applied (an event may
+ *      have been backfilled by hand).
  *
  * Output is one line per step; full child output goes to a log file in the OS temp
  * dir (path printed at the end). Exits 1 if anything stopped or failed.
@@ -142,6 +148,13 @@ async function fixCardPositions(eventId) {
   return { fixed, left };
 }
 
+// ── 5. grade logged predictions ─────────────────────────────────────────────
+function grade() {
+  const r = run(['src/scrapers/grade-predictions.js']);
+  const m = lastMatch(r.out, /Done: (\d+) graded \((\d+) correct, (\d+) wrong\), (\d+) void, (\d+) pending, (\d+) errors/);
+  step('grade-predictions.js', m ? `${m[1]} picks graded (${m[2]} correct, ${m[3]} wrong), ${m[4]} void, ${m[5]} pending` : `exit ${r.status}, no completion line`, r.status === 0 && !!m && m[6] === '0');
+}
+
 // ── main ────────────────────────────────────────────────────────────────────
 async function main() {
   console.log(`UFCDB weekly update${DRY ? ' (DRY RUN — nothing written)' : ''}`);
@@ -190,6 +203,7 @@ async function main() {
 
   if (DRY || !applied.length) {
     if (!DRY) step('post-event scripts', 'skipped — no event applied', !failed);
+    if (!DRY) grade();
     return;
   }
 
@@ -201,7 +215,7 @@ async function main() {
   const ids = [...new Set(fights.flatMap(f => [f.fighter1_id, f.fighter2_id]).filter(Boolean))];
   const fighters = [];
   for (let i = 0; i < ids.length; i += 100) {
-    const { data } = await supabase.from('fighters').select('id, first_name, last_name').in('id', ids.slice(i, i + 100));
+    const { data } = await supabase.from('fighters').select('id, first_name, last_name, sherdog_id').in('id', ids.slice(i, i + 100));
     fighters.push(...(data || []));
   }
 
@@ -243,9 +257,21 @@ async function main() {
   m = lastMatch(r.out, /Updated:\s+(\d+)[\s\S]*?No match:\s+(\d+)[\s\S]*?Mismatch:\s+(\d+)[\s\S]*?Failed:\s+(\d+)/);
   step('sherdog-pro-records.js', m ? `${m[1]} pro records set, ${m[2]} no match, ${m[3]} mismatch, ${m[4]} failed` : `exit ${r.status}, no completion line`, r.status === 0 && !!m && m[4] === '0');
 
+  // Debutants created by backfill-event.js carry the ufcstats pro record, so the
+  // pro_wins IS NULL pass above never reaches them; look up the cards' fighters
+  // that still have no sherdog_id by id.
+  const noSherdog = fighters.filter(f => !f.sherdog_id).map(f => f.id);
+  if (noSherdog.length) {
+    r = run(['src/scrapers/sherdog-pro-records.js', '--ids', noSherdog.join(',')]);
+    m = lastMatch(r.out, /Updated:\s+(\d+)[\s\S]*?No match:\s+(\d+)[\s\S]*?Mismatch:\s+(\d+)[\s\S]*?Failed:\s+(\d+)/);
+    step('sherdog-pro-records --ids', m ? `${noSherdog.length} card fighters without a sherdog_id: ${m[1]} matched, ${m[2]} no match, ${m[3]} mismatch, ${m[4]} failed` : `exit ${r.status}, no completion line`, r.status === 0 && !!m && m[4] === '0');
+  }
+
   r = run(['src/scrapers/sherdog-history.js']);
   m = lastMatch(r.out, /Done: (\d+) fighters parsed \((\d+) fetched, rest from cache\), (\d+) rows written, (\d+) wrong-profile skips, (\d+) missing pages, (\d+) failed/);
   step('sherdog-history.js', m ? `${m[2]} new Sherdog pages, ${m[3]} fight rows, ${m[4]} wrong-profile, ${m[5]} missing, ${m[6]} failed` : `exit ${r.status}, no completion line`, r.status === 0 && !!m && m[6] === '0');
+
+  grade();
 
   r = run(['src/validate.js']);
   const pass = /All checks passed/.test(r.out);

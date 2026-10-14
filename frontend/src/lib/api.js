@@ -32,6 +32,8 @@ export const getPrediction = (slug1, slug2, wcSlug, rounds = null) =>
   api.post('/predict', { fighter1_slug: slug1, fighter2_slug: slug2, ...(wcSlug && { weight_class_slug: wcSlug }), ...(rounds && { rounds }) }).then(r=>r.data);
 
 // ── RANKINGS ─────────────────────────────────────────────
+export const getTrackRecord = () => api.get('/track-record').then(r=>r.data);
+
 export const getAllRankings = ()       => api.get('/rankings/all').then(r=>r.data);
 export const getRankings   = (wc)     => api.get('/rankings', {params:{weight_class:wc}}).then(r=>r.data);
 

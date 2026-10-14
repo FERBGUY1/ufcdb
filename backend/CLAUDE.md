@@ -72,14 +72,25 @@ Run `fix-fighter-records.js` after any bulk fight insert/delete to resync UFC re
 ### `src/scrapers/weekly-update.js` — Weekly post-event refresh (`npm run weekly`)
 - **Finds** completed ufcstats events dated after the latest `is_complete` DB event (and before today)
 - **Per event, oldest first**: dry-runs `backfill-event.js`; applies only if clean (no abort/identity conflict, count matches, no VARIANT match, no suspect near-match on a fighter create, no interim title), with `--title` from ufcstats UFC title bouts; otherwise stops and reports
-- **Then**: fills null `card_position` from agreeing neighbours, and (if anything was applied) runs rankings.js → computeCareerStats.js → computeRatings.js (scoped to the applied cards) → fix-fighter-records.js → validate.js
+- **Then**: fills null `card_position` from agreeing neighbours, and (if anything was applied) runs rankings.js → computeCareerStats.js → computeRatings.js (scoped to the applied cards) → fix-fighter-records.js → wiki-short-notice.js → sherdog-pro-records.js (+ `--ids` for card fighters with no `sherdog_id`) → sherdog-history.js → grade-predictions.js → validate.js. grade-predictions.js also runs when no event was applied
 - **Output**: one line per step; full child output in a temp-dir log. Exits 1 on any stop/failure
 - **Flags**: `--dry-run` · `--since YYYY-MM-DD`
 - A namesake stop is resolved by running `backfill-event.js --ufc-id <event> --new-fighter <fighter ufc_id>` by hand, then re-running weekly
 
 ### `src/scrapers/backfill-event.js` — Single-event backfill from ufcstats
-- **Flags**: `--ufc-id ID` · `--apply` · `--title "0,3"` · `--new-fighter ID[,ID]` (create a verified same-name namesake; slug gets `-2`, `-3`, ...) · `--summary-json PATH` · `--skip-results`
+- **Flags**: `--ufc-id ID` · `--apply` · `--title "0,3"` · `--new-fighter ID[,ID]` (create a verified same-name namesake; slug gets `-2`, `-3`, ...) · `--summary-json PATH` · `--skip-results` · `--interim "1"` · `--upcoming` (scheduled card: syncs kept bouts' weight class / title flags / `time_format`, 5 rounds for bo0 and title bouts; no results, no is_complete) · `--source-json PATH` (with --upcoming; Wikipedia card, fighters matched by name only, never created)
 - ufcstats shows belt icons on TUF / Road to UFC tournament finals too; the dry run reads each belt bout's page title and only counts "UFC … Title Bout"
+
+### `src/scrapers/upcoming-cards.js` — Scheduled cards + prediction log (manual)
+- **Source**: ufcstats upcoming listing; Wikipedia (List of UFC events + event pages) if ufcstats fails or `--wiki`
+- **Per event**: `backfill-event.js --upcoming` dry run → apply only if clean (same rules as weekly: no abort/conflict/VARIANT/suspect create, count matches) → `sherdog-pro-records.js --ids` for created debutants → `log-predictions.js --void-missing`
+- **Flags**: `--apply` · `--days N` (default 14) · `--ufc-id ID[,ID]` · `--wiki` · `--no-log`
+- Re-run whenever a card changes: new bouts are inserted and logged, bouts that left are deleted and their picks voided, locked picks are untouched
+
+### `src/scrapers/log-predictions.js` / `grade-predictions.js` — Predictions log
+- `prediction_log` (migration `2026-10-15-prediction-log.sql`): one row per scheduled bout, written BEFORE the event, **first pick locked** (unique on event + unordered pair). DB triggers refuse inserts after the event date, any change to prediction columns, any re-write of a grading column, and all deletes — there is no in-place correction; that is the point
+- log: `generatePrediction` with the fight's weight class and rounds (`time_format`), no narrative, no cache. Pick = higher win %, method = that side's likeliest of KO/TKO/SUB/DEC. Flags `--event-id` · `--upcoming` · `--void-missing` · `--dry-run`
+- grade: matches by event + unordered pair once `is_complete`; draw / NC / cancelled / matchup changed → `void` (not scored). Served by `GET /api/track-record` → `TrackRecordPage` (`/track-record`)
 
 ### `src/scrapers/fix-bout-order.js` — Bout order + card position
 - **Source**: Wikipedia (all events) → API-Sports fallback (2022+ not yet on Wikipedia)
@@ -113,6 +124,7 @@ Run `fix-fighter-records.js` after any bulk fight insert/delete to resync UFC re
 - **Resume**: targets fighters where `pro_wins IS NULL`; safe to re-run
 - **Guard**: skips fighters whose Sherdog record is smaller than their UFC record (wrong-profile signal)
 - **Flags**: `--dry-run` · `--limit N`
+- **`--ids ID,ID`**: exactly these fighters even when `pro_wins` is set — backfill-event.js fills `pro_*` from ufcstats for debutants, so the default pass never gives them a `sherdog_id`
 - **Requires**: `src/db/migrations/2026-06-10-add-pro-record.sql` run in Supabase SQL editor
 
 ### `src/scrapers/fix-fighter-records.js` — Resync UFC record stats

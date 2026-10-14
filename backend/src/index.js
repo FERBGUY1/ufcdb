@@ -16,6 +16,7 @@ const predictRouter     = require('./routes/predict');
 const styleRouter       = require('./routes/styles');
 const adminRouter       = require('./routes/admin');
 const rankingsRouter    = require('./routes/rankings');
+const trackRecordRouter = require('./routes/trackRecord');
 
 const { syncOdds }             = require('./scrapers/odds');
 const { computeStyleMatchups } = require('./ml/qualityEngine');
@@ -58,6 +59,7 @@ app.use('/api/predict',  predictRouter);
 app.use('/api/styles',   styleRouter);
 app.use('/api/admin',    adminRouter);
 app.use('/api/rankings', rankingsRouter);
+app.use('/api/track-record', trackRecordRouter);
 
 app.get('/api/health', (req, res) =>
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
