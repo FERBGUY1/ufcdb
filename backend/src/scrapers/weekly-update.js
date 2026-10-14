@@ -18,7 +18,10 @@
  *   4. If any event was applied: rankings.js -> computeCareerStats.js ->
  *      computeRatings.js (both scoped to the applied cards' fighters) ->
  *      fix-fighter-records.js -> wiki-short-notice.js (late-replacement lookup for
- *      the predictor's training data, fight_replacements table) -> validate.js. These still run when a later event
+ *      the predictor's training data, fight_replacements table) ->
+ *      sherdog-pro-records.js + sherdog-history.js (Sherdog profile and fight
+ *      history for new fighters; the predictor trains on the exact pre-UFC
+ *      record, training-only) -> validate.js. These still run when a later event
  *      was unclean, so the events that did land are never left half-processed.
  *
  * Output is one line per step; full child output goes to a log file in the OS temp
@@ -230,6 +233,19 @@ async function main() {
   r = run(['src/scrapers/wiki-short-notice.js', '--since', sinceYear]);
   m = lastMatch(r.out, /Fights with a replacement on file: (\d+); with days known: (\d+)/);
   step('wiki-short-notice.js', m ? `${m[1]} replacement bouts on file (${m[2]} with notice days)` : `exit ${r.status}, no completion line`, r.status === 0 && !!m);
+
+  // Pre-UFC pro record for the predictor (model-v6 trains on the exact as-of record from
+  // sherdog_fights, TRAINING ONLY): sherdog-pro-records.js finds a Sherdog profile for every
+  // fighter without one yet (pro_wins IS NULL = the cards' debutants), then
+  // sherdog-history.js fetches the fight history of every fighter with a sherdog_id that is
+  // not in its progress file. Both are resumable; nothing to commit.
+  r = run(['src/scrapers/sherdog-pro-records.js']);
+  m = lastMatch(r.out, /Updated:\s+(\d+)[\s\S]*?No match:\s+(\d+)[\s\S]*?Mismatch:\s+(\d+)[\s\S]*?Failed:\s+(\d+)/);
+  step('sherdog-pro-records.js', m ? `${m[1]} pro records set, ${m[2]} no match, ${m[3]} mismatch, ${m[4]} failed` : `exit ${r.status}, no completion line`, r.status === 0 && !!m && m[4] === '0');
+
+  r = run(['src/scrapers/sherdog-history.js']);
+  m = lastMatch(r.out, /Done: (\d+) fighters parsed \((\d+) fetched, rest from cache\), (\d+) rows written, (\d+) wrong-profile skips, (\d+) missing pages, (\d+) failed/);
+  step('sherdog-history.js', m ? `${m[2]} new Sherdog pages, ${m[3]} fight rows, ${m[4]} wrong-profile, ${m[5]} missing, ${m[6]} failed` : `exit ${r.status}, no completion line`, r.status === 0 && !!m && m[6] === '0');
 
   r = run(['src/validate.js']);
   const pass = /All checks passed/.test(r.out);

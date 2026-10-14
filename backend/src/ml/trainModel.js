@@ -1,6 +1,6 @@
 /**
  * trainModel.js — train the shipped predictor (logistic regression) and write
- * src/ml/model-v5.json.
+ * src/ml/model-v6.json.
  *
  * Dataset: every completed fight with a winner (TRAIN_MIN_PRIOR prior
  * stats-fights per side; 0 = debutants included). Features are computed with
@@ -19,7 +19,7 @@
  * set, market baseline) use src/ml/evaluate.js — it imports the dataset
  * builder, trainer and scorer from here so the two can never drift.
  *
- * Output: src/ml/model-v5.json (weights, standardization, metrics) — read by
+ * Output: src/ml/model-v6.json (weights, standardization, metrics) — read by
  * predictionEngine.js. Writes NOTHING to the database.
  *
  * Run: node -r dotenv/config src/ml/trainModel.js
@@ -36,7 +36,7 @@ const { FEATURES, DEFAULT_CONFIG, sideFeatures, ufcResultsOnOrAfter, diffVector,
 const SPLIT_DATE = '2024-01-01';
 const MIN_PRIOR_STATS_FIGHTS = 2;   // harness default (Phase-0 comparability)
 const PRIOR_CUTOFF = '2019-01-01'; // league priors use only fights before the first evaluation fold
-const MODEL_PATH = path.join(__dirname, 'model-v5.json');
+const MODEL_PATH = path.join(__dirname, 'model-v6.json');
 // Late replacements per fight (scrapers/wiki-short-notice.js). Shipped in v5 (2026-10-13): replacement + notice_days
 // passed the gate (-0.0030 mean, worse only 2023 +0.0010); a binary short_notice (<= 21 days) was redundant with them.
 // Lives in the fight_replacements table (migration 2026-10-13); npm run weekly refreshes it.
@@ -142,7 +142,10 @@ function noticeFor(rec, fighterId) {
 // legacy features whose removal did not raise held-out logloss — slpm,
 // kd_absorbed_per15, cardio_degradation, experience, recent_win_rate,
 // form_trend. Final 18-feature set: pooled logloss 0.6298 on the min-prior-2 subset.
-const TRAIN_CONFIG = { ...DEFAULT_CONFIG, shrinkMinutes: 30, halfLifeDays: 1095, layoffCapDays: 730, winShrinkFights: 2, clipZ: 3, eloK: 100, eloFinishMult: 1.5 };
+// proRecordSource 'sherdog' (v6, 2026-10-14): pro_win_rate / pro_fights are the EXACT pro record as of the fight
+// from sherdog_fights. The old 'approx' (today's record minus later UFC results) leaked post-UFC results
+// (+0.0010 pooled log loss on paper when removed, 6/8 folds) and is kept only as a harness option.
+const TRAIN_CONFIG = { ...DEFAULT_CONFIG, shrinkMinutes: 30, halfLifeDays: 1095, layoffCapDays: 730, winShrinkFights: 2, clipZ: 3, eloK: 100, eloFinishMult: 1.5, proRecordSource: 'sherdog' };
 const TRAIN_MIN_PRIOR = 0;
 const TRAIN_EXCLUDED = new Set([
   'stats_minutes', 'opp_adj_td_avg', 'elo_best_win', 'elo_trend', 'sos',
@@ -323,7 +326,7 @@ function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIO
 }
 
 async function main() {
-  console.log('Predictor v5 training\n');
+  console.log('Predictor v6 training\n');
   const events = await loadAll('events', 'id, date');
   const fights = await loadAll('fights', FIGHT_COLS);
   const fighters = await loadAll('fighters', FIGHTER_COLS);
@@ -394,7 +397,7 @@ async function main() {
   }
 
   fs.writeFileSync(MODEL_PATH, JSON.stringify({
-    version: 'v5',
+    version: 'v6',
     trainedAt: new Date().toISOString(),
     splitDate: SPLIT_DATE,
     minPriorStatsFights: TRAIN_MIN_PRIOR,

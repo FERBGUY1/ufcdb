@@ -208,7 +208,7 @@ so it always classifies as stale even when it is on the source card).
 
 ## Predictor (`src/ml/`)
 
-**Shipped model: `model-v5.json`** (written by `trainModel.js`, read by `predictionEngine.js`; v4 + the two late-replacement features, see below).
+**Shipped model: `model-v6.json`** (written by `trainModel.js`, read by `predictionEngine.js`; the v5 feature set — v4 + the two late-replacement features — trained with `proRecordSource: 'sherdog'`, the exact pre-UFC record as of each fight, see "Honest pro record" below).
 The file carries the feature list, standardization, weights, the **config** it was trained
 under and the **league priors**, so serving always matches training:
 
@@ -242,7 +242,7 @@ on `fights` (`fighterN_quality_score`) are still null — Elo lives in the model
 for the model, raw `snapshot()` for round projections. Confidence: `high`/`medium`/`low` by
 probability margin, capped at `medium` when `weight_class_context.has_size_mismatch`, forced
 `low` when a side has <2 stats-fights or <30 min of stat time. Rate-stat factor rows carry a
-"thin sample" note under 30 min. Cache rows are keyed by `model_version` (`v5`); older
+"thin sample" note under 30 min. Cache rows are keyed by `model_version` (`v6`); older
 rows are simply never matched.
 
 ### Evaluation (`evaluate.js`, `npm run eval:predictor`)
@@ -289,7 +289,8 @@ and scorer. It writes nothing to the DB and never touches the model file.
 | `phase1-2.json` | 18 features (see below); Elo K 100 ×1.5 finishes; min-prior 0 | 64.8% / logloss 0.6298 | 19/27 |
 | `phase2-age-elo.json` | **shipped v4**: the 18 + `age_elo`; size prior in sanity | 65.2% / logloss 0.6283 | 25/27 |
 | `phase6-market.json` | shipped v4 + market baseline (2,480 fights with a closing line) | model 0.6274 vs market 0.6064 | 25/27 |
-| `phase8-short-notice.json` | **shipped v5**: v4 + `replacement`, `notice_days` (training-only context) | 0.6284 on this subset; 0.6385 vs 0.6415 on all 3,929 | 25/27 |
+| `phase8-short-notice.json` | v5: v4 + `replacement`, `notice_days` (training-only context) | 0.6284 on this subset; 0.6385 vs 0.6415 on all 3,929 | 25/27 |
+| `phase10-honest-record.json` | **shipped v6**: v5 features, `proRecordSource: sherdog` (exact as-of pro record) | 0.6395 on all 3,929; market gap +0.0359 on 3,875 with a line | — |
 
 Phase-2 findings (2026-10-12): opponent-adjusted striking alone −0.0046 (passes the gate
 on its own); Elo alone −0.0007 at K 40 but keeps improving with larger steps (K 60 −0.0019,
@@ -525,3 +526,31 @@ worst. The harness DEFAULTS are knobs-off; to reproduce the shipped setup pass
   = (pro_win_rate − 50) × min(pro_fights, 30) / 100; plus config `proRecordSource`
   (`--pro-record sherdog`) which swaps `pro_win_rate` / `pro_fights` to the exact as-of
   record instead of today's pro record minus later UFC results.
+
+**Honest pro record — SHIPPED as model-v6 (2026-10-14).** Scrape done: 4,103 pages,
+88,450 `sherdog_fights` rows (4,064 fighters); 82% of scored test fights and 75% of
+debutant fights have Sherdog data on both sides. Gate under the shipped flags (3,929
+scored fights 2019–2026):
+- `--pro-record sherdog` alone vs the v5 approximation: 0.6385 → 0.6395 (+0.0008 mean,
+  6/8 folds WORSE). The approximation (today's `pro_wins/pro_losses` minus later UFC
+  results) still contains every non-UFC bout the fighter had AFTER the fight, i.e. future
+  information, which is why it scores better. User decision: ship the exact record as the
+  honest baseline and accept the paper regression. Nothing else in v6 changed (same 21
+  features, same knobs). `model-v5.json` deleted; cache rows keyed `v6`.
+- Regional features vs the honest baseline (0.6395): `regional_opp_quality` −0.0012 but
+  2 folds worse (2019 +0.007); `regional_opp_ufc_share` −0.0006 (2 folds);
+  `regional_finish_rate` −0.0002 (4); `pro_record_quality` +0.0002 (6); all four together
+  −0.0016 (3 folds: 2019 +0.004). Against the leaky v5 baseline the same picture
+  (opp_quality −0.0015, 2 folds; all four −0.0021, 2 folds). NONE passes the ≤1-fold rule;
+  all four stay in `TRAIN_EXCLUDED`. Debutant gap moves 0.081 → 0.075 at best.
+- Market benchmark for v6 (`reports/phase10-honest-record.json`, 3,875 scored fights with
+  a line, ALL experience levels — the earlier +0.021 figures were on the min-prior-2
+  subset): market 0.6026, model 0.6385, **gap +0.0359**; blend 0.6099; pick agreement 75.5%;
+  flat-stake ROI −5.9% at the consensus close (CI −10.3% … −1.6%), −1.2% at the best close
+  (CI spans 0). By bucket: debutants +0.081, 1–2 +0.029, 3–5 +0.026, 6+ +0.018.
+- `npm run weekly` now runs `sherdog-pro-records.js` (profile + `sherdog_id` for fighters
+  with `pro_wins IS NULL`, i.e. the new cards' debutants) and then `sherdog-history.js`
+  (pages for every fighter with a `sherdog_id` not yet in `progress.json`) after
+  wiki-short-notice.js, so the as-of record stays current for retraining. A fighter whose
+  Sherdog profile is not found keeps a null pro record → `pro_win_rate`/`pro_fights` null
+  → those features drop out of the diff for that bout, at serving and in training alike.
