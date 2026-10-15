@@ -221,7 +221,7 @@ so it always classifies as stale even when it is on the source card).
 
 ## Predictor (`src/ml/`)
 
-**Shipped model: `model-v7.json`** (written by `trainModel.js`, read by `predictionEngine.js`; the v6 feature set — v4 + the two late-replacement features, `proRecordSource: 'sherdog'` — plus `glicko_scaled` from the unified Glicko-2 replay, see "Glicko-2 (Phase 11)" below). Serving reads Glicko state from the precomputed `glicko_ratings` table (never from `sherdog_fights`).
+**Shipped model: `model-v8.json`** (written by `trainModel.js`, read by `predictionEngine.js`; v7 retrained on the 2026-10-15 Sherdog links, same features and config — see "Sherdog links (v8)" below; the v6 feature set — v4 + the two late-replacement features, `proRecordSource: 'sherdog'` — plus `glicko_scaled` from the unified Glicko-2 replay, see "Glicko-2 (Phase 11)" below). Serving reads Glicko state from the precomputed `glicko_ratings` table (never from `sherdog_fights`).
 The file carries the feature list, standardization, weights, the **config** it was trained
 under and the **league priors**, so serving always matches training:
 
@@ -255,7 +255,7 @@ on `fights` (`fighterN_quality_score`) are still null — Elo lives in the model
 for the model, raw `snapshot()` for round projections. Confidence: `high`/`medium`/`low` by
 probability margin, capped at `medium` when `weight_class_context.has_size_mismatch`, forced
 `low` when a side has <2 stats-fights or <30 min of stat time. Rate-stat factor rows carry a
-"thin sample" note under 30 min. Cache rows are keyed by `model_version` (`v6`); older
+"thin sample" note under 30 min. Cache rows are keyed by `model_version` (`v8`); older
 rows are simply never matched.
 
 ### Evaluation (`evaluate.js`, `npm run eval:predictor`)
@@ -305,6 +305,7 @@ and scorer. It writes nothing to the DB and never touches the model file.
 | `phase8-short-notice.json` | v5: v4 + `replacement`, `notice_days` (training-only context) | 0.6284 on this subset; 0.6385 vs 0.6415 on all 3,929 | 25/27 |
 | `phase10-honest-record.json` | v6: v5 features, `proRecordSource: sherdog` (exact as-of pro record) | 0.6395 on all 3,929; market gap +0.0359 on 3,875 with a line | — |
 | `phase11-glicko-v7.json` | **shipped v7**: v6 + `glicko_scaled` (unified Glicko-2, finish ×1.5) | 0.6345 / 64.3% on all 3,929; market gap +0.0307 on 3,875 with a line | 25/27 |
+| `phase12-v8.json` | **shipped v8**: v7 features/config, 209 more fighters linked to Sherdog | 0.6319 / 64.2% on all 3,929; market gap +0.0287; debutant gap +0.0631 | 25/27 |
 
 Phase-2 findings (2026-10-12): opponent-adjusted striking alone −0.0046 (passes the gate
 on its own); Elo alone −0.0007 at K 40 but keeps improving with larger steps (K 60 −0.0019,
@@ -603,3 +604,17 @@ Config keys `glickoSeed` / `glickoTau` / `glickoRd0` / `glickoFinishMult` (+ `gl
   Sherdog rows stay internal: only a derived rating leaves them, and it is never displayed.
 - `model-v6.json` deleted; cache rows keyed `v7` (`fight_predictions` cleared before deploy).
   **Logged picks in `prediction_log` stay v6** — the log is write-once by design.
+
+**Sherdog links — SHIPPED as model-v8 (2026-10-15). Data fix, not a feature change.** 247 fighters with a
+UFC bout since 2010 had no `sherdog_id` (700 of the 3,929 scored fights), nearly all name variants the strict
+name search misses (Loopy/Lupita Godinez, Moicano/Renato Carneiro, Aoriqileng/Qileng Aori, Jacare/Ronaldo Souza).
+Matched through the fight graph instead: an opponent's cached Sherdog page links the fighter's profile on the bout
+date (±1 day); each candidate then had to match DOB exactly, be the only candidate, hold the UFC record
+(wrong-profile guard) and contain ≥ 80% of the fighter's DB fights. 209 in all: 200 linked (180 confident, 6 graph-verified with
+no DB DOB, 14 DOB mismatches with full history reviewed by the user) plus 9 ids
+MOVED off wrong holders (8 fightless duplicate rows, and Lance Gibson Sr. which held Jr.'s page); the stale
+`sherdog_fights` rows under those holders were deleted. Sherdog history now 4,269 fighters. Same 22 features,
+same config: 0.6345 → **0.6319**, market gap +0.0307 → +0.0287, debutant gap +0.0685 → +0.0631, better in 6/8
+folds (2019 +0.0013, 2025 +0.0008 worse); accepted by the user as a data fix outside the feature gate.
+`model-v7.json` deleted; cache rows keyed `v8`. Deferred cleanup (DOB corrections, two duplicate-row merges, the
+Junior/Justin Tafa fight split, Roberts/Argueta inflated UFC records, Gibson Sr.'s pro record, Romero) is a separate task.

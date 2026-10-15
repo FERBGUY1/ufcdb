@@ -1,6 +1,6 @@
 /**
  * trainModel.js — train the shipped predictor (logistic regression) and write
- * src/ml/model-v7.json.
+ * src/ml/model-v8.json.
  *
  * Dataset: every completed fight with a winner (TRAIN_MIN_PRIOR prior
  * stats-fights per side; 0 = debutants included). Features are computed with
@@ -19,7 +19,7 @@
  * set, market baseline) use src/ml/evaluate.js — it imports the dataset
  * builder, trainer and scorer from here so the two can never drift.
  *
- * Output: src/ml/model-v7.json (weights, standardization, metrics) — read by
+ * Output: src/ml/model-v8.json (weights, standardization, metrics) — read by
  * predictionEngine.js. Writes NOTHING to the database.
  *
  * Run: node -r dotenv/config src/ml/trainModel.js
@@ -37,7 +37,7 @@ const { FEATURES, DEFAULT_CONFIG, sideFeatures, ufcResultsOnOrAfter, diffVector,
 const SPLIT_DATE = '2024-01-01';
 const MIN_PRIOR_STATS_FIGHTS = 2;   // harness default (Phase-0 comparability)
 const PRIOR_CUTOFF = '2019-01-01'; // league priors use only fights before the first evaluation fold
-const MODEL_PATH = path.join(__dirname, 'model-v7.json');
+const MODEL_PATH = path.join(__dirname, 'model-v8.json');
 // Late replacements per fight (scrapers/wiki-short-notice.js). Shipped in v5 (2026-10-13): replacement + notice_days
 // passed the gate (-0.0030 mean, worse only 2023 +0.0010); a binary short_notice (<= 21 days) was redundant with them.
 // Lives in the fight_replacements table (migration 2026-10-13); npm run weekly refreshes it.
@@ -335,7 +335,7 @@ function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIO
 }
 
 async function main() {
-  console.log('Predictor v6 training\n');
+  console.log('Predictor v8 training\n');
   const events = await loadAll('events', 'id, date');
   const fights = await loadAll('fights', FIGHT_COLS);
   const fighters = await loadAll('fighters', FIGHTER_COLS);
@@ -406,7 +406,7 @@ async function main() {
   }
 
   fs.writeFileSync(MODEL_PATH, JSON.stringify({
-    version: 'v7',
+    version: 'v8',
     trainedAt: new Date().toISOString(),
     splitDate: SPLIT_DATE,
     minPriorStatsFights: TRAIN_MIN_PRIOR,

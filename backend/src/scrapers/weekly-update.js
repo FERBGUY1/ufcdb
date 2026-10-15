@@ -24,7 +24,7 @@
  *      record, training-only; card fighters still without a sherdog_id are looked up
  *      by id, since debutants created by backfill-event.js already carry a pro record)
  *      -> computeGlickoRatings.js (unified Glicko-2 replay -> glicko_ratings table, the
- *      serving source of model-v7's glicko_scaled) -> grade-predictions.js -> validate.js. These still run when a later event
+ *      serving source of model-v8's glicko_scaled) -> grade-predictions.js -> validate.js. These still run when a later event
  *      was unclean, so the events that did land are never left half-processed.
  *
  *   5. grade-predictions.js fills results into prediction_log for every complete
@@ -272,7 +272,7 @@ async function main() {
   m = lastMatch(r.out, /Done: (\d+) fighters parsed \((\d+) fetched, rest from cache\), (\d+) rows written, (\d+) wrong-profile skips, (\d+) missing pages, (\d+) failed/);
   step('sherdog-history.js', m ? `${m[2]} new Sherdog pages, ${m[3]} fight rows, ${m[4]} wrong-profile, ${m[5]} missing, ${m[6]} failed` : `exit ${r.status}, no completion line`, r.status === 0 && !!m && m[6] === '0');
 
-  // Glicko-2 ratings for the predictor (model-v7 glicko_scaled): full unified replay over
+  // Glicko-2 ratings for the predictor (model-v8 glicko_scaled): full unified replay over
   // UFC fights + the Sherdog bouts just fetched, upserted into glicko_ratings so
   // predictionEngine.js never touches sherdog_fights at request time.
   r = run(['src/ml/computeGlickoRatings.js']);
