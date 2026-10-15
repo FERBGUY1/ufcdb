@@ -6,22 +6,35 @@ const supabase = require('../db/client');
 // Every logged pick from prediction_log (written before each event, never
 // edited) plus summary metrics over the graded ones. Void picks (draw, no
 // contest, cancelled or changed bout) are listed but excluded from metrics.
+//
+// Toss-ups (rule fixed 2026-10-15, before any pick was graded): a pick whose
+// win probability is under TOSSUP_PCT is labelled a toss-up and left out of
+// accuracy (hit / miss counts), but still counts in log loss, Brier and
+// calibration, which score the probability rather than the side.
+const TOSSUP_PCT = 52;
+const isTossup = r => r.predicted_win_pct < TOSSUP_PCT;
 const CONFIDENCE = ['high', 'medium', 'low'];
 const BINS = [[50, 60], [60, 70], [70, 80], [80, 90], [90, 100.01]];
 const EPS = 1e-6;
 
+// n / log_loss / brier over every row; accuracy over the non-toss-ups only
+// (scored = its denominator, correct = its numerator).
 function metrics(rows) {
   const n = rows.length;
-  if (!n) return { n: 0, correct: 0, accuracy: null, log_loss: null, brier: null };
-  let correct = 0, ll = 0, brier = 0;
+  let correct = 0, scored = 0, ll = 0, brier = 0;
   for (const r of rows) {
     const p = Math.min(Math.max(r.predicted_win_pct / 100, EPS), 1 - EPS);
     const y = r.correct ? 1 : 0;
-    correct += y;
+    if (!isTossup(r)) { scored++; correct += y; }
     ll += -(y * Math.log(p) + (1 - y) * Math.log(1 - p));
     brier += (p - y) ** 2;
   }
-  return { n, correct, accuracy: correct / n, log_loss: ll / n, brier: brier / n };
+  return {
+    n, scored, tossups: n - scored, correct,
+    accuracy: scored ? correct / scored : null,
+    log_loss: n ? ll / n : null,
+    brier: n ? brier / n : null,
+  };
 }
 
 router.get('/', async (req, res, next) => {
@@ -55,11 +68,11 @@ router.get('/', async (req, res, next) => {
       by_confidence: CONFIDENCE.map(c => ({ confidence: c, ...metrics(graded.filter(r => r.confidence === c)) })),
       calibration: BINS.map(([lo, hi]) => {
         const inBin = graded.filter(r => r.predicted_win_pct >= lo && r.predicted_win_pct < hi);
-        const m = metrics(inBin);
+        const n = inBin.length;  // toss-ups included: calibration scores the probability
         return {
-          bin: `${lo}–${Math.min(hi, 100).toFixed(0)}%`, lo, hi: Math.min(hi, 100), n: m.n,
-          predicted: m.n ? inBin.reduce((s, r) => s + r.predicted_win_pct, 0) / m.n / 100 : null,
-          actual: m.accuracy,
+          bin: `${lo}–${Math.min(hi, 100).toFixed(0)}%`, lo, hi: Math.min(hi, 100), n,
+          predicted: n ? inBin.reduce((s, r) => s + r.predicted_win_pct, 0) / n / 100 : null,
+          actual: n ? inBin.filter(r => r.correct).length / n : null,
         };
       }),
       counts: {
@@ -69,6 +82,7 @@ router.get('/', async (req, res, next) => {
         pending: rows.filter(r => !r.outcome).length,
       },
       model_versions: [...new Set(rows.map(r => r.model_version))],
+      tossup_pct: TOSSUP_PCT,
     };
 
     const events = [];
@@ -86,6 +100,7 @@ router.get('/', async (req, res, next) => {
         fighter2: { id: r.fighter2_id, name: r.fighter2_name, slug: slugOf[r.fighter2_id] || null, win_pct: parseFloat(r.fighter2_win_pct) },
         pick: { id: r.predicted_winner_id, name: winnerIs1 ? r.fighter1_name : r.fighter2_name, win_pct: r.predicted_win_pct, method: r.predicted_method },
         confidence: r.confidence,
+        tossup: isTossup(r),
         scheduled_rounds: r.scheduled_rounds,
         is_title_fight: r.is_title_fight,
         model_version: r.model_version,

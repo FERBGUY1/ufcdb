@@ -18,6 +18,9 @@ const STATUS = {
   void:    { label: 'VOID',    cls: 'bg-white/5 text-white/40',       icon: '–' },
   pending: { label: 'PENDING', cls: 'bg-gold/10 text-gold',           icon: '…' },
 };
+// Graded toss-ups (pick under the toss-up line) are shown but not counted as a hit or miss.
+const TOSSUP_STATUS = { label: 'TOSS-UP', cls: 'bg-white/5 text-white/50' };
+const isScored = p => (p.status === 'hit' || p.status === 'miss') && !p.tossup;
 const VOID_TEXT = { draw: 'Draw', no_contest: 'No contest', cancelled: 'Bout cancelled', matchup_changed: 'Opponent changed' };
 
 function Tile({ label, value, sub }) {
@@ -82,7 +85,8 @@ function FighterName({ f, picked }) {
 }
 
 function PickRow({ p }) {
-  const st = STATUS[p.status];
+  const graded = p.status === 'hit' || p.status === 'miss';
+  const st = graded && p.tossup ? { ...TOSSUP_STATUS, icon: STATUS[p.status].icon } : STATUS[p.status];
   const r = p.result;
   const outcome = p.status === 'pending' ? 'Not yet fought'
     : p.status === 'void' ? (VOID_TEXT[p.void_reason] || 'Void')
@@ -101,8 +105,8 @@ function PickRow({ p }) {
           Pick: <span className="text-white/70">{p.pick.name}</span> {p.pick.win_pct.toFixed(1)}% · {p.pick.method} · {p.scheduled_rounds} rds
         </div>
       </div>
-      <span className={`shrink-0 text-[10px] uppercase tracking-widest border rounded px-2 py-0.5 ${CONF_STYLE[p.confidence]}`}>
-        {p.confidence}
+      <span className={`shrink-0 text-[10px] uppercase tracking-widest border rounded px-2 py-0.5 ${p.tossup ? CONF_STYLE.low : CONF_STYLE[p.confidence]}`}>
+        {p.tossup ? 'Toss-up' : p.confidence}
       </span>
       <div className="shrink-0 md:w-56 text-xs text-white/50 md:text-right">{outcome}</div>
     </div>
@@ -131,6 +135,11 @@ export default function TrackRecordPage() {
         Every pick is logged before the event and never edited afterwards — misses included.
         Draws, no contests and cancelled bouts are listed but not scored.
       </p>
+      <p className="text-xs text-white/40 -mt-2 mb-6">
+        <span className="text-white/60">Toss-up rule</span> (set on 15 Oct 2026, before any pick was graded):
+        a pick whose win probability is under {s?.tossup_pct ?? 52}% is labelled a toss-up. Toss-ups do not count
+        toward accuracy, but they stay in log loss, Brier and calibration, which score the probability itself.
+      </p>
 
       {loading ? (
         <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-14 bg-dark-3 rounded-xl animate-pulse" />)}</div>
@@ -141,7 +150,8 @@ export default function TrackRecordPage() {
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Tile label="Accuracy" value={pct(o.accuracy)} sub={`${o.correct} of ${o.n} graded picks`} />
+            <Tile label="Accuracy" value={pct(o.accuracy)}
+                  sub={`${o.correct} of ${o.scored} graded picks${o.tossups ? ` · ${o.tossups} toss-up${o.tossups === 1 ? '' : 's'} excluded` : ''}`} />
             <Tile label="Log loss" value={num(o.log_loss)} sub="lower is better · 0.693 = coin flip" />
             <Tile label="Brier" value={num(o.brier)} sub="lower is better · 0.250 = coin flip" />
             <Tile label="Logged" value={s.counts.logged}
@@ -172,6 +182,7 @@ export default function TrackRecordPage() {
                   ))}
                 </tbody>
               </table>
+              <p className="text-[11px] text-white/30 mt-2">Picks counts every graded pick; accuracy leaves out toss-ups.</p>
             </section>
 
             <section className="card p-4">
@@ -197,8 +208,9 @@ export default function TrackRecordPage() {
           <h2 className="text-xs tracking-[0.2em] text-white/50 uppercase mt-8 mb-3">Every pick</h2>
           <div className="space-y-4">
             {data.events.map(ev => {
-              const g = ev.picks.filter(p => p.status === 'hit' || p.status === 'miss');
+              const g = ev.picks.filter(isScored);
               const hits = g.filter(p => p.status === 'hit').length;
+              const graded = ev.picks.some(p => p.status === 'hit' || p.status === 'miss');
               return (
                 <section key={ev.event_id} className="card overflow-hidden">
                   <div className="flex items-baseline justify-between gap-3 px-4 py-3">
@@ -208,7 +220,7 @@ export default function TrackRecordPage() {
                         : <span className="font-medium">{ev.name}</span>}
                       <div className="text-xs text-white/40">{ev.date}</div>
                     </div>
-                    <div className="shrink-0 text-sm text-white/60">{g.length ? `${hits}/${g.length} correct` : 'upcoming'}</div>
+                    <div className="shrink-0 text-sm text-white/60">{graded ? `${hits}/${g.length} correct` : 'upcoming'}</div>
                   </div>
                   {ev.picks.map(p => <PickRow key={p.id} p={p} />)}
                 </section>

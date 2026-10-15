@@ -91,6 +91,7 @@ Run `fix-fighter-records.js` after any bulk fight insert/delete to resync UFC re
 - `prediction_log` (migration `2026-10-15-prediction-log.sql`): one row per scheduled bout, written BEFORE the event, **first pick locked** (unique on event + unordered pair). DB triggers refuse inserts after the event date, any change to prediction columns, any re-write of a grading column, and all deletes — there is no in-place correction; that is the point
 - log: `generatePrediction` with the fight's weight class and rounds (`time_format`), no narrative, no cache. Pick = higher win %, method = that side's likeliest of KO/TKO/SUB/DEC. Flags `--event-id` · `--upcoming` · `--void-missing` · `--dry-run`
 - grade: matches by event + unordered pair once `is_complete`; draw / NC / cancelled / matchup changed → `void` (not scored). Served by `GET /api/track-record` → `TrackRecordPage` (`/track-record`)
+- **Toss-up rule (user decision 2026-10-15, fixed before any pick was graded — do not move the line after results come in)**: a graded pick with `predicted_win_pct < 52` is labelled "Toss-up" and excluded from accuracy (overall, per confidence level, per-event hit counts), but stays in log loss, Brier and calibration. `TOSSUP_PCT` in `routes/trackRecord.js`; the rule is stated on the page. First two logged cards: 5 of 24 picks are toss-ups
 
 ### `src/scrapers/fix-bout-order.js` — Bout order + card position
 - **Source**: Wikipedia (all events) → API-Sports fallback (2022+ not yet on Wikipedia)
