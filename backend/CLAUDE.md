@@ -72,7 +72,7 @@ Run `fix-fighter-records.js` after any bulk fight insert/delete to resync UFC re
 ### `src/scrapers/weekly-update.js` — Weekly post-event refresh (`npm run weekly`)
 - **Finds** completed ufcstats events dated after the latest `is_complete` DB event (and before today)
 - **Per event, oldest first**: dry-runs `backfill-event.js`; applies only if clean (no abort/identity conflict, count matches, no VARIANT match, no suspect near-match on a fighter create, no interim title), with `--title` from ufcstats UFC title bouts; otherwise stops and reports
-- **Then**: fills null `card_position` from agreeing neighbours, and (if anything was applied) runs rankings.js → computeCareerStats.js → computeRatings.js (scoped to the applied cards) → fix-fighter-records.js → wiki-short-notice.js → sherdog-pro-records.js (+ `--ids` for card fighters with no `sherdog_id`) → sherdog-history.js → grade-predictions.js → validate.js. grade-predictions.js also runs when no event was applied
+- **Then**: fills null `card_position` from agreeing neighbours, and (if anything was applied) runs rankings.js → computeCareerStats.js → computeRatings.js (scoped to the applied cards) → fix-fighter-records.js → wiki-short-notice.js → sherdog-pro-records.js (+ `--ids` for card fighters with no `sherdog_id`) → sherdog-history.js → computeGlickoRatings.js (refreshes the `glicko_ratings` table the predictor serves from) → grade-predictions.js → validate.js. grade-predictions.js also runs when no event was applied
 - **Output**: one line per step; full child output in a temp-dir log. Exits 1 on any stop/failure
 - **Flags**: `--dry-run` · `--since YYYY-MM-DD`
 - A namesake stop is resolved by running `backfill-event.js --ufc-id <event> --new-fighter <fighter ufc_id>` by hand, then re-running weekly
@@ -221,7 +221,7 @@ so it always classifies as stale even when it is on the source card).
 
 ## Predictor (`src/ml/`)
 
-**Shipped model: `model-v6.json`** (written by `trainModel.js`, read by `predictionEngine.js`; the v5 feature set — v4 + the two late-replacement features — trained with `proRecordSource: 'sherdog'`, the exact pre-UFC record as of each fight, see "Honest pro record" below).
+**Shipped model: `model-v7.json`** (written by `trainModel.js`, read by `predictionEngine.js`; the v6 feature set — v4 + the two late-replacement features, `proRecordSource: 'sherdog'` — plus `glicko_scaled` from the unified Glicko-2 replay, see "Glicko-2 (Phase 11)" below). Serving reads Glicko state from the precomputed `glicko_ratings` table (never from `sherdog_fights`).
 The file carries the feature list, standardization, weights, the **config** it was trained
 under and the **league priors**, so serving always matches training:
 
@@ -303,7 +303,8 @@ and scorer. It writes nothing to the DB and never touches the model file.
 | `phase2-age-elo.json` | **shipped v4**: the 18 + `age_elo`; size prior in sanity | 65.2% / logloss 0.6283 | 25/27 |
 | `phase6-market.json` | shipped v4 + market baseline (2,480 fights with a closing line) | model 0.6274 vs market 0.6064 | 25/27 |
 | `phase8-short-notice.json` | v5: v4 + `replacement`, `notice_days` (training-only context) | 0.6284 on this subset; 0.6385 vs 0.6415 on all 3,929 | 25/27 |
-| `phase10-honest-record.json` | **shipped v6**: v5 features, `proRecordSource: sherdog` (exact as-of pro record) | 0.6395 on all 3,929; market gap +0.0359 on 3,875 with a line | — |
+| `phase10-honest-record.json` | v6: v5 features, `proRecordSource: sherdog` (exact as-of pro record) | 0.6395 on all 3,929; market gap +0.0359 on 3,875 with a line | — |
+| `phase11-glicko-v7.json` | **shipped v7**: v6 + `glicko_scaled` (unified Glicko-2, finish ×1.5) | 0.6345 / 64.3% on all 3,929; market gap +0.0307 on 3,875 with a line | 25/27 |
 
 Phase-2 findings (2026-10-12): opponent-adjusted striking alone −0.0046 (passes the gate
 on its own); Elo alone −0.0007 at K 40 but keeps improving with larger steps (K 60 −0.0019,
@@ -567,3 +568,38 @@ scored fights 2019–2026):
   wiki-short-notice.js, so the as-of record stays current for retraining. A fighter whose
   Sherdog profile is not found keeps a null pro record → `pro_win_rate`/`pro_fights` null
   → those features drop out of the diff for that bout, at serving and in training alike.
+
+**Glicko-2 (Phase 11) — SHIPPED as model-v7 (2026-10-15).** `glickoEngine.js` is a
+date-batched Glicko-2 replay with the same `summaryAsOf(fighterId, date)` contract as
+`eloEngine` (state before any fight on that date, RD inflated for inactivity; `glickoEngine.test.js`
+is the ordering guardrail — run `node src/ml/glickoEngine.test.js` after touching it). Seeds:
+`none` (1500/350), `record` (first state from the pre-UFC Sherdog record), `unified` (the replay
+itself includes every non-UFC Sherdog bout of fighters with a page; opponents without a page are
+their own nodes keyed by Sherdog id; a Sherdog row duplicating a DB fight ±1 day is dropped).
+Config keys `glickoSeed` / `glickoTau` / `glickoRd0` / `glickoFinishMult` (+ `glickoVol0`,
+`glickoPeriodDays`, `glickoSeed*`); harness flags `--glicko` / `--glicko-tau` / `--glicko-rd0` /
+`--glicko-finish`. Features: `glicko`, `glicko_rd`, `glicko_scaled` (PAIRWISE: rating gap /
+√(RD_a² + RD_b²)), `glicko_p` (logit of the Glicko expected score), `age_glicko`.
+- **Gate (v6 baseline 0.6395, 3,929 scored fights):** `glicko_scaled` under `--glicko unified
+  --glicko-finish 1.5` → **0.6345**, mean −0.0051, worse only in 2021 (+0.0023) — PASSES. `none`
+  and `record` seeds fail (3–4 folds worse); tau / RD0 grid are ties (defaults 0.5 / 350 kept);
+  finish multiplier off is worse in 8/8 folds. `glicko_rd`, `glicko_p`, `age_glicko` are zero in
+  leave-one-out and `glicko` adds nothing beyond `glicko_scaled`; all four stay in `TRAIN_EXCLUDED`.
+  Reports `reports/phase11-glicko-*.json`. Shipped set = the 21 of v6 + `glicko_scaled` (22);
+  `glicko_scaled` is the largest standardized coefficient (+0.398, ahead of age −0.311).
+- **Market (`reports/phase11-glicko-v7.json`, 3,875 fights with a line):** market 0.6026, model
+  0.6334, **gap +0.0307** (v6 +0.0359); blend 0.6075 (still no better than the market); pick
+  agreement 76.5%; ROI −4.6% at the consensus close (CI −8.8% … −0.4%), −0.3% at the best close
+  (CI spans 0). Debutant gap +0.081 → **+0.0685** (1–2: +0.020, 3–5: +0.022, 6+: +0.021).
+- **Serving reads a table, not Sherdog.** `computeGlickoRatings.js` runs the unified replay with
+  `trainModel.TRAIN_CONFIG` and upserts one row per fighter into `glicko_ratings` (migration
+  `2026-10-15-glicko-ratings.sql`: rating / rd / volatility after the last rated bout, fight
+  counts, `last_fight_date`, the engine config). `predictionEngine.getData` loads it through
+  `glickoEngine.ratingsFromTable`, which inflates the stored RD to today exactly as the replay
+  inflates to a fight date (verified identical to the full replay for all 4,539 fighters); an
+  unknown fighter gets the fresh 1500/350 state, as a debutant does in training. If the table is
+  missing or empty the engine warns, serves with the glicko features neutral and retries in 5
+  minutes instead of 6 hours. `npm run weekly` runs the precompute after sherdog-history.js. The
+  Sherdog rows stay internal: only a derived rating leaves them, and it is never displayed.
+- `model-v6.json` deleted; cache rows keyed `v7` (`fight_predictions` cleared before deploy).
+  **Logged picks in `prediction_log` stay v6** — the log is write-once by design.

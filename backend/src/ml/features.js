@@ -89,6 +89,13 @@ const FEATURES = [
   'regional_opp_quality',   // mean pre-fight win rate of non-UFC opponents whose own history is known (else 50)
   'regional_opp_ufc_share', // share of non-UFC opponents who had already fought in the UFC at the time
   'pro_record_quality',     // (pro_win_rate - 50) x min(pro_fights, 30) / 100: a 20-2 outranks a 5-0
+  // ── Phase 11: Glicko-2 with uncertainty (glickoEngine.js; cfg.glickoSeed none | record | unified).
+  //    Every entry is antisymmetric (a symmetric "combined RD" would break mirror symmetry). ──
+  'glicko',             // Glicko-2 rating before the fight
+  'glicko_rd',          // rating deviation before the fight (own minus opponent's in the diff)
+  'glicko_scaled',      // PAIRWISE: rating gap / sqrt(RD_a^2 + RD_b^2): the gap in standard errors
+  'glicko_p',           // PAIRWISE: logit of the Glicko expected score (uncertainty-aware win probability)
+  'age_glicko',         // (age - 30) * (glicko - 1500) / 100: the age_elo interaction on the Glicko rating
 ];
 
 // Pairwise features are built from BOTH sides in diffVector (antisymmetric
@@ -98,6 +105,14 @@ const PAIR_FEATURES = {
     ? a.td_avg * (100 - b.td_def) / 100 - b.td_avg * (100 - a.td_def) / 100 : 0),
   pair_strike_threat: (a, b) => (a.slpm != null && b.str_def != null && b.slpm != null && a.str_def != null
     ? a.slpm * (100 - b.str_def) / 100 - b.slpm * (100 - a.str_def) / 100 : 0),
+  glicko_scaled: (a, b) => (a.glicko != null && b.glicko != null
+    ? (a.glicko - b.glicko) / Math.sqrt(a.glicko_rd ** 2 + b.glicko_rd ** 2) : 0),
+  // Glicko expected score with the combined deviation (Glickman's match-prediction form), as a logit
+  glicko_p: (a, b) => {
+    if (a.glicko == null || b.glicko == null) return 0;
+    const s = 173.7178, phi = Math.sqrt(a.glicko_rd ** 2 + b.glicko_rd ** 2) / s;
+    return (1 / Math.sqrt(1 + 3 * phi * phi / (Math.PI * Math.PI))) * (a.glicko - b.glicko) / s;
+  },
 };
 
 const DEFAULT_CONFIG = {
@@ -112,6 +127,15 @@ const DEFAULT_CONFIG = {
   eloDecisionFloor: 0.5,// weight of the least convincing decision
   eloDecisionCap: 1,    // weight of a shutout decision
   proRecordSource: 'approx', // 'approx' = pro_wins/pro_losses minus later UFC results; 'sherdog' = exact as-of record (ctx.proRecord)
+  glickoSeed: 'off',    // Glicko-2 engine: off | none | record | unified (glickoEngine.js; 'off' = engine not built)
+  glickoTau: 0.5,       // Glicko-2 system constant
+  glickoRd0: 350,       // initial rating deviation
+  glickoVol0: 0.06,     // initial volatility
+  glickoPeriodDays: 365,// inactivity unit for RD inflation
+  glickoFinishMult: 1,  // rating-step multiplier for KO/SUB wins (1 = off)
+  glickoSeedSlope: 5,   // 'record' seed: rating points per % of pre-UFC win rate above 50 (x min(fights,30)/30)
+  glickoSeedOppSlope: 5,// 'record' seed: points per % of regional opponent quality above 50
+  glickoSeedRdDrop: 100,// 'record' seed: RD reduction at full weight (30+ pre-UFC fights)
 };
 
 /**
@@ -186,6 +210,9 @@ function sideValues(snap, snapRecent, fighter, asOfDate, cfg = DEFAULT_CONFIG, u
     moving_up_lbs: naturalLimit != null && bout.limitLbs != null ? bout.limitLbs - naturalLimit : null,
     off_division_fights: c.offDivisionFights ?? null,
     age_elo: age != null && elo ? (age - 30) * (elo.elo - 1500) / 100 : null,
+    glicko: ctx.glicko ? ctx.glicko.glicko : null,       // glickoEngine.summaryAsOf(); null = neutral
+    glicko_rd: ctx.glicko ? ctx.glicko.glicko_rd : null,
+    age_glicko: age != null && ctx.glicko ? (age - 30) * (ctx.glicko.glicko - 1500) / 100 : null,
     style_distance: snap.sig_distance_pct ?? null,
     style_clinch: snap.sig_clinch_pct ?? null,
     style_ground: snap.sig_ground_pct ?? null,
@@ -249,14 +276,15 @@ function ufcResultsOnOrAfter(timeline, date) {
  *            for the natural-division lookup. Missing pieces leave the
  *            dependent features null (= neutral).
  */
-function sideFeatures(timeline, fighter, asOf, cutoff, cfg = DEFAULT_CONFIG, priors = null, elo = null, bout = {}, limitByWc = {}) {
+function sideFeatures(timeline, fighter, asOf, cutoff, cfg = DEFAULT_CONFIG, priors = null, elo = null, bout = {}, limitByWc = {}, glicko = null) {
   const snapOpts = { asOf, halfLifeDays: cfg.halfLifeDays, shrinkMinutes: cfg.shrinkMinutes, priors };
   const snap = snapshot(timeline, cutoff, null, snapOpts);
   const recent = snapshot(timeline, cutoff, 3, snapOpts);
   const eloSummary = elo && fighter ? elo.summaryAsOf(fighter.id, cutoff) : null;
+  const glickoSummary = glicko && fighter ? glicko.summaryAsOf(fighter.id, cutoff) : null;
   const career = careerContext(timeline, asOf, cutoff, limitByWc);
   const styleLabel = styleProfile(snap).label;
-  return sideValues(snap, recent, fighter, asOf, cfg, ufcResultsOnOrAfter(timeline, asOf), eloSummary, { bout, career, styleLabel });
+  return sideValues(snap, recent, fighter, asOf, cfg, ufcResultsOnOrAfter(timeline, asOf), eloSummary, { bout, career, styleLabel, glicko: glickoSummary });
 }
 
 // Once both sides are known, set the antisymmetric style-vs-style edge

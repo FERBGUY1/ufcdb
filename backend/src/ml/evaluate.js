@@ -48,6 +48,10 @@
  *   --elo-dec MODE           decision-win weighting: none | method | cards | score (default none)
  *   --elo-dec-floor F        weight of the least convincing decision (default 0.5)
  *   --elo-dec-cap C          weight of a shutout decision (default 1)
+ *   --glicko MODE            Glicko-2 engine: off | none | record | unified (default off; glickoEngine.js)
+ *   --glicko-tau T           Glicko-2 system constant (default 0.5)
+ *   --glicko-rd0 RD          initial rating deviation (default 350)
+ *   --glicko-finish M        Glicko rating-step multiplier for KO/SUB wins (default 1)
  *   --model logistic|gbm     model family (baselines stay logistic)
  *   --l2 X                   logistic L2 penalty (default 0.001)
  *   --gbm-rounds N --gbm-depth D --gbm-lr X --gbm-l2 X --gbm-min-leaf N --gbm-subsample F
@@ -74,6 +78,7 @@ const path = require('path');
 const { loadAll, loadShortNotice, loadDwcs, loadSherdogHistory, sigmoid, trainLogistic, evaluate, buildDataset, sideFeatures, FIGHT_COLS, FIGHTER_COLS, MIN_PRIOR_STATS_FIGHTS } = require('./trainModel');
 const { FEATURES, DEFAULT_CONFIG, diffVector, standardize, careerContext } = require('./features');
 const { computeElo, eloOptions } = require('./eloEngine');
+const { computeGlicko, glickoOptions } = require('./glickoEngine');
 const { applySizePrior } = require('./sizePrior');
 const { trainGBM, predictGBM } = require('./gbm');
 
@@ -102,6 +107,10 @@ const CFG = {
   eloDecisionFloor: parseFloat(opt('elo-dec-floor', String(DEFAULT_CONFIG.eloDecisionFloor))),
   eloDecisionCap: parseFloat(opt('elo-dec-cap', String(DEFAULT_CONFIG.eloDecisionCap))),
   proRecordSource: opt('pro-record', DEFAULT_CONFIG.proRecordSource), // approx | sherdog
+  glickoSeed: opt('glicko', DEFAULT_CONFIG.glickoSeed),               // off | none | record | unified (glickoEngine)
+  glickoTau: parseFloat(opt('glicko-tau', String(DEFAULT_CONFIG.glickoTau))),
+  glickoRd0: parseFloat(opt('glicko-rd0', String(DEFAULT_CONFIG.glickoRd0))),
+  glickoFinishMult: parseFloat(opt('glicko-finish', String(DEFAULT_CONFIG.glickoFinishMult))),
 };
 const ABLATE = flag('ablate');
 // Model family. The baselines (win_rate / age) are always logistic.
@@ -321,7 +330,7 @@ function serveWith(model, a, b) {
   return { p, zmax: Math.max(...z.map(Math.abs)), top };
 }
 
-function runSanity(timelines, fighterById, candidate, fights, events, limitByWc = {}) {
+function runSanity(timelines, fighterById, candidate, fights, events, limitByWc = {}, sherdog = null) {
   if (!fs.existsSync(SANITY_PATH)) return { skipped: `no ${path.basename(SANITY_PATH)}` };
   const { pairs } = JSON.parse(fs.readFileSync(SANITY_PATH, 'utf8'));
   const bySlug = new Map(Object.values(fighterById).map(f => [f.slug, f]));
@@ -331,7 +340,8 @@ function runSanity(timelines, fighterById, candidate, fights, events, limitByWc 
     const cfg = { ...DEFAULT_CONFIG, ...(m.config || {}) };
     const eventById = Object.fromEntries(events.map(e => [e.id, e]));
     const elo = m.features.some(f => f.startsWith('elo') || f === 'sos') ? computeElo(fights, eventById, eloOptions(cfg)) : null;
-    return { names: m.features, mu: m.mu, sigma: m.sigma, w: m.w, b: m.b, cfg, priors: m.priors || null, elo };
+    const glicko = m.features.some(f => f.includes('glicko')) ? computeGlicko(fights, eventById, { ...glickoOptions(cfg), sherdog }) : null;
+    return { names: m.features, mu: m.mu, sigma: m.sigma, w: m.w, b: m.b, cfg, priors: m.priors || null, elo, glicko };
   })() : null;
   const today = new Date().toISOString().slice(0, 10);
   // Bout context as the Predict page derives it when no weight is given: the
@@ -345,7 +355,7 @@ function runSanity(timelines, fighterById, candidate, fights, events, limitByWc 
     return { scheduledRounds: 3, weightClassId: wc, limitLbs: wc != null ? (limitByWc[wc] ?? null) : null };
   };
   // full career (no cutoff), decay measured back from today
-  const vals = (f, model, bout) => sideFeatures(timelines.get(f.id) || [], f, today, null, model.cfg, model.priors, model.elo, bout, limitByWc);
+  const vals = (f, model, bout) => sideFeatures(timelines.get(f.id) || [], f, today, null, model.cfg, model.priors, model.elo, bout, limitByWc, model.glicko || null);
   const results = [];
   for (const pr of pairs) {
     const A = bySlug.get(pr.f1), B = bySlug.get(pr.f2);
@@ -383,7 +393,8 @@ async function main() {
     loadAll('odds', 'fight_id, bookmaker, fighter1_odds, fighter2_odds, line_type, recorded_at'),
     loadAll('weight_classes', 'id, name, limit_lbs'),
   ]);
-  const { rows, timelines, fighterById, priors, elo, limitByWc, skippedInexperienced, imputedWc, missingWc } = buildDataset(fights, events, fighters, { minPriorStatsFights: MIN_PRIOR, cfg: CFG, weightClasses, shortNotice: await loadShortNotice(), dwcs: await loadDwcs(), sherdog: await loadSherdogHistory() });
+  const sherdog = await loadSherdogHistory();
+  const { rows, timelines, fighterById, priors, elo, glicko, limitByWc, skippedInexperienced, imputedWc, missingWc } = buildDataset(fights, events, fighters, { minPriorStatsFights: MIN_PRIOR, cfg: CFG, weightClasses, shortNotice: await loadShortNotice(), dwcs: await loadDwcs(), sherdog });
   const lines = MARKET_PATH && fs.existsSync(MARKET_PATH) ? JSON.parse(fs.readFileSync(MARKET_PATH, 'utf8')) : null;
   const market = buildMarket(oddsRows, lines);
   { // late-replacement coverage and raw win rates (fight_replacements table)
@@ -474,8 +485,8 @@ async function main() {
   let sanity = null;
   if (SANITY) {
     const all = fitAndScore(rows, [], SELECTED);
-    const candidate = { names: SELECTED, mu: all.mu, sigma: all.sigma, w: all.w, b: all.b, gbm: all.gbm || null, cfg: CFG, priors, elo };
-    sanity = runSanity(timelines, fighterById, candidate, fights, events, limitByWc);
+    const candidate = { names: SELECTED, mu: all.mu, sigma: all.sigma, w: all.w, b: all.b, gbm: all.gbm || null, cfg: CFG, priors, elo, glicko };
+    sanity = runSanity(timelines, fighterById, candidate, fights, events, limitByWc, sherdog);
     if (sanity.skipped) console.log(`\nSanity set: skipped (${sanity.skipped})`);
     else {
       console.log(`\n======== SANITY SET  shipped ${path.basename(MODEL_PATH)} ${sanity.shipped ? `${sanity.shipped.pass}/${sanity.shipped.total}` : 'n/a'}   candidate ${sanity.candidate.pass}/${sanity.candidate.total} ========`);

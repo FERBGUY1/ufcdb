@@ -1,0 +1,511 @@
+{
+  "generatedAt": "2026-10-15T18:23:19.367Z",
+  "from": 2019,
+  "to": 2026,
+  "minPriorStatsFights": 0,
+  "scoreMinPrior": 0,
+  "model": "logistic",
+  "logitL2": 0.001,
+  "gbm": null,
+  "config": {
+    "shrinkMinutes": 30,
+    "halfLifeDays": 1095,
+    "layoffCapDays": 730,
+    "winShrinkFights": 2,
+    "clipZ": 3,
+    "eloK": 100,
+    "eloFinishMult": 1.5,
+    "eloDecision": "none",
+    "eloDecisionFloor": 0.5,
+    "eloDecisionCap": 1,
+    "proRecordSource": "sherdog",
+    "glickoSeed": "unified",
+    "glickoTau": 0.5,
+    "glickoRd0": 350,
+    "glickoVol0": 0.06,
+    "glickoPeriodDays": 365,
+    "glickoFinishMult": 1.5,
+    "glickoSeedSlope": 5,
+    "glickoSeedOppSlope": 5,
+    "glickoSeedRdDrop": 100
+  },
+  "features": [
+    "sapm",
+    "str_acc",
+    "str_def",
+    "td_avg",
+    "td_acc",
+    "td_def",
+    "sub_avg",
+    "kd_per15",
+    "win_rate",
+    "age",
+    "reach",
+    "height",
+    "layoff_days",
+    "pro_win_rate",
+    "pro_fights",
+    "elo",
+    "opp_adj_slpm",
+    "opp_adj_sapm",
+    "age_elo",
+    "replacement",
+    "notice_days",
+    "glicko",
+    "glicko_rd",
+    "glicko_scaled",
+    "glicko_p",
+    "age_glicko"
+  ],
+  "rows": 8803,
+  "folds": [
+    {
+      "year": 2019,
+      "nTrain": 4874,
+      "nTest": 506,
+      "model": {
+        "accuracy": 0.6027667984189723,
+        "logloss": 0.6671571722056023,
+        "brier": 0.2372240648730444
+      },
+      "baselines": {
+        "win_rate only": {
+          "accuracy": 0.5296442687747036,
+          "logloss": 0.6931424135792459
+        },
+        "age only": {
+          "accuracy": 0.5592885375494071,
+          "logloss": 0.687534540490194
+        },
+        "win_rate+age": {
+          "accuracy": 0.575098814229249,
+          "logloss": 0.6880101716132039
+        }
+      },
+      "market": null
+    },
+    {
+      "year": 2020,
+      "nTrain": 5380,
+      "nTest": 444,
+      "model": {
+        "accuracy": 0.6621621621621622,
+        "logloss": 0.6233123258380874,
+        "brier": 0.21588610710656703
+      },
+      "baselines": {
+        "win_rate only": {
+          "accuracy": 0.5675675675675675,
+          "logloss": 0.6834770569052517
+        },
+        "age only": {
+          "accuracy": 0.5720720720720721,
+          "logloss": 0.6837878303295422
+        },
+        "win_rate+age": {
+          "accuracy": 0.5923423423423423,
+          "logloss": 0.6781461063786732
+        }
+      },
+      "market": null
+    },
+    {
+      "year": 2021,
+      "nTrain": 5824,
+      "nTest": 497,
+      "model": {
+        "accuracy": 0.607645875251509,
+        "logloss": 0.6501248227735699,
+        "brier": 0.22947763889848877
+      },
+      "baselines": {
+        "win_rate only": {
+          "accuracy": 0.5613682092555332,
+          "logloss": 0.68097608097255
+        },
+        "age only": {
+          "accuracy": 0.5653923541247485,
+          "logloss": 0.6837882754294209
+        },
+        "win_rate+age": {
+          "accuracy": 0.5674044265593562,
+          "logloss": 0.6742809344796177
+        }
+      },
+      "market": null
+    },
+    {
+      "year": 2022,
+      "nTrain": 6321,
+      "nTest": 507,
+      "model": {
+        "accuracy": 0.6331360946745562,
+        "logloss": 0.6346889561024703,
+        "brier": 0.2227725608198946
+      },
+      "baselines": {
+        "win_rate only": {
+          "accuracy": 0.5956607495069034,
+          "logloss": 0.6696057546839571
+        },
+        "age only": {
+          "accuracy": 0.5779092702169625,
+          "logloss": 0.6763734961033455
+        },
+        "win_rate+age": {
+          "accuracy": 0.6173570019723866,
+          "logloss": 0.6587531096718603
+        }
+      },
+      "market": null
+    },
+    {
+      "year": 2023,
+      "nTrain": 6828,
+      "nTest": 510,
+      "model": {
+        "accuracy": 0.6490196078431373,
+        "logloss": 0.63696742052011,
+        "brier": 0.22347712782656276
+      },
+      "baselines": {
+        "win_rate only": {
+          "accuracy": 0.5843137254901961,
+          "logloss": 0.6764899836127337
+        },
+        "age only": {
+          "accuracy": 0.5882352941176471,
+          "logloss": 0.6670102251506239
+        },
+        "win_rate+age": {
+          "accuracy": 0.592156862745098,
+          "logloss": 0.6571555274236436
+        }
+      },
+      "market": null
+    },
+    {
+      "year": 2024,
+      "nTrain": 7338,
+      "nTest": 514,
+      "model": {
+        "accuracy": 0.6556420233463035,
+        "logloss": 0.6194101804992493,
+        "brier": 0.21521931177944326
+      },
+      "baselines": {
+        "win_rate only": {
+          "accuracy": 0.5914396887159533,
+          "logloss": 0.6669046757016542
+        },
+        "age only": {
+          "accuracy": 0.5894941634241245,
+          "logloss": 0.6759370476033146
+        },
+        "win_rate+age": {
+          "accuracy": 0.6167315175097277,
+          "logloss": 0.6560249629721923
+        }
+      },
+      "market": null
+    },
+    {
+      "year": 2025,
+      "nTrain": 7852,
+      "nTest": 515,
+      "model": {
+        "accuracy": 0.6718446601941748,
+        "logloss": 0.6095997560990619,
+        "brier": 0.2109569719151938
+      },
+      "baselines": {
+        "win_rate only": {
+          "accuracy": 0.6,
+          "logloss": 0.6689529015064026
+        },
+        "age only": {
+          "accuracy": 0.5902912621359223,
+          "logloss": 0.6625692148684887
+        },
+        "win_rate+age": {
+          "accuracy": 0.6466019417475728,
+          "logloss": 0.646595130442941
+        }
+      },
+      "market": null
+    },
+    {
+      "year": 2026,
+      "nTrain": 8367,
+      "nTest": 436,
+      "model": {
+        "accuracy": 0.6444954128440367,
+        "logloss": 0.6379612251601815,
+        "brier": 0.22280652234188597
+      },
+      "baselines": {
+        "win_rate only": {
+          "accuracy": 0.591743119266055,
+          "logloss": 0.6722797546281609
+        },
+        "age only": {
+          "accuracy": 0.6215596330275229,
+          "logloss": 0.6585371677084773
+        },
+        "win_rate+age": {
+          "accuracy": 0.6215596330275229,
+          "logloss": 0.6471934049465973
+        }
+      },
+      "market": null
+    }
+  ],
+  "summary": {
+    "meanLogloss": 0.6349027323997917,
+    "meanAccuracy": 0.6408390793418565,
+    "meanBrier": 0.22222753819513508
+  },
+  "pooled": {
+    "n": 3929,
+    "accuracy": 0.6406210231611097,
+    "logloss": 0.6349088127445357,
+    "brier": 0.2222620078831456
+  },
+  "marketPooled": null,
+  "calibration": [
+    {
+      "bin": 0,
+      "n": 6,
+      "predicted": 0.08319054544653655,
+      "actual": 0.16666666666666666
+    },
+    {
+      "bin": 1,
+      "n": 126,
+      "predicted": 0.1641131326834821,
+      "actual": 0.1746031746031746
+    },
+    {
+      "bin": 2,
+      "n": 407,
+      "predicted": 0.25747219912254005,
+      "actual": 0.2678132678132678
+    },
+    {
+      "bin": 3,
+      "n": 602,
+      "predicted": 0.35137278492944124,
+      "actual": 0.3388704318936877
+    },
+    {
+      "bin": 4,
+      "n": 842,
+      "predicted": 0.4517218256529378,
+      "actual": 0.44536817102137766
+    },
+    {
+      "bin": 5,
+      "n": 828,
+      "predicted": 0.5491162054560187,
+      "actual": 0.5579710144927537
+    },
+    {
+      "bin": 6,
+      "n": 635,
+      "predicted": 0.64661370461824,
+      "actual": 0.6519685039370079
+    },
+    {
+      "bin": 7,
+      "n": 330,
+      "predicted": 0.7445036924004855,
+      "actual": 0.7333333333333333
+    },
+    {
+      "bin": 8,
+      "n": 146,
+      "predicted": 0.8374887756990476,
+      "actual": 0.8356164383561644
+    },
+    {
+      "bin": 9,
+      "n": 7,
+      "predicted": 0.9209672174557644,
+      "actual": 0.8571428571428571
+    }
+  ],
+  "confidence": {
+    "high": {
+      "n": 1215,
+      "c": 886
+    },
+    "medium": {
+      "n": 646,
+      "c": 403
+    },
+    "low": {
+      "n": 2068,
+      "c": 1228
+    }
+  },
+  "sanity": null,
+  "ablation": [
+    {
+      "feature": "sapm",
+      "deltaIfRemoved": -0.00014574009251294706,
+      "foldsWorseWith": 5,
+      "keep": false
+    },
+    {
+      "feature": "str_acc",
+      "deltaIfRemoved": 0.001757501986538415,
+      "foldsWorseWith": 2,
+      "keep": false
+    },
+    {
+      "feature": "str_def",
+      "deltaIfRemoved": 0.0014262788932320053,
+      "foldsWorseWith": 3,
+      "keep": false
+    },
+    {
+      "feature": "td_avg",
+      "deltaIfRemoved": 0.0015199200100327048,
+      "foldsWorseWith": 2,
+      "keep": false
+    },
+    {
+      "feature": "td_acc",
+      "deltaIfRemoved": -0.0000065076260353236215,
+      "foldsWorseWith": 2,
+      "keep": false
+    },
+    {
+      "feature": "td_def",
+      "deltaIfRemoved": 0.0007033167855770989,
+      "foldsWorseWith": 2,
+      "keep": false
+    },
+    {
+      "feature": "sub_avg",
+      "deltaIfRemoved": -0.000004345311933176554,
+      "foldsWorseWith": 7,
+      "keep": false
+    },
+    {
+      "feature": "kd_per15",
+      "deltaIfRemoved": 0.000045955366340361126,
+      "foldsWorseWith": 2,
+      "keep": false
+    },
+    {
+      "feature": "win_rate",
+      "deltaIfRemoved": 0.0005216329426580985,
+      "foldsWorseWith": 2,
+      "keep": false
+    },
+    {
+      "feature": "age",
+      "deltaIfRemoved": 0.0008382283391279582,
+      "foldsWorseWith": 1,
+      "keep": true
+    },
+    {
+      "feature": "reach",
+      "deltaIfRemoved": 0.00010468156783320637,
+      "foldsWorseWith": 3,
+      "keep": false
+    },
+    {
+      "feature": "height",
+      "deltaIfRemoved": 0.000053073057461647255,
+      "foldsWorseWith": 2,
+      "keep": false
+    },
+    {
+      "feature": "layoff_days",
+      "deltaIfRemoved": 0.0010553541589679721,
+      "foldsWorseWith": 0,
+      "keep": true
+    },
+    {
+      "feature": "pro_win_rate",
+      "deltaIfRemoved": -0.0003027578601612485,
+      "foldsWorseWith": 5,
+      "keep": false
+    },
+    {
+      "feature": "pro_fights",
+      "deltaIfRemoved": -0.00006071023476042492,
+      "foldsWorseWith": 5,
+      "keep": false
+    },
+    {
+      "feature": "elo",
+      "deltaIfRemoved": 0.0009155802376379502,
+      "foldsWorseWith": 2,
+      "keep": false
+    },
+    {
+      "feature": "opp_adj_slpm",
+      "deltaIfRemoved": 0.0013121745951085173,
+      "foldsWorseWith": 3,
+      "keep": false
+    },
+    {
+      "feature": "opp_adj_sapm",
+      "deltaIfRemoved": 0.0015201296248899265,
+      "foldsWorseWith": 2,
+      "keep": false
+    },
+    {
+      "feature": "age_elo",
+      "deltaIfRemoved": 0.000365211903252019,
+      "foldsWorseWith": 2,
+      "keep": false
+    },
+    {
+      "feature": "replacement",
+      "deltaIfRemoved": 0.00025490784471349226,
+      "foldsWorseWith": 1,
+      "keep": true
+    },
+    {
+      "feature": "notice_days",
+      "deltaIfRemoved": 0.0006787049968366154,
+      "foldsWorseWith": 1,
+      "keep": true
+    },
+    {
+      "feature": "glicko",
+      "deltaIfRemoved": 0.00020633637509530345,
+      "foldsWorseWith": 1,
+      "keep": true
+    },
+    {
+      "feature": "glicko_rd",
+      "deltaIfRemoved": -0.0002978566763720547,
+      "foldsWorseWith": 4,
+      "keep": false
+    },
+    {
+      "feature": "glicko_scaled",
+      "deltaIfRemoved": 0.0012811896463199995,
+      "foldsWorseWith": 1,
+      "keep": true
+    },
+    {
+      "feature": "glicko_p",
+      "deltaIfRemoved": -0.00004196425361398248,
+      "foldsWorseWith": 5,
+      "keep": false
+    },
+    {
+      "feature": "age_glicko",
+      "deltaIfRemoved": -0.00001608797384206051,
+      "foldsWorseWith": 4,
+      "keep": false
+    }
+  ],
+  "comparison": null
+}

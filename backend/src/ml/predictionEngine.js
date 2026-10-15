@@ -1,7 +1,7 @@
 /**
- * AI Fight Prediction Engine — v6
+ * AI Fight Prediction Engine — v7
  *
- * Serves the trained logistic model (src/ml/model-v6.json, produced by
+ * Serves the trained logistic model (src/ml/model-v7.json, produced by
  * trainModel.js): real per-fight stats -> statsEngine snapshots under the
  * model's stored config (shrinkage toward league priors, recency decay,
  * layoff cap, z-clipping) -> standardized feature differentials -> calibrated
@@ -17,13 +17,14 @@ const path = require('path');
 const supabase = require('../db/client');
 const { buildTimelines, snapshot, annotateOpponentPriors } = require('./statsEngine');
 const { computeElo, eloOptions } = require('./eloEngine');
+const { ratingsFromTable, glickoOptions } = require('./glickoEngine');
 const { applySizePrior } = require('./sizePrior');
 const { styleProfile } = require('./styleEngine');
 const { FEATURES, DEFAULT_CONFIG, sideFeatures, diffVector, standardize } = require('./features');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const MODEL = require(path.join(__dirname, 'model-v6.json'));
-const MODEL_VERSION = MODEL.version || 'v6';
+const MODEL = require(path.join(__dirname, 'model-v7.json'));
+const MODEL_VERSION = MODEL.version || 'v7';
 const CFG = { ...DEFAULT_CONFIG, ...(MODEL.config || {}) };
 const PRIORS = MODEL.priors || null;
 const MODEL_IDX = MODEL.features.map(n => FEATURES.indexOf(n)); // model subset -> FEATURES positions
@@ -98,9 +99,25 @@ async function getData() {
   const eventById = Object.fromEntries(events.map(e => [e.id, e]));
   const timelines = annotateOpponentPriors(buildTimelines(fights, eventById));
   const elo = computeElo(fights, eventById, eloOptions(CFG));
+  // Glicko-2 (v7): read the precomputed glicko_ratings table (computeGlickoRatings.js,
+  // refreshed by npm run weekly) instead of replaying UFC + Sherdog bouts per request.
+  // A missing/empty table degrades to null -> the glicko features drop out of the diff
+  // (neutral), with a loud warning, rather than failing every prediction.
+  let glicko = null;
+  if (MODEL.features.some(f => f.includes('glicko'))) {
+    try {
+      const rows = await loadAll('glicko_ratings', 'fighter_id, rating, rd, volatility, fights, ufc_fights, last_fight_date');
+      if (rows.length) glicko = ratingsFromTable(rows, glickoOptions(CFG));
+      else console.warn('predictionEngine: glicko_ratings is empty — run src/ml/computeGlickoRatings.js; serving without the glicko feature');
+    } catch (e) {
+      console.warn(`predictionEngine: glicko_ratings unavailable (${e.message}) — serving without the glicko feature`);
+    }
+  }
   const wcs = await loadAll('weight_classes', 'id, limit_lbs');
   const limitByWc = Object.fromEntries(wcs.filter(w => w.limit_lbs != null).map(w => [w.id, w.limit_lbs]));
-  dataCache = { timelines, elo, limitByWc, league: leagueBaselines(timelines), loadedAt: Date.now() };
+  // If the table was missing, expire this cache in 5 minutes so a freshly seeded table is picked up quickly.
+  const glickoMissing = !glicko && MODEL.features.some(f => f.includes('glicko'));
+  dataCache = { timelines, elo, glicko, limitByWc, league: leagueBaselines(timelines), loadedAt: Date.now() - (glickoMissing ? DATA_TTL_MS - 5 * 60 * 1000 : 0) };
   return dataCache;
 }
 
@@ -214,6 +231,9 @@ const FACTOR_META = {
   off_division_fights: { sfx: '', desc: 'fights outside modal division', dp: 0, hib: true, adv: 'has more experience outside the home division', despite: 'grades ahead despite less cross-division experience', advP: 'cross-division experience', despiteP: 'less cross-division experience' },
   // (age-30)*(elo-1500)/100: high = an older fighter carrying a high rating, which the
   // data says overstates current form; lower is better.
+  // glicko_scaled is PAIRWISE (rating gap / combined RD, features.PAIR_FEATURES) so it has no
+  // per-side value; `src` names the per-side column shown instead (the Glicko rating itself).
+  glicko_scaled:     { src: 'glicko', sfx: '', desc: 'Glicko rating (UFC + regional, uncertainty-weighted)', dp: 0, hib: true, adv: 'holds the higher uncertainty-weighted rating', despite: 'grades ahead despite the lower uncertainty-weighted rating', advP: 'a higher uncertainty-weighted rating', despiteP: 'a lower uncertainty-weighted rating' },
   age_elo:           { sfx: '',  desc: 'age × rating index',       dp: 0, hib: false, adv: 'carries less age-on-rating risk',   despite: 'grades ahead despite an aging high rating', advP: 'a rating less exposed to age', despiteP: 'an aging high rating' },
   // reach & height read as an inch advantage when the leader is the bigger one.
   reach:             { dp: 0, dim: 'reach' },
@@ -222,7 +242,7 @@ const FACTOR_META = {
 
 function factorText(feature, L, lv, tv) {
   const meta = FACTOR_META[feature];
-  const a = lv[feature], b = tv[feature];
+  const a = lv[meta.src || feature], b = tv[meta.src || feature];
   const av = fmt(a, meta.dp), bv = fmt(b, meta.dp);
   if (meta.dim) {
     const d = fmt(Math.abs(a - b), 0);
@@ -264,7 +284,7 @@ function outlierNote(z, nameA, nameB, sample) {
 function computeFactors(nameA, nameB, valsA, valsB, contributions, rawZ, sample) {
   return contributions
     .map((c, j) => ({ feature: MODEL.features[j], c, z: rawZ[j] }))
-    .filter(({ feature, c }) => Math.abs(c) > 0.01 && FACTOR_META[feature] && valsA[feature] != null && valsB[feature] != null)
+    .filter(({ feature, c }) => { const k = FACTOR_META[feature]?.src || feature; return Math.abs(c) > 0.01 && FACTOR_META[feature] && valsA[k] != null && valsB[k] != null; })
     .sort((a, b) => Math.abs(b.c) - Math.abs(a.c))
     .slice(0, 5)
     .map(({ feature, c, z }) => {
@@ -274,7 +294,7 @@ function computeFactors(nameA, nameB, valsA, valsB, contributions, rawZ, sample)
       const lv = leaderIsA ? valsA : valsB;
       const tv = leaderIsA ? valsB : valsA;
       const meta = FACTOR_META[feature];
-      const a = lv[feature], b = tv[feature];
+      const a = lv[meta.src || feature], b = tv[meta.src || feature];
       const leaderBetter = meta.dim ? a >= b : (meta.hib ? a >= b : a <= b);
       const pts = Math.max(1, Math.round(Math.abs(c * 25))); // rough logit->prob-points at p~0.5
       const av = fmt(a, meta.dp), bv = fmt(b, meta.dp);
@@ -663,7 +683,7 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
     }
   }
 
-  const { timelines, elo, limitByWc, league } = await getData();
+  const { timelines, elo, glicko, limitByWc, league } = await getData();
   const tl1 = timelines.get(fighter1Id) || [];
   const tl2 = timelines.get(fighter2Id) || [];
   // Bout context the model was trained with: scheduled rounds (caller may
@@ -677,8 +697,8 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   // (shrunk, decayed, capped — exactly what training saw). Raw snapshots stay
   // for the round projections, which are display numbers.
   const snap1 = snapshot(tl1), snap2 = snapshot(tl2);
-  const vals1 = sideFeatures(tl1, f1, today, null, CFG, PRIORS, elo, bout, limitByWc);
-  const vals2 = sideFeatures(tl2, f2, today, null, CFG, PRIORS, elo, bout, limitByWc);
+  const vals1 = sideFeatures(tl1, f1, today, null, CFG, PRIORS, elo, bout, limitByWc, glicko);
+  const vals2 = sideFeatures(tl2, f2, today, null, CFG, PRIORS, elo, bout, limitByWc, glicko);
   const { p: skillProb, contributions, rawZ } = predictProb(diffVector(vals1, vals2));
 
   // Size / weight-cut prior (sizePrior.js): a hand-set log-odds shift that

@@ -1,6 +1,6 @@
 /**
  * trainModel.js — train the shipped predictor (logistic regression) and write
- * src/ml/model-v6.json.
+ * src/ml/model-v7.json.
  *
  * Dataset: every completed fight with a winner (TRAIN_MIN_PRIOR prior
  * stats-fights per side; 0 = debutants included). Features are computed with
@@ -19,7 +19,7 @@
  * set, market baseline) use src/ml/evaluate.js — it imports the dataset
  * builder, trainer and scorer from here so the two can never drift.
  *
- * Output: src/ml/model-v6.json (weights, standardization, metrics) — read by
+ * Output: src/ml/model-v7.json (weights, standardization, metrics) — read by
  * predictionEngine.js. Writes NOTHING to the database.
  *
  * Run: node -r dotenv/config src/ml/trainModel.js
@@ -30,13 +30,14 @@ const path = require('path');
 const supabase = require('../db/client');
 const { buildTimelines, computePriors, annotateOpponentPriors } = require('./statsEngine');
 const { computeElo, eloOptions } = require('./eloEngine');
+const { computeGlicko, glickoOptions } = require('./glickoEngine');
 const { buildStylePairHistory } = require('./styleEngine');
 const { FEATURES, DEFAULT_CONFIG, sideFeatures, ufcResultsOnOrAfter, diffVector, standardize } = require('./features');
 
 const SPLIT_DATE = '2024-01-01';
 const MIN_PRIOR_STATS_FIGHTS = 2;   // harness default (Phase-0 comparability)
 const PRIOR_CUTOFF = '2019-01-01'; // league priors use only fights before the first evaluation fold
-const MODEL_PATH = path.join(__dirname, 'model-v6.json');
+const MODEL_PATH = path.join(__dirname, 'model-v7.json');
 // Late replacements per fight (scrapers/wiki-short-notice.js). Shipped in v5 (2026-10-13): replacement + notice_days
 // passed the gate (-0.0030 mean, worse only 2023 +0.0010); a binary short_notice (<= 21 days) was redundant with them.
 // Lives in the fight_replacements table (migration 2026-10-13); npm run weekly refreshes it.
@@ -145,7 +146,9 @@ function noticeFor(rec, fighterId) {
 // proRecordSource 'sherdog' (v6, 2026-10-14): pro_win_rate / pro_fights are the EXACT pro record as of the fight
 // from sherdog_fights. The old 'approx' (today's record minus later UFC results) leaked post-UFC results
 // (+0.0010 pooled log loss on paper when removed, 6/8 folds) and is kept only as a harness option.
-const TRAIN_CONFIG = { ...DEFAULT_CONFIG, shrinkMinutes: 30, halfLifeDays: 1095, layoffCapDays: 730, winShrinkFights: 2, clipZ: 3, eloK: 100, eloFinishMult: 1.5, proRecordSource: 'sherdog' };
+// Glicko-2 (v7, 2026-10-15): glicko_scaled = rating gap / combined RD from the UNIFIED replay (UFC fights +
+// non-UFC Sherdog bouts, glickoEngine.js). Served from the precomputed glicko_ratings table (computeGlickoRatings.js).
+const TRAIN_CONFIG = { ...DEFAULT_CONFIG, shrinkMinutes: 30, halfLifeDays: 1095, layoffCapDays: 730, winShrinkFights: 2, clipZ: 3, eloK: 100, eloFinishMult: 1.5, proRecordSource: 'sherdog', glickoSeed: 'unified', glickoFinishMult: 1.5 };
 const TRAIN_MIN_PRIOR = 0;
 const TRAIN_EXCLUDED = new Set([
   'stats_minutes', 'opp_adj_td_avg', 'elo_best_win', 'elo_trend', 'sos',
@@ -161,6 +164,10 @@ const TRAIN_EXCLUDED = new Set([
   'dwcs', 'dwcs_won', 'dwcs_finish', 'dwcs_days_to_debut',
   // Sherdog history (2026-10-14): pending gate
   'regional_finish_rate', 'regional_opp_quality', 'regional_opp_ufc_share', 'pro_record_quality',
+  // Phase 11 Glicko-2 (2026-10-15): pending gate
+  // Phase 11 Glicko-2 (2026-10-15): glicko_scaled PASSED (-0.0051 mean, worse only in 2021) and is shipped in v7;
+  // glicko_rd / glicko_p / age_glicko were ties at zero in leave-one-out, glicko adds nothing beyond glicko_scaled
+  'glicko', 'glicko_rd', 'glicko_p', 'age_glicko',
 ]);
 const TRAIN_FEATURES = FEATURES.filter(f => !TRAIN_EXCLUDED.has(f));
 
@@ -265,6 +272,8 @@ function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIO
   const timelines = annotateOpponentPriors(buildTimelines(fights, eventById));
   const priors = cfg.shrinkMinutes > 0 ? computePriors(timelines, PRIOR_CUTOFF) : null;
   const elo = computeElo(fights, eventById, eloOptions(cfg));
+  // Glicko-2 (Phase 11): only built when cfg.glickoSeed is set; the seeds read the Sherdog history
+  const glicko = cfg.glickoSeed && cfg.glickoSeed !== 'off' ? computeGlicko(fights, eventById, { ...glickoOptions(cfg), sherdog }) : null;
   // style-vs-style record, point-in-time per fight (styleEngine)
   const styleHist = buildStylePairHistory(fights, eventById, timelines, { halfLifeDays: cfg.halfLifeDays, shrinkMinutes: cfg.shrinkMinutes, priors });
 
@@ -292,8 +301,8 @@ function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIO
     let wcId = f.weight_class_id ?? null;
     if (wcId == null) { wcId = imputeWeightClass(tl1, tl2, ev.date); if (wcId != null) imputedWc++; else missingWc++; }
     const bout = { scheduledRounds: scheduledRoundsOf(f), weightClassId: wcId, limitLbs: wcId != null ? (limitByWc[wcId] ?? null) : null };
-    const a = sideFeatures(timelines.get(aId), fighterById[aId], ev.date, ev.date, cfg, priors, elo, bout, limitByWc);
-    const b = sideFeatures(timelines.get(bId), fighterById[bId], ev.date, ev.date, cfg, priors, elo, bout, limitByWc);
+    const a = sideFeatures(timelines.get(aId), fighterById[aId], ev.date, ev.date, cfg, priors, elo, bout, limitByWc, glicko);
+    const b = sideFeatures(timelines.get(bId), fighterById[bId], ev.date, ev.date, cfg, priors, elo, bout, limitByWc, glicko);
     // pre-fight style-vs-style edge, stored for DB fighter1; A is fighter1 unless flipped
     const e1 = styleHist.edgeByFight.get(f.id) ?? 0;
     a.style_pair_edge = flip ? -e1 : e1; b.style_pair_edge = -a.style_pair_edge;
@@ -322,7 +331,7 @@ function buildDataset(fights, events, fighters, { minPriorStatsFights = MIN_PRIO
       x: diffVector(a, b), y: label, a, b, flip, minPriorStats: Math.min(prior1, prior2), priorA: flip ? prior2 : prior1, priorB: flip ? prior1 : prior2,
     });
   }
-  return { rows, timelines, eventById, fighterById, priors, elo, styleHist, cfg, limitByWc, skippedInexperienced, imputedWc, missingWc };
+  return { rows, timelines, eventById, fighterById, priors, elo, glicko, styleHist, cfg, limitByWc, skippedInexperienced, imputedWc, missingWc };
 }
 
 async function main() {
@@ -397,7 +406,7 @@ async function main() {
   }
 
   fs.writeFileSync(MODEL_PATH, JSON.stringify({
-    version: 'v6',
+    version: 'v7',
     trainedAt: new Date().toISOString(),
     splitDate: SPLIT_DATE,
     minPriorStatsFights: TRAIN_MIN_PRIOR,
