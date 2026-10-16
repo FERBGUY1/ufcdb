@@ -17,6 +17,14 @@ const CONFIDENCE = ['high', 'medium', 'low'];
 const BINS = [[50, 60], [60, 70], [70, 80], [80, 90], [90, 100.01]];
 const EPS = 1e-6;
 
+// Display-only annotations, keyed by prediction_log id. The log row itself is
+// immutable; a note explains a pick without changing or excluding it.
+const PICK_NOTES = {
+  // Cerminara vs Stiller: logged while Cerminara's 17 UFC bouts sat on a duplicate
+  // "Katlyn Chookagian" row (merged 2026-10-16).
+  '2ca001a5-e5a3-4e65-a066-dd72d2016ba2': 'Logged before a duplicate-profile fix — the model didn\'t see her 17 prior UFC fights.',
+};
+
 // n / log_loss / brier over every row; accuracy over the non-toss-ups only
 // (scored = its denominator, correct = its numerator).
 function metrics(rows) {
@@ -107,6 +115,7 @@ router.get('/', async (req, res, next) => {
         logged_at: r.logged_at,
         status: r.outcome === 'graded' ? (r.correct ? 'hit' : 'miss') : r.outcome === 'void' ? 'void' : 'pending',
         void_reason: r.void_reason,
+        note: PICK_NOTES[r.id] || null,
         result: r.outcome ? {
           winner_name: r.actual_winner_id ? (r.actual_winner_id === r.fighter1_id ? r.fighter1_name : r.fighter2_name) : null,
           result: r.actual_result, method: r.actual_method, round: r.actual_round, time: r.actual_time,

@@ -104,6 +104,7 @@ function PickRow({ p }) {
         <div className="text-xs text-white/40 mt-0.5">
           Pick: <span className="text-white/70">{p.pick.name}</span> {p.pick.win_pct.toFixed(1)}% · {p.pick.method} · {p.scheduled_rounds} rds
         </div>
+        {p.note && <div className="text-[11px] italic text-white/40 mt-0.5">Note: {p.note}</div>}
       </div>
       <span className={`shrink-0 text-[10px] uppercase tracking-widest border rounded px-2 py-0.5 ${p.tossup ? CONF_STYLE.low : CONF_STYLE[p.confidence]}`}>
         {p.tossup ? 'Toss-up' : p.confidence}
