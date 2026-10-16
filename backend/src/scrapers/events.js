@@ -314,8 +314,12 @@ async function main() {
         }
 
         const winnerId  = f1Win ? f1Id : (f2Win ? f2Id : null);
+        // A finished bout with no winner flag is a draw OR a no contest; API-Sports
+        // does not say which (13 CNC bouts were once stored as draws this way).
+        // Leave result null for fix-fight-methods.js / ufcstats to settle.
+        const noWinner  = af.status.short === 'FT' && !winnerId;
         const result    = af.status.short === 'FT'
-          ? (winnerId ? 'win' : 'draw')
+          ? (winnerId ? 'win' : null)
           : 'upcoming';
         const wcId      = resolveWC(af.category);
         const boutOrder = i;
@@ -325,11 +329,11 @@ async function main() {
 
         if (existing) {
           if (!DRY) {
-            await supabase.from('fights').update({
-              winner_id:       winnerId,
-              result,
-              weight_class_id: wcId,
-            }).eq('id', existing.id);
+            // no winner flag: keep whatever result the row already has
+            await supabase.from('fights').update(noWinner
+              ? { weight_class_id: wcId }
+              : { winner_id: winnerId, result, weight_class_id: wcId },
+            ).eq('id', existing.id);
           }
           fightsUpdated++;
         } else {
