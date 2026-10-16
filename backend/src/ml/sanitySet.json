@@ -18,7 +18,7 @@
     { "f1": "khabib-nurmagomedov",    "f2": "darren-elkins",       "expect": "f1", "minProb": 0.75, "note": "undefeated all-time great vs journeyman, adjacent division" },
     { "f1": "islam-makhachev",        "f2": "tim-means",           "expect": "f1", "minProb": 0.75, "note": "champion vs gatekeeper at WW" },
     { "f1": "shavkat-rakhmonov",      "f2": "tim-means",           "expect": "f1", "minProb": 0.75, "note": "undefeated contender vs gatekeeper" },
-    { "f1": "valentina-shevchenko",   "f2": "katlyn-chookagian",   "expect": "f1", "minProb": 0.75, "note": "dominant champion vs ranked contender she beat" },
+    { "f1": "valentina-shevchenko",   "f2": "katlyn-cerminara",   "expect": "f1", "minProb": 0.75, "note": "dominant champion vs ranked contender she beat" },
     { "f1": "jon-jones",              "f2": "ovince-saint-preux",  "expect": "f1", "minProb": 0.75, "note": "real fight, lopsided" },
     { "f1": "georges-st-pierre",      "f2": "thiago-alves",        "expect": "f1", "minProb": 0.70, "note": "real fight, lopsided" },
     { "f1": "alexander-volkanovski",  "f2": "josh-emmett",         "expect": "f1", "minProb": 0.70, "note": "champion vs top-10 at FW" },
@@ -27,7 +27,7 @@
     { "f1": "ciryl-gane",             "f2": "tai-tuivasa",         "expect": "f1", "minProb": 0.70, "note": "real fight, lopsided" },
     { "f1": "max-holloway",           "f2": "dan-ige",             "expect": "f1", "minProb": 0.65, "note": "elite vs gatekeeper, same division" },
     { "f1": "movsar-evloev",          "f2": "calvin-kattar",       "expect": "f1", "minProb": 0.65, "note": "undefeated contender vs declining veteran" },
-    { "f1": "erin-blanchfield",       "f2": "katlyn-chookagian",   "expect": "f1", "minProb": 0.65, "note": "rising contender vs veteran" },
+    { "f1": "erin-blanchfield",       "f2": "katlyn-cerminara",   "expect": "f1", "minProb": 0.65, "note": "rising contender vs veteran" },
     { "f1": "daniel-cormier",         "f2": "tai-tuivasa",         "expect": "f1", "minProb": 0.60, "note": "retired champion vs active journeyman — layoff must not dominate" },
 
     { "f1": "charles-oliveira",       "f2": "paddy-pimblett",      "expect": "f1", "minProb": 0.55, "note": "direction only" },

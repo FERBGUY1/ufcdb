@@ -37,3 +37,6 @@ ufcstats-*.json
 
 # Scraper caches
 backend/.cache/
+
+# Local DB row backups taken before data cleanups
+backend/backups/
