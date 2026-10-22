@@ -71,15 +71,15 @@ router.post('/', async (req, res, next) => {
 // GET /api/predict/snapshots/:slug — what the Predict page needs to offer the
 // snapshot selector for one fighter: status, the rating peak (date, rating,
 // whether it is confirmed, i.e. retired or the rating has since dropped), and
-// the fighter's UFC fights (date, opponent, event, result, title win) for the
-// "As of fight" / "As of title win" options.
+// the fighter's UFC fights (date, opponent, event, result, title win / defense)
+// for the "Title win" chips, the "Defenses" list and the "As of fight" list.
 router.get('/snapshots/:slug', async (req, res, next) => {
   try {
     const { data: f } = await supabase.from('fighters').select('id, slug, first_name, last_name, status').eq('slug', req.params.slug).single();
     if (!f) return res.status(404).json({ error: 'Fighter not found' });
     const [{ data: fights }, peak] = await Promise.all([
       supabase.from('fights')
-        .select('id, result, method, winner_id, is_title_fight, is_interim_title, fighter1_id, fighter2_id, events ( name, date ), fighter1:fighters!fighter1_id ( slug, first_name, last_name ), fighter2:fighters!fighter2_id ( slug, first_name, last_name )')
+        .select('id, result, method, winner_id, is_title_fight, is_interim_title, weight_class_id, fighter1_id, fighter2_id, events ( name, date ), fighter1:fighters!fighter1_id ( slug, first_name, last_name ), fighter2:fighters!fighter2_id ( slug, first_name, last_name )')
         .or(`fighter1_id.eq.${f.id},fighter2_id.eq.${f.id}`)
         .limit(300),
       getSnapshotPeak(f),
@@ -89,15 +89,45 @@ router.get('/snapshots/:slug', async (req, res, next) => {
       .map(x => {
         const opp = x.fighter1_id === f.id ? x.fighter2 : x.fighter1;
         const won = x.winner_id === f.id;
-        return { id: x.id, date: x.events.date, event: x.events.name, opponent: opp ? `${opp.first_name} ${opp.last_name}` : null, opponent_slug: opp?.slug ?? null,
-          result: x.result === 'win' ? (won ? 'win' : 'loss') : x.result, method: x.method, title_win: !!(x.is_title_fight && won), interim: !!x.is_interim_title };
+        return { id: x.id, date: x.events.date, event: x.events.name, opponent: opp ? `${opp.first_name} ${opp.last_name}` : null, opponent_last: opp?.last_name ?? null, opponent_slug: opp?.slug ?? null,
+          result: x.result === 'win' ? (won ? 'win' : 'loss') : x.result, method: x.method,
+          title_bout: !!x.is_title_fight, title_win: !!(x.is_title_fight && won), interim: !!x.is_interim_title, weight_class_id: x.weight_class_id ?? null };
       })
       .sort((a, b) => b.date.localeCompare(a.date));
+    markTitleKinds(list);
     res.json({ fighter: f, status: f.status, retired: f.status === 'retired', peak, fights: list });
   } catch (err) {
     next(err);
   }
 });
+
+// Sets title_kind on each title win: 'win' (took a belt the fighter did not hold:
+// first win, regained after losing it, or a new division) or 'defense' (held that
+// belt coming in). Interim and undisputed belts are tracked separately; an
+// undisputed win unifies them. A title loss or no-contest vacates; a draw keeps
+// the belt (the champion retains). There is no belt table, so a stripped champion
+// who later wins the vacant belt reads as a defense unless a loss or NC came
+// between (Jones 2018 reads right via the 2017 NC; Cormier's 2018 Oezdemir defense
+// reads as a win for the same reason). Display only.
+function markTitleKinds(list) {
+  const held = { und: undefined, int: undefined }; // undefined = no belt; null = belt in an unrecorded division
+  for (const x of [...list].reverse()) { // ascending by date
+    if (!x.title_bout) continue;
+    const key = x.interim ? 'int' : 'und';
+    if (x.title_win) {
+      const was = held[key];
+      x.title_kind = was !== undefined && (was === null || x.weight_class_id == null || was === x.weight_class_id) ? 'defense' : 'win';
+      // a bout with no recorded division keeps the division already held
+      held[key] = x.weight_class_id ?? (was === undefined ? null : was);
+      if (key === 'und') held.int = undefined;
+    } else if (x.result !== 'draw') {
+      // a loss or NC vacates the belt of THAT division only (Volkanovski kept featherweight
+      // after losing a lightweight title bout)
+      const was = held[key];
+      if (was === undefined || was === null || x.weight_class_id == null || was === x.weight_class_id) held[key] = undefined;
+    }
+  }
+}
 
 // GET /api/predict/:fighter1Slug/vs/:fighter2Slug?rounds=3|5
 // generatePrediction serves its own cache (oriented to fighter1, matched on

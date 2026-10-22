@@ -1009,6 +1009,9 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   const probDiff = Math.abs(f1WinProb - f2WinProb);
   let confidence = probDiff > 0.25 ? 'high' : probDiff > 0.12 ? 'medium' : 'low';
   if (sizeMismatch && confidence === 'high') confidence = 'medium';
+  // A fantasy matchup rests on era drift and a neutralized age penalty the model
+  // never saw in training: never better than medium.
+  if (isFantasy && confidence === 'high') confidence = 'medium';
   if (lowData || crossWeight) confidence = 'low';
 
   const prediction = {
@@ -1046,10 +1049,14 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
 
 // Current (full-career, raw) style profile for one fighter — the same
 // function the model path uses, so Compare / Predict / Styles pages read one
-// definition. Returns styleEngine's { axes, label, hasData }.
-async function getStyleProfile(fighterId) {
+// definition. With asOf (YYYY-MM-DD) the profile covers the fights through that
+// date, the same cut a fantasy snapshot uses, so the Predict card's label
+// matches the result's. Returns styleEngine's { axes, label, hasData }.
+async function getStyleProfile(fighterId, asOf = null) {
   const { timelines } = await getData();
-  return styleProfile(snapshot(timelines.get(fighterId) || []));
+  const tl = timelines.get(fighterId) || [];
+  const cutoff = asOf ? dayAfter(asOf) : null;
+  return styleProfile(snapshot(cutoff ? tl.filter(e => e.date < cutoff) : tl));
 }
 
 // Peak summary for the Predict page's snapshot selector: { date, rating, current_rating,

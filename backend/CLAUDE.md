@@ -618,6 +618,10 @@ same config: 0.6345 → **0.6319**, market gap +0.0307 → +0.0287, debutant gap
 folds (2019 +0.0013, 2025 +0.0008 worse); accepted by the user as a data fix outside the feature gate.
 `model-v7.json` deleted; cache rows keyed `v8`. Deferred cleanup (DOB corrections, two duplicate-row merges, the
 Junior/Justin Tafa fight split, Roberts/Argueta inflated UFC records, Gibson Sr.'s pro record, Romero) is a separate task.
+Added 2026-10-22 (surfaced by the Predict page's title chips): Demetrious Johnson's first flyweight title win
+(vs Benavidez, 2012-09-22) is not flagged `is_title_fight`, so his 2013 Dodson defense shows as the title win; and
+`routes/predict.js markTitleKinds` treats a title no-contest as vacating the belt (right for Jones 2018 vs Gustafsson,
+wrong for Cormier 2018 vs Oezdemir, which reads as a win) — needs a belt/reign source or a per-bout override.
 
 **Fantasy predictor (prime-vs-prime) — built 2026-10-16 (backend + PredictPage UI).** `generatePrediction(..., { snapshots: { f1: { mode, date? }, f2: { mode, date? } } })`,
 `POST /api/predict` body `snapshots`, `GET /api/predict/snapshots/:slug` (status, peak, UFC fight list for the selector).

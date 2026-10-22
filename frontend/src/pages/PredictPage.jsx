@@ -196,7 +196,7 @@ function FighterSelector({ label, selected, onSelect, onClear, snapshot, onSnaps
           {selected.first_name?.toUpperCase()} {selected.last_name?.toUpperCase()}
         </Link>
         <div className="text-xs text-white/40 mt-1">{fmtProRecord(selected)}</div>
-        <StyleLabel slug={selected.slug} className="block text-xs text-gold/70 mt-0.5" />
+        <StyleLabel slug={selected.slug} asOf={snapshot.date} className="block text-xs text-gold/70 mt-0.5" />
         <SnapshotSelector fighter={selected} snapshot={snapshot} onChange={onSnapshot} />
         <button
           onClick={onClear}
@@ -247,51 +247,79 @@ function FighterSelector({ label, selected, onSelect, onClear, snapshot, onSnaps
 // date; the server takes the fighter as they stood after that fight.
 function SnapshotSelector({ fighter, snapshot, onChange }) {
   const [opts, setOpts] = useState(null);
-  const [showFights, setShowFights] = useState(false);
+  const [showList, setShowList] = useState(null); // null | 'defenses' | 'fights'
+  // Peak carries its date (confirmed peaks only) so the card's style label can be
+  // taken as of the same cut; the server ignores a date on mode 'peak'.
+  const peakPick = d => (d.peak?.confirmed ? { mode: 'peak', date: d.peak.date } : { mode: 'peak' });
   useEffect(() => {
     let alive = true;
-    setOpts(null); setShowFights(false);
+    setOpts(null); setShowList(null);
     getSnapshots(fighter.slug).then(d => {
       if (!alive) return;
       setOpts(d);
-      if (d.retired && d.peak && snapshot.mode === 'current') onChange({ mode: 'peak' });
+      if (d.retired && d.peak && snapshot.mode === 'current') onChange(peakPick(d));
     }).catch(() => alive && setOpts({ peak: null, fights: [], retired: false, error: true }));
     return () => { alive = false; };
   }, [fighter.slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!opts) return <div className="text-[10px] text-white/25 mt-3">loading snapshots…</div>;
-  const titleWins = (opts.fights || []).filter(f => f.title_win);
+  const titleWins = (opts.fights || []).filter(f => f.title_win && f.title_kind !== 'defense');
+  const defenses = (opts.fights || []).filter(f => f.title_win && f.title_kind === 'defense');
   const peakLabel = opts.peak ? (opts.peak.confirmed ? `Peak · ${opts.peak.date.slice(0, 4)}` : 'Peak so far') : null;
   const isTitle = snapshot.mode === 'title', isAsOf = snapshot.mode === 'asof';
+  const onDefense = isTitle && defenses.some(f => f.date === snapshot.date);
   const chip = (active, extra = '') => `px-2.5 py-1 text-[11px] rounded-full border transition-colors ${active ? 'bg-purple-500/20 text-purple-200 border-purple-400/40' : 'text-white/45 border-white/10 hover:text-white hover:border-white/25'} ${extra}`;
   const fmtDate = d => new Date(d + 'T00:00:00').toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  const pick = s => { setShowList(null); onChange(s); };
+  const toggleList = which => setShowList(v => (v === which ? null : which));
+  const selectCls = 'mt-2 w-full bg-dark-4 border border-white/10 text-xs text-white/80 rounded px-2 py-1.5 focus:outline-none';
 
   return (
     <div className="mt-4 pt-3 border-t border-white/[0.06] text-left">
       <div className="text-[10px] tracking-[0.2em] text-white/30 uppercase mb-2 text-center">Snapshot</div>
       <div className="flex flex-wrap justify-center gap-1.5">
-        <button type="button" className={chip(snapshot.mode === 'current')} onClick={() => { setShowFights(false); onChange({ mode: 'current' }); }}>Current</button>
+        <button type="button" className={chip(snapshot.mode === 'current')} onClick={() => pick({ mode: 'current' })}>Current</button>
         {peakLabel && (
-          <button type="button" className={chip(snapshot.mode === 'peak')} onClick={() => { setShowFights(false); onChange({ mode: 'peak' }); }}
+          <button type="button" className={chip(snapshot.mode === 'peak')} onClick={() => pick(peakPick(opts))}
             title={opts.peak.confirmed ? `Highest rating ${opts.peak.rating} after the ${opts.peak.date} bout; the rating has since dropped or the fighter retired, so the age-decline penalty is neutralized` : `Rating ${opts.peak.rating} is still at its high: "Peak so far" is the current snapshot with normal age effects`}>
             {peakLabel}
           </button>
         )}
         {titleWins.map(f => (
-          <button key={f.id} type="button" className={chip(isTitle && snapshot.date === f.date)} onClick={() => { setShowFights(false); onChange({ mode: 'title', date: f.date }); }}
-            title={`${f.event} — title win over ${f.opponent}; age-decline penalty neutralized`}>
-            Title win · {f.date.slice(0, 4)}{f.interim ? ' (interim)' : ''}
+          <button key={f.id} type="button" className={chip(isTitle && snapshot.date === f.date)} onClick={() => pick({ mode: 'title', date: f.date })}
+            title={`${f.event} — ${f.interim ? 'interim ' : ''}title win over ${f.opponent}; age-decline penalty neutralized`}>
+            {f.interim ? 'Interim title' : 'Title win'} vs {f.opponent_last || f.opponent || '?'} · {f.date.slice(0, 4)}
           </button>
         ))}
+        {defenses.length > 0 && (
+          <button type="button" className={chip(onDefense || showList === 'defenses')} onClick={() => toggleList('defenses')}
+            title="Title defenses — each one is an 'as of title win' snapshot (age-decline penalty neutralized)">
+            {onDefense ? `Defense vs ${defenses.find(f => f.date === snapshot.date)?.opponent_last || '?'} · ${snapshot.date.slice(0, 4)}` : `Defenses (${defenses.length})…`}
+          </button>
+        )}
         {opts.fights?.length > 0 && (
-          <button type="button" className={chip(isAsOf || showFights)} onClick={() => setShowFights(v => !v)}>As of fight…</button>
+          <button type="button" className={chip(isAsOf || showList === 'fights')} onClick={() => toggleList('fights')}>As of fight…</button>
         )}
       </div>
-      {showFights && (
+      {showList === 'defenses' && (
+        <select
+          value={onDefense ? snapshot.date : ''}
+          onChange={e => e.target.value && pick({ mode: 'title', date: e.target.value })}
+          className={selectCls}
+        >
+          <option value="" className="bg-dark-3">Pick a title defense</option>
+          {defenses.map(f => (
+            <option key={f.id} value={f.date} className="bg-dark-3">
+              {fmtDate(f.date)} · {f.interim ? 'interim ' : ''}def. {f.opponent || '?'} · {f.event}
+            </option>
+          ))}
+        </select>
+      )}
+      {showList === 'fights' && (
         <select
           value={isAsOf ? snapshot.date : ''}
-          onChange={e => e.target.value && onChange({ mode: 'asof', date: e.target.value })}
-          className="mt-2 w-full bg-dark-4 border border-white/10 text-xs text-white/80 rounded px-2 py-1.5 focus:outline-none"
+          onChange={e => e.target.value && pick({ mode: 'asof', date: e.target.value })}
+          className={selectCls}
         >
           <option value="" className="bg-dark-3">Pick a fight (fighter as they stood after it)</option>
           {opts.fights.map(f => (

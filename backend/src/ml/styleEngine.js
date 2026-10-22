@@ -35,7 +35,11 @@ function styleProfile(snap) {
   let label = 'Balanced';
   const td = wrestling ?? 0, sub = submission ?? 0, dist = distance ?? 0, cl = clinch ?? 0, gr = ground ?? 0;
   const slpm = snap.slpm ?? 0, sdef = snap.str_def ?? 0;
-  if (sub >= 1.0 && td >= 1.0) label = 'Submission grappler';
+  // A high-volume takedown artist whose submissions are a side effect (GSP: 3.9 TD/15,
+  // 1.05 sub/15; 4.2 / 1.7 as of 2008) is a Wrestler; Submission grappler needs the
+  // submission rate to be at least half the takedown rate.
+  if (td >= 3.0 && sub < td / 2) label = 'Wrestler';
+  else if (sub >= 1.0 && td >= 1.0) label = 'Submission grappler';
   else if (sub >= 1.2) label = 'Submission hunter';
   else if (td >= 3.0) label = 'Wrestler';
   else if (td >= 1.8 && (gr >= 20 || (control ?? 0) >= 30)) label = 'Grinder';

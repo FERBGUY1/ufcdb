@@ -45,7 +45,8 @@ export const getRankings   = (wc)     => api.get('/rankings', {params:{weight_cl
 
 // ── STYLES ───────────────────────────────────────────────
 export const getStyleMatchups = (p={}) => api.get('/styles/matchups',{params:p}).then(r=>r.data);
-export const getStyleProfile = (slug) => api.get(`/styles/profile/${slug}`).then(r=>r.data);
+// asOf (YYYY-MM-DD): profile from the fights through that date (snapshot picks on Predict).
+export const getStyleProfile = (slug, asOf) => api.get(`/styles/profile/${slug}`, { params: asOf ? { asOf } : {} }).then(r=>r.data);
 export const getStyleList     = ()     => api.get('/styles/list').then(r=>r.data);
 export const getStyleVsStyle  = (s1,s2) =>
   api.get(`/styles/matchups/${encodeURIComponent(s1)}/vs/${encodeURIComponent(s2)}`).then(r=>r.data);
