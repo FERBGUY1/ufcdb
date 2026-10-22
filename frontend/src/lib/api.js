@@ -2,7 +2,9 @@ import axios from 'axios';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE || '/api',
-  timeout: 30000,
+  // 60 s: an uncached prediction pays ~16 s for the Opus narrative, and a cold Railway
+  // instance can push the first one past 30 s. Stopgap until two-step narrative loading.
+  timeout: 60000,
 });
 
 // ── FIGHTERS ─────────────────────────────────────────────
