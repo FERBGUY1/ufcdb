@@ -46,7 +46,9 @@ const limiter = rateLimit({ windowMs: 60*1000, max: 300, standardHeaders: true }
 app.use('/api/', limiter);
 
 // Stricter limit on prediction endpoint (it calls AI)
-const predictLimiter = rateLimit({ windowMs: 60*1000, max: 10 });
+// The snapshot options GET (Predict page selector, one per fighter pick) is a plain
+// table read — leave it on the general limiter, or picking fighters burns the budget.
+const predictLimiter = rateLimit({ windowMs: 60*1000, max: 10, skip: req => req.method === 'GET' && req.path.startsWith('/snapshots/') });
 app.use('/api/predict', predictLimiter);
 
 app.use('/api/fighters', fightersRouter);
