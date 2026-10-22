@@ -34,9 +34,18 @@ async function main() {
     const h = g.history.get(f.id) || [];
     const s = g.stateAsOf(f.id, null);
     const last = h.length ? h[h.length - 1] : null;
+    // history: post-bout states in date order (fantasy snapshots read the state "as of" a past
+    // date from here, glickoEngine.ratingsFromTable); peak: highest post-bout rating over UFC bouts.
+    let n = 0, u = 0, peak = null;
+    const history = h.map(e => {
+      n++; if (e.ufc) u++;
+      if (e.ufc && (!peak || e.post.r > peak.r)) peak = { r: e.post.r, d: e.date };
+      return { d: e.date, r: +e.post.r.toFixed(2), rd: +e.post.rd.toFixed(2), s: +e.sigma.toFixed(5), n, u, ufc: !!e.ufc };
+    });
     return {
       fighter_id: f.id, rating: s.r, rd: s.rd, volatility: last ? last.sigma : opts.initialVol,
       fights: s.fights, ufc_fights: s.ufcFights, last_fight_date: last ? last.date : null,
+      history, peak_rating: peak ? +peak.r.toFixed(2) : null, peak_date: peak ? peak.d : null,
       config: g.config, computed_at: computedAt,
     };
   });
@@ -46,7 +55,10 @@ async function main() {
   let errors = 0;
   for (let i = 0; i < rows.length; i += 500) {
     const { error } = await supabase.from('glicko_ratings').upsert(rows.slice(i, i + 500), { onConflict: 'fighter_id' });
-    if (error) { errors++; console.error(`batch ${i / 500}: ${error.message}`); }
+    if (error) {
+      errors++; console.error(`batch ${i / 500}: ${error.message}`);
+      if (/history|peak_/.test(error.message)) { console.error('glicko_ratings lacks the history/peak columns — run src/db/migrations/2026-10-16-glicko-history.sql in the Supabase SQL editor first'); break; }
+    }
   }
   console.log(`Done: ${rows.length} fighters rated (${withBouts} with rated bouts), ${errors} errors`);
   process.exit(errors ? 1 : 0);

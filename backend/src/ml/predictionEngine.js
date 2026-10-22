@@ -17,10 +17,11 @@ const path = require('path');
 const supabase = require('../db/client');
 const { buildTimelines, snapshot, annotateOpponentPriors } = require('./statsEngine');
 const { computeElo, eloOptions } = require('./eloEngine');
-const { ratingsFromTable, glickoOptions } = require('./glickoEngine');
+const { ratingsFromTable, glickoOptions, computeGlicko } = require('./glickoEngine');
 const { applySizePrior } = require('./sizePrior');
 const { styleProfile } = require('./styleEngine');
-const { FEATURES, DEFAULT_CONFIG, sideFeatures, diffVector, standardize } = require('./features');
+const eraDrift = require('./eraDrift');
+const { FEATURES, DEFAULT_CONFIG, sideFeatures, diffVector, standardize, careerContext } = require('./features');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const MODEL = require(path.join(__dirname, 'model-v8.json'));
@@ -30,6 +31,27 @@ const PRIORS = MODEL.priors || null;
 const MODEL_IDX = MODEL.features.map(n => FEATURES.indexOf(n)); // model subset -> FEATURES positions
 const DATA_TTL_MS = 6 * 60 * 60 * 1000;
 const THIN_SAMPLE_MINUTES = 30; // rate-stat factors cite this when a side has less stat time
+
+// ── FANTASY SNAPSHOTS (user design 2026-10-16) ─────────────────────────────
+// A snapshot fixes one fighter at a past date: stats, Elo/Glicko, age, layoff
+// and natural division all come from fights strictly before the cutoff, which
+// is exactly what training saw for that fighter on that date.
+//   current  today, full career (the ordinary Predict page)
+//   peak     the day after the fighter's highest-rated UFC bout (performance-
+//            based: a title win at 42 counts). "Confirmed" when the fighter is
+//            retired or the rating has since dropped by PEAK_CONFIRM_DROP —
+//            then the age-decline penalty is neutralized (age clamped to
+//            PRIME_AGE in the age features: the peak rating already proves no
+//            decline had happened). An active fighter still at their high gets
+//            "Peak so far" = the current snapshot with normal age effects.
+//   asof     the day after a given fight (so "as of title win" includes it);
+//            normal age effects.
+// Snapshot layoff = the fighter's typical gap between UFC bouts before the
+// cutoff (a normal camp), not "one day after the fight".
+const PEAK_CONFIRM_DROP = 50;   // Glicko points below the peak that confirm it
+const PRIME_AGE = 30;           // age the age features read for a confirmed peak (age_elo pivots here)
+const DEFAULT_LAYOFF_DAYS = 180;
+const dayAfter = d => { const x = new Date(d); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); };
 
 // ── WEIGHT CLASS CONTEXT (unchanged from v2) ──────────────────────────────
 async function deriveNaturalWeightClassId(fighterId) {
@@ -44,14 +66,16 @@ async function deriveNaturalWeightClassId(fighterId) {
   return parseInt(Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]);
 }
 
-async function computeWeightClassContext(f1, f2, weightClassId) {
+// naturalIds: [f1, f2] modal weight-class ids to use instead of the full-career
+// derivation (fantasy snapshots pass the division as of each snapshot date).
+async function computeWeightClassContext(f1, f2, weightClassId, naturalIds = null) {
   if (!weightClassId) return null;
   const { data: allWCs } = await supabase.from('weight_classes').select('id, name, slug, sort_order, limit_lbs');
   if (!allWCs) return null;
   const wcById = Object.fromEntries(allWCs.map(w => [w.id, w]));
   const targetWC = wcById[weightClassId];
   if (!targetWC) return null;
-  const [f1NaturalId, f2NaturalId] = await Promise.all([
+  const [f1NaturalId, f2NaturalId] = naturalIds || await Promise.all([
     deriveNaturalWeightClassId(f1.id),
     deriveNaturalWeightClassId(f2.id),
   ]);
@@ -106,7 +130,10 @@ async function getData() {
   let glicko = null;
   if (MODEL.features.some(f => f.includes('glicko'))) {
     try {
-      const rows = await loadAll('glicko_ratings', 'fighter_id, rating, rd, volatility, fights, ufc_fights, last_fight_date');
+      // history / peak_* exist once migration 2026-10-16-glicko-history.sql has run; without
+      // them ratingsFromTable reports hasHistory=false and fantasy snapshots fall back to
+      // the in-process replay (~12 s on the first fantasy request per data cache).
+      const rows = await loadAll('glicko_ratings', 'fighter_id, rating, rd, volatility, fights, ufc_fights, last_fight_date, history, peak_rating, peak_date');
       if (rows.length) glicko = ratingsFromTable(rows, glickoOptions(CFG));
       else console.warn('predictionEngine: glicko_ratings is empty — run src/ml/computeGlickoRatings.js; serving without the glicko feature');
     } catch (e) {
@@ -119,6 +146,68 @@ async function getData() {
   const glickoMissing = !glicko && MODEL.features.some(f => f.includes('glicko'));
   dataCache = { timelines, elo, glicko, limitByWc, league: leagueBaselines(timelines), loadedAt: Date.now() - (glickoMissing ? DATA_TTL_MS - 5 * 60 * 1000 : 0) };
   return dataCache;
+}
+
+// Glicko source for FANTASY snapshots: needs per-date history. The table view
+// has it once migration 2026-10-16-glicko-history.sql has run and
+// computeGlickoRatings.js has written it; until then (or if the table is
+// missing) the unified replay is built in-process once per data cache from the
+// same fights + Sherdog rows and config, which is what the table is derived from.
+async function getSnapshotGlicko() {
+  const d = await getData();
+  if (d.glicko?.hasHistory) return d.glicko;
+  if (d.glickoReplay) return d.glickoReplay;
+  console.warn('predictionEngine: glicko_ratings has no history column — replaying Glicko in-process for fantasy snapshots (run migration 2026-10-16-glicko-history.sql + computeGlickoRatings.js)');
+  const { loadSherdogHistory, FIGHT_COLS } = require('./trainModel');
+  const [events, fights, sherdog] = await Promise.all([loadAll('events', 'id, date'), loadAll('fights', FIGHT_COLS), loadSherdogHistory()]);
+  const eventById = Object.fromEntries(events.map(e => [e.id, e]));
+  const g = computeGlicko(fights, eventById, { ...glickoOptions(CFG), sherdog });
+  d.glickoReplay = {
+    summaryAsOf: g.summaryAsOf,
+    peakOf: id => { let best = null; for (const e of g.history.get(id) || []) if (e.ufc && (!best || e.post.r > best.post.r)) best = e; return best ? { date: best.date, rating: best.post.r } : null; },
+    currentRating: id => g.stateAsOf(id, null).r,
+    hasHistory: true, fromReplay: true,
+  };
+  return d.glickoReplay;
+}
+
+// Resolve one side's snapshot spec ({ mode: 'current'|'peak'|'asof', date? }) into
+// { mode, label, cutoff, asOf, date, confirmed, neutralAge, peak }.
+function resolveSnapshot(fighter, spec, glicko, timeline) {
+  const today = new Date().toISOString().slice(0, 10);
+  const current = { mode: 'current', label: 'Current', cutoff: null, asOf: today, date: today, confirmed: null, neutralAge: false, peak: null };
+  const mode = spec?.mode || 'current';
+  if (mode === 'current') return current;
+  if (mode === 'asof' || mode === 'title') {
+    if (!spec.date || !/^\d{4}-\d{2}-\d{2}$/.test(spec.date)) throw new Error(`snapshot ${mode} needs a date (YYYY-MM-DD)`);
+    const cutoff = dayAfter(spec.date);
+    // 'title' = as of a title WIN (user decision 2026-10-16): the belt proves no decline had
+    // happened, so the age penalty is neutralized like a confirmed peak. Verified against the
+    // timeline; a date with no title win falls back to a plain as-of snapshot.
+    const titleWin = mode === 'title' && timeline.some(e => e.date === spec.date && e.isTitle && e.result === 'win');
+    if (titleWin) return { mode: 'title', label: `As of title win (${spec.date})`, cutoff, asOf: cutoff, date: spec.date, confirmed: true, neutralAge: true, peak: null };
+    return { mode: 'asof', label: `As of ${spec.date}`, cutoff, asOf: cutoff, date: spec.date, confirmed: null, neutralAge: false, peak: null };
+  }
+  if (mode === 'peak') {
+    const peak = glicko.peakOf(fighter.id);
+    if (!peak) return { ...current, label: 'Current (no rated UFC bout)', peak: null };
+    const now = glicko.currentRating(fighter.id);
+    const confirmed = fighter.status === 'retired' || now <= peak.rating - PEAK_CONFIRM_DROP;
+    if (!confirmed) return { ...current, mode: 'peak_so_far', label: 'Peak so far', confirmed: false, peak: { ...peak, current_rating: now } };
+    const cutoff = dayAfter(peak.date);
+    return { mode: 'peak', label: `Peak (${peak.date})`, cutoff, asOf: cutoff, date: peak.date, confirmed: true, neutralAge: true, peak: { ...peak, current_rating: now } };
+  }
+  throw new Error(`unknown snapshot mode: ${mode}`);
+}
+
+// Typical gap between consecutive UFC bouts before the cutoff — the layoff a snapshot carries.
+function typicalLayoff(timeline, cutoff) {
+  const dates = timeline.filter(e => !cutoff || e.date < cutoff).map(e => e.date);
+  if (dates.length < 2) return DEFAULT_LAYOFF_DAYS;
+  const gaps = [];
+  for (let i = 1; i < dates.length; i++) gaps.push((new Date(dates[i]) - new Date(dates[i - 1])) / 86400000);
+  gaps.sort((a, b) => a - b);
+  return gaps[Math.floor(gaps.length / 2)];
 }
 
 // League baselines for the method and round engines, from the same timelines:
@@ -559,6 +648,9 @@ async function generateNarrative(f1, f2, stats, keyFactors, n, model = NARRATIVE
     '- No markdown headings, no bold titles, no bullet lists. No "in conclusion", no AI disclaimers.',
     '',
     `MATCHUP: ${name1} vs ${name2}`,
+    ...(n.fantasy ? [
+      `FANTASY MATCHUP (hypothetical, not a real booking): ${name1} as of ${n.fantasy.date1} (${n.fantasy.label1}); ${name2} as of ${n.fantasy.date2} (${n.fantasy.label2}). Every number below describes each fighter as they stood on their own snapshot date. Say once that this is a fantasy matchup across those dates; never refer to anything that happened after a fighter's snapshot date.`,
+    ] : []),
     `BOUT: ${n.weightClass}${n.limitLbs ? ` (${n.limitLbs} lb limit)` : ''}, ${n.rounds} rounds scheduled.`,
     `NATURAL DIVISION (most frequent UFC weight class): ${name1} ${n.natural1 ?? 'unknown'}; ${name2} ${n.natural2 ?? 'unknown'}.`,
     `FINAL WIN PROBABILITY: ${name1} ${stats.f1WinPct}% | ${name2} ${stats.f2WinPct}%`,
@@ -582,7 +674,10 @@ async function generateNarrative(f1, f2, stats, keyFactors, n, model = NARRATIVE
     max_tokens: 1200,
     messages: [{ role: 'user', content: prompt }],
   });
-  return message.content[0].text;
+  // Models with thinking on put a thinking block first; take the text block.
+  const text = message.content.find(b => b.type === 'text')?.text;
+  if (!text) throw new Error(`no text block in narrative response (stop_reason ${message.stop_reason})`);
+  return text;
 }
 
 // ── CACHE ORIENTATION ──────────────────────────────────────────────────────
@@ -644,22 +739,45 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   ]);
   if (!f1 || !f2) throw new Error('One or both fighters not found');
 
+  // Fantasy snapshots (opts.snapshots = { f1: { mode, date? }, f2: { mode, date? } }).
+  // Any non-current request bypasses the fight_predictions cache both ways and
+  // is answered from the history-capable Glicko source. A request where both
+  // sides resolve to today (e.g. two "Peak so far" fighters) is an ordinary
+  // current matchup and must produce exactly the ordinary numbers.
+  const snapSpec = opts.snapshots || null;
+  const snapRequested = !!snapSpec && ['f1', 'f2'].some(k => snapSpec[k]?.mode && snapSpec[k].mode !== 'current');
+  let snap1Spec = null, snap2Spec = null, snapGlicko = null;
+  if (snapRequested) {
+    snapGlicko = await getSnapshotGlicko();
+    const { timelines: tls } = await getData();
+    snap1Spec = resolveSnapshot(f1, snapSpec.f1, snapGlicko, tls.get(fighter1Id) || []);
+    snap2Spec = resolveSnapshot(f2, snapSpec.f2, snapGlicko, tls.get(fighter2Id) || []);
+  }
+  const isFantasy = !!(snap1Spec?.cutoff || snap2Spec?.cutoff);
+  const noCache = !!opts.skipCache || snapRequested;
+
+  // Natural divisions: full career, or as of each snapshot date.
+  let naturalIds = null;
+  if (isFantasy) {
+    const { timelines: tls, limitByWc: lim } = await getData();
+    naturalIds = [[fighter1Id, snap1Spec], [fighter2Id, snap2Spec]].map(([id, s]) => careerContext(tls.get(id) || [], s.asOf, s.cutoff, lim).modalWeightClassId ?? null);
+  }
   if (!weightClassId) {
     // No bout weight given: use the HEAVIER fighter's natural division, so the
     // default does not depend on slot order (A-vs-B must mirror B-vs-A).
     const { limitByWc: lim } = await getData();
-    const [n1, n2] = await Promise.all([deriveNaturalWeightClassId(f1.id), deriveNaturalWeightClassId(f2.id)]);
+    const [n1, n2] = naturalIds || await Promise.all([deriveNaturalWeightClassId(f1.id), deriveNaturalWeightClassId(f2.id)]);
     const c1 = n1 ?? f1.primary_weight_class_id ?? null, c2 = n2 ?? f2.primary_weight_class_id ?? null;
     const l1 = c1 != null ? lim[c1] ?? -1 : -1, l2 = c2 != null ? lim[c2] ?? -1 : -1;
     weightClassId = l2 > l1 ? c2 : (c1 ?? c2);
   }
-  const weightClassContext = await computeWeightClassContext(f1, f2, weightClassId);
+  const weightClassContext = await computeWeightClassContext(f1, f2, weightClassId, naturalIds);
 
   // Rounds requested (3 or 5), else the default. scheduled_rounds is part of
   // the cache key, so 3- and 5-round versions of a matchup are cached separately.
   const wantRounds = opts.scheduledRounds === 5 || opts.scheduledRounds === 3 ? opts.scheduledRounds : null;
 
-  if (!opts.skipCache) {
+  if (!noCache) {
     const cacheFilter = 'and(fighter1_id.eq.' + fighter1Id + ',fighter2_id.eq.' + fighter2Id + '),and(fighter1_id.eq.' + fighter2Id + ',fighter2_id.eq.' + fighter1Id + ')';
     let query = supabase
       .from('fight_predictions').select('*')
@@ -684,21 +802,53 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
   }
 
   const { timelines, elo, glicko, limitByWc, league } = await getData();
-  const tl1 = timelines.get(fighter1Id) || [];
-  const tl2 = timelines.get(fighter2Id) || [];
+  const tl1Full = timelines.get(fighter1Id) || [];
+  const tl2Full = timelines.get(fighter2Id) || [];
+  // Display / method / round inputs see only the fights before each snapshot's
+  // cutoff. sideFeatures gets the FULL timeline plus the cutoff (it filters
+  // itself, and needs the later UFC results to back out the pro record).
+  const tl1 = snap1Spec?.cutoff ? tl1Full.filter(e => e.date < snap1Spec.cutoff) : tl1Full;
+  const tl2 = snap2Spec?.cutoff ? tl2Full.filter(e => e.date < snap2Spec.cutoff) : tl2Full;
   // Bout context the model was trained with: scheduled rounds (caller may
   // pass opts.scheduledRounds for a known 5-round bout; otherwise inferred
   // from the pair's shared history) and the bout's weight limit.
-  const scheduledRounds = wantRounds || defaultRounds(f1, f2, tl1);
+  // Fantasy default: five rounds when either snapshot had won a title bout by its date
+  // (a champion-vs-champion fantasy is a title-fight format), else the ordinary rule.
+  const titleWinBy = tl => tl.some(e => e.isTitle && e.result === 'win');
+  const scheduledRounds = wantRounds || (isFantasy && (titleWinBy(tl1) || titleWinBy(tl2)) ? 5 : defaultRounds(f1, f2, tl1Full));
   const bout = { scheduledRounds, weightClassId: weightClassId ?? null, limitLbs: weightClassId != null ? (limitByWc[weightClassId] ?? null) : null };
   const today = new Date().toISOString().split('T')[0];
 
   // Model features: full career as of today under the model's config
   // (shrunk, decayed, capped — exactly what training saw). Raw snapshots stay
-  // for the round projections, which are display numbers.
+  // for the round projections, which are display numbers. A fantasy snapshot
+  // moves the as-of date and the cutoff to its date instead.
   const snap1 = snapshot(tl1), snap2 = snapshot(tl2);
-  const vals1 = sideFeatures(tl1, f1, today, null, CFG, PRIORS, elo, bout, limitByWc, glicko);
-  const vals2 = sideFeatures(tl2, f2, today, null, CFG, PRIORS, elo, bout, limitByWc, glicko);
+  const glickoSrc = isFantasy ? snapGlicko : glicko;
+  const vals1 = sideFeatures(tl1Full, f1, snap1Spec?.asOf || today, snap1Spec?.cutoff || null, CFG, PRIORS, elo, bout, limitByWc, glickoSrc);
+  const vals2 = sideFeatures(tl2Full, f2, snap2Spec?.asOf || today, snap2Spec?.cutoff || null, CFG, PRIORS, elo, bout, limitByWc, glickoSrc);
+
+  // Fantasy adjustments on the feature values (nothing here runs for a current matchup):
+  //   1. snapshot layoff = the fighter's typical gap between bouts (a normal camp);
+  //   2. confirmed peak: age features read PRIME_AGE (age_elo = 0) — the age-decline
+  //      penalty is neutralized because the peak rating proves no decline had happened;
+  //   3. era adjustment (eraDrift.js): fighter 1's ratings are moved onto fighter 2's
+  //      date scale, split half/half so A-vs-B mirrors B-vs-A; the probability before
+  //      the shift is kept for the factor row.
+  let era = null, pBeforeEra = null;
+  const ageElo = v => (v.age != null && v.elo != null ? (v.age - PRIME_AGE) * (v.elo - 1500) / 100 : v.age_elo);
+  if (isFantasy) {
+    for (const [v, s, tl] of [[vals1, snap1Spec, tl1], [vals2, snap2Spec, tl2]]) {
+      if (s.cutoff && v.layoff_days != null) v.layoff_days = Math.min(typicalLayoff(tl, s.cutoff), CFG.layoffCapDays > 0 ? CFG.layoffCapDays : Infinity);
+      if (s.neutralAge && v.age != null && v.age > PRIME_AGE) { v.age_actual = v.age; v.age = PRIME_AGE; v.age_elo = ageElo(v); }
+    }
+    pBeforeEra = predictProb(diffVector(vals1, vals2)).p;
+    era = eraDrift.adjust(snap1Spec.asOf, snap2Spec.asOf);
+    for (const [v, sign] of [[vals1, 0.5], [vals2, -0.5]]) {
+      if (v.glicko != null) v.glicko += sign * era.shift.glicko;
+      if (v.elo != null) { v.elo += sign * era.shift.elo; v.age_elo = ageElo(v); }
+    }
+  }
   const { p: skillProb, contributions, rawZ } = predictProb(diffVector(vals1, vals2));
 
   // Size / weight-cut prior (sizePrior.js): a hand-set log-odds shift that
@@ -720,7 +870,15 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
     [name1]: { fights: tl1.length, minutes: snap1.stats_seconds / 60 },
     [name2]: { fights: tl2.length, minutes: snap2.stats_seconds / 60 },
   };
-  const factors = computeFactors(name1, name2, vals1, vals2, contributions, rawZ, sample);
+  // Factor rows print the ACTUAL age of a confirmed-peak fighter (the model read PRIME_AGE);
+  // the clause logic then reads "grades ahead despite being older", which is the truth.
+  const disp = v => (v.age_actual != null ? { ...v, age: v.age_actual } : v);
+  const factors = computeFactors(name1, name2, disp(vals1), disp(vals2), contributions, rawZ, sample);
+  if (isFantasy) for (const f of factors) {
+    if (f.feature !== 'age' && f.feature !== 'age_elo') continue;
+    const who = [[name1, vals1], [name2, vals2]].filter(([, v]) => v.age_actual != null).map(([n]) => n);
+    if (who.length) f.row += ` — confirmed-peak / title-win rule: ${who.join(' and ')}'s age-decline penalty is neutralized (age read as ${PRIME_AGE} by the model)`;
+  }
   const keyFactors = factors.map(f => f.row);
   let sizeNote = null;
   if (size.shift) {
@@ -746,6 +904,54 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
       (unrealistic
         ? `The odds are shifted strongly toward the fighter at natural weight because ${unrealistic} could not realistically make this weight; the skill numbers below compare the two as if same-sized.`
         : `No UFC bouts span a gap this size, so the skill numbers below compare the two as if same-sized.`));
+  }
+  // Fantasy rows go first: what each snapshot is, the confirmed-peak age rule, the era adjustment.
+  let fantasy = null;
+  if (snapRequested) {
+    const sideInfo = (f, s, v, tlCut, naturalId) => ({
+      mode: s.mode, label: s.label, date: s.date, cutoff: s.cutoff, confirmed_peak: s.confirmed,
+      age_neutralized: !!(s.neutralAge && v.age_actual != null), age: +((v.age_actual ?? v.age) ?? 0).toFixed(1) || null,
+      glicko: v.glicko != null ? Math.round(v.glicko) : null, glicko_rd: v.glicko_rd != null ? Math.round(v.glicko_rd) : null,
+      ufc_fights: tlCut.length, natural_weight_class_id: naturalId ?? null,
+      peak: s.peak ? { date: s.peak.date, rating: Math.round(s.peak.rating), current_rating: Math.round(s.peak.current_rating) } : null,
+    });
+    const pFav = p => (p >= 0.5 ? `${name1} ${(p * 100).toFixed(1)}%` : `${name2} ${((1 - p) * 100).toFixed(1)}%`);
+    fantasy = {
+      is_fantasy: isFantasy,
+      fighter1: sideInfo(f1, snap1Spec, vals1, tl1, naturalIds?.[0]), fighter2: sideInfo(f2, snap2Spec, vals2, tl2, naturalIds?.[1]),
+      era_adjustment: era ? {
+        years_apart: +era.years.toFixed(1), reliability: era.reliability,
+        rebase_glicko: +era.rebase.glicko.toFixed(1), rebase_elo: +era.rebase.elo.toFixed(1), field_improvement: +era.improvement.toFixed(1),
+        shift_glicko: +era.shift.glicko.toFixed(1), shift_elo: +era.shift.elo.toFixed(1), applied_to: name1,
+        periods: era.periods, skill_prob_before: +(pBeforeEra * 100).toFixed(1), skill_prob_after: +(skillProb * 100).toFixed(1),
+      } : null,
+      note: 'Fantasy predictions are never logged to the Track Record.',
+    };
+    if (isFantasy) {
+      // era row (only when the two snapshot dates differ)
+      if (era && era.years !== 0) {
+        const parts = [];
+        if (Math.abs(era.rebase.glicko) >= 0.5 || Math.abs(era.rebase.elo) >= 0.5) parts.push(`the rating scale itself moved (UFC field mean ${era.rebase.glicko >= 0 ? '+' : ''}${era.rebase.glicko.toFixed(0)} Glicko / ${era.rebase.elo >= 0 ? '+' : ''}${era.rebase.elo.toFixed(0)} Elo points between the two dates, re-based mechanically)`);
+        parts.push(Math.abs(era.improvement) >= 5
+          ? `the field is estimated to have improved by ${Math.abs(era.improvement).toFixed(0)} rating points over that span (${era.periods.map(p => `${p.from}–${p.to}: ${p.per_year}/yr`).join(', ')})`
+          : `no meaningful field improvement is estimated over that span (the bridge-fighter methods find none after 2002)`);
+        keyFactors.unshift(
+          `Era adjustment — estimated, not learned directly: the snapshots are ${Math.abs(era.years).toFixed(1)} years apart; ${parts.join('; ')}. ` +
+          `Net ${era.shift.glicko >= 0 ? '+' : ''}${era.shift.glicko.toFixed(0)} Glicko / ${era.shift.elo >= 0 ? '+' : ''}${era.shift.elo.toFixed(0)} Elo applied to ${name1}'s ratings, moving the skill-only pick from ${pFav(pBeforeEra)} to ${pFav(skillProb)}. ` +
+          (era.reliability === 'low' ? 'Pre-2005 estimates rest on small samples and the methods disagree there — treat this as low reliability.' : 'Stats (volume, accuracy, takedowns) are not era-adjusted.'));
+      }
+      for (const [name, s, v] of [[name1, snap1Spec, vals1], [name2, snap2Spec, vals2]]) {
+        if (!(s.neutralAge && v.age_actual != null)) continue;
+        if (s.mode === 'title') {
+          keyFactors.unshift(`Title win — ${name} was ${v.age_actual.toFixed(0)} when winning the belt; the age-decline penalty is neutralized because winning the title shows no decline had happened: the age features read ${PRIME_AGE}. Opponents still get normal age effects.`);
+          continue;
+        }
+        const why = f1.status === 'retired' && s === snap1Spec || f2.status === 'retired' && s === snap2Spec ? 'retired' : `rating since dropped ${Math.round(s.peak.rating - s.peak.current_rating)} points`;
+        keyFactors.unshift(`Confirmed peak — ${name} was ${v.age_actual.toFixed(0)} at this peak (${why}); the age-decline penalty is neutralized because the peak rating already shows no decline had happened: the age features read ${PRIME_AGE}. Opponents still get normal age effects.`);
+      }
+      const desc = (name, s, v, tlCut) => `${name}: ${s.label}${s.cutoff ? ` (through ${s.date}: ${tlCut.length} UFC fights, age ${(v.age_actual ?? v.age)?.toFixed(0)}, Glicko ${Math.round(v.glicko)})` : ` (age ${v.age?.toFixed(0)}, Glicko ${Math.round(v.glicko)})`}`;
+      keyFactors.unshift(`Fantasy matchup — ${desc(name1, snap1Spec, vals1, tl1)}; ${desc(name2, snap2Spec, vals2, tl2)}. Stats, ratings, age, layoff and natural division are each fighter's as they stood on their own date. Hypothetical: never logged to the Track Record.`);
+    }
   }
   // Thin data on either side caps confidence at low: fewer than 2 stats-fights
   // or under THIN_SAMPLE_MINUTES of stat time. A size mismatch in the bout
@@ -792,6 +998,7 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
         natural1: weightClassContext?.f1_primary_class, natural2: weightClassContext?.f2_primary_class,
         skill1: size.shift ? (size.pBefore * 100).toFixed(1) : null,
         methods1: f1Methods, methods2: f2Methods, hist1: hist(m1), hist2: hist(m2),
+        fantasy: isFantasy ? { date1: snap1Spec.date, label1: snap1Spec.label, date2: snap2Spec.date, label2: snap2Spec.label } : null,
       }, opts.narrativeModel);
     } catch (e) {
       console.error('AI narrative failed:', e.message);
@@ -827,12 +1034,13 @@ async function generatePrediction(fighter1Id, fighter2Id, weightClassId, opts = 
     scheduled_rounds: scheduledRounds,
   };
 
-  if (!opts.skipCache) {
+  // Fantasy / snapshot results are never written to the cache (noCache covers them).
+  if (!noCache) {
     await supabase.from('fight_predictions')
       .upsert(prediction, { onConflict: 'fighter1_id,fighter2_id,weight_class_id,scheduled_rounds' });
   }
 
-  return { ...prediction, fighter1: f1, fighter2: f2, weight_class_context: weightClassContext,
+  return { ...prediction, fantasy, fighter1: f1, fighter2: f2, weight_class_context: weightClassContext,
     style_profiles: { fighter1: styleProfile(snap1), fighter2: styleProfile(snap2) } };
 }
 
@@ -844,4 +1052,16 @@ async function getStyleProfile(fighterId) {
   return styleProfile(snapshot(timelines.get(fighterId) || []));
 }
 
-module.exports = { generatePrediction, getStyleProfile, pickCached, mirrorPrediction };
+// Peak summary for the Predict page's snapshot selector: { date, rating, current_rating,
+// confirmed, label } or null when the fighter has no rated UFC bout. `confirmed` follows
+// resolveSnapshot (retired, or the rating has since dropped PEAK_CONFIRM_DROP points).
+async function getSnapshotPeak(fighter) {
+  const g = await getSnapshotGlicko();
+  const peak = g.peakOf(fighter.id);
+  if (!peak) return null;
+  const now = g.currentRating(fighter.id);
+  const confirmed = fighter.status === 'retired' || now <= peak.rating - PEAK_CONFIRM_DROP;
+  return { date: peak.date, rating: Math.round(peak.rating), current_rating: Math.round(now), confirmed, label: confirmed ? `Peak (${peak.date})` : 'Peak so far', confirm_drop: PEAK_CONFIRM_DROP };
+}
+
+module.exports = { generatePrediction, getStyleProfile, getSnapshotPeak, pickCached, mirrorPrediction };

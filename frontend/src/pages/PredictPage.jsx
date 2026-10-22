@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { getPrediction, search, fmtProRecord, getFighter } from '../lib/api';
+import { getPrediction, getSnapshots, search, fmtProRecord, getFighter } from '../lib/api';
 import StyleLabel from '../components/StyleLabel';
 
 const WEIGHT_CLASSES = [
@@ -26,9 +26,14 @@ export default function PredictPage() {
   const [weightClass, setWeightClass] = useState('');
   // null = auto (5 when either fighter is a current champion, else 3); the user can override.
   const [rounds, setRounds] = useState(null);
+  // Snapshot per fighter: { mode: 'current' | 'peak' | 'asof' | 'title', date? }. Anything but
+  // current on either side makes a FANTASY matchup (labelled, never logged to the Track Record).
+  const [snap1, setSnap1] = useState({ mode: 'current' });
+  const [snap2, setSnap2] = useState({ mode: 'current' });
   const [prediction, setPrediction] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const isFantasyRequest = snap1.mode !== 'current' || snap2.mode !== 'current';
 
   // Pre-load fighters from URL params and auto-predict if both present
   useEffect(() => {
@@ -56,7 +61,7 @@ export default function PredictPage() {
     if (!f1 || !f2) return;
     setLoading(true); setError(null); setPrediction(null);
     try {
-      const data = await getPrediction(f1.slug, f2.slug, weightClass || null, rounds);
+      const data = await getPrediction(f1.slug, f2.slug, weightClass || null, rounds, isFantasyRequest ? { f1: snap1, f2: snap2 } : null);
       setPrediction(data);
     } catch (e) {
       setError(e.response?.data?.error || 'Prediction failed. Try again.');
@@ -83,12 +88,20 @@ export default function PredictPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-4 items-start mb-5">
-        <FighterSelector label="Fighter 1" selected={f1} onSelect={setF1} onClear={() => { setF1(null); setPrediction(null); }} />
+        <FighterSelector label="Fighter 1" selected={f1} onSelect={setF1} onClear={() => { setF1(null); setSnap1({ mode: 'current' }); setPrediction(null); }}
+          snapshot={snap1} onSnapshot={s => { setSnap1(s); setPrediction(null); }} />
         <div className="flex items-center justify-center pt-8">
           <span className="font-display text-3xl text-loss tracking-widest">VS</span>
         </div>
-        <FighterSelector label="Fighter 2" selected={f2} onSelect={setF2} onClear={() => { setF2(null); setPrediction(null); }} />
+        <FighterSelector label="Fighter 2" selected={f2} onSelect={setF2} onClear={() => { setF2(null); setSnap2({ mode: 'current' }); setPrediction(null); }}
+          snapshot={snap2} onSnapshot={s => { setSnap2(s); setPrediction(null); }} />
       </div>
+
+      {isFantasyRequest && (
+        <div className="text-center text-[11px] text-purple-300/80 bg-purple-500/10 border border-purple-500/20 rounded-lg px-4 py-2 mb-5 max-w-2xl mx-auto">
+          <span className="font-display tracking-widest">FANTASY MATCHUP</span> — at least one fighter is taken as of a past date. Hypothetical; never logged to the Track Record.
+        </div>
+      )}
 
       <div className="flex flex-wrap justify-center gap-3 mb-6">
         <div className="flex items-center gap-3 bg-dark-3 border border-white/[0.06] rounded-lg px-4 py-2.5">
@@ -153,7 +166,7 @@ export default function PredictPage() {
   );
 }
 
-function FighterSelector({ label, selected, onSelect, onClear }) {
+function FighterSelector({ label, selected, onSelect, onClear, snapshot, onSnapshot }) {
   const [q, setQ] = useState('');
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
@@ -184,6 +197,7 @@ function FighterSelector({ label, selected, onSelect, onClear }) {
         </Link>
         <div className="text-xs text-white/40 mt-1">{fmtProRecord(selected)}</div>
         <StyleLabel slug={selected.slug} className="block text-xs text-gold/70 mt-0.5" />
+        <SnapshotSelector fighter={selected} snapshot={snapshot} onChange={onSnapshot} />
         <button
           onClick={onClear}
           className="mt-4 flex items-center gap-1.5 mx-auto text-xs text-white/40 hover:text-red-400 transition-colors border border-white/10 hover:border-red-500/30 rounded-lg px-3 py-1.5"
@@ -223,6 +237,113 @@ function FighterSelector({ label, selected, onSelect, onClear }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// Snapshot picker under a selected fighter: Current / Peak (or "Peak so far") /
+// As of title win (one per title win) / As of fight. Loads the fighter's options
+// once; a retired fighter defaults to Peak with a note. Dates are the fight's
+// date; the server takes the fighter as they stood after that fight.
+function SnapshotSelector({ fighter, snapshot, onChange }) {
+  const [opts, setOpts] = useState(null);
+  const [showFights, setShowFights] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setOpts(null); setShowFights(false);
+    getSnapshots(fighter.slug).then(d => {
+      if (!alive) return;
+      setOpts(d);
+      if (d.retired && d.peak && snapshot.mode === 'current') onChange({ mode: 'peak' });
+    }).catch(() => alive && setOpts({ peak: null, fights: [], retired: false, error: true }));
+    return () => { alive = false; };
+  }, [fighter.slug]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!opts) return <div className="text-[10px] text-white/25 mt-3">loading snapshots…</div>;
+  const titleWins = (opts.fights || []).filter(f => f.title_win);
+  const peakLabel = opts.peak ? (opts.peak.confirmed ? `Peak · ${opts.peak.date.slice(0, 4)}` : 'Peak so far') : null;
+  const isTitle = snapshot.mode === 'title', isAsOf = snapshot.mode === 'asof';
+  const chip = (active, extra = '') => `px-2.5 py-1 text-[11px] rounded-full border transition-colors ${active ? 'bg-purple-500/20 text-purple-200 border-purple-400/40' : 'text-white/45 border-white/10 hover:text-white hover:border-white/25'} ${extra}`;
+  const fmtDate = d => new Date(d + 'T00:00:00').toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+
+  return (
+    <div className="mt-4 pt-3 border-t border-white/[0.06] text-left">
+      <div className="text-[10px] tracking-[0.2em] text-white/30 uppercase mb-2 text-center">Snapshot</div>
+      <div className="flex flex-wrap justify-center gap-1.5">
+        <button type="button" className={chip(snapshot.mode === 'current')} onClick={() => { setShowFights(false); onChange({ mode: 'current' }); }}>Current</button>
+        {peakLabel && (
+          <button type="button" className={chip(snapshot.mode === 'peak')} onClick={() => { setShowFights(false); onChange({ mode: 'peak' }); }}
+            title={opts.peak.confirmed ? `Highest rating ${opts.peak.rating} after the ${opts.peak.date} bout; the rating has since dropped or the fighter retired, so the age-decline penalty is neutralized` : `Rating ${opts.peak.rating} is still at its high: "Peak so far" is the current snapshot with normal age effects`}>
+            {peakLabel}
+          </button>
+        )}
+        {titleWins.map(f => (
+          <button key={f.id} type="button" className={chip(isTitle && snapshot.date === f.date)} onClick={() => { setShowFights(false); onChange({ mode: 'title', date: f.date }); }}
+            title={`${f.event} — title win over ${f.opponent}; age-decline penalty neutralized`}>
+            Title win · {f.date.slice(0, 4)}{f.interim ? ' (interim)' : ''}
+          </button>
+        ))}
+        {opts.fights?.length > 0 && (
+          <button type="button" className={chip(isAsOf || showFights)} onClick={() => setShowFights(v => !v)}>As of fight…</button>
+        )}
+      </div>
+      {showFights && (
+        <select
+          value={isAsOf ? snapshot.date : ''}
+          onChange={e => e.target.value && onChange({ mode: 'asof', date: e.target.value })}
+          className="mt-2 w-full bg-dark-4 border border-white/10 text-xs text-white/80 rounded px-2 py-1.5 focus:outline-none"
+        >
+          <option value="" className="bg-dark-3">Pick a fight (fighter as they stood after it)</option>
+          {opts.fights.map(f => (
+            <option key={f.id} value={f.date} className="bg-dark-3">
+              {fmtDate(f.date)} · {f.result === 'win' ? 'W' : f.result === 'loss' ? 'L' : f.result.toUpperCase()} vs {f.opponent || '?'} · {f.event}
+            </option>
+          ))}
+        </select>
+      )}
+      <div className="text-[10px] text-white/30 mt-2 text-center leading-relaxed">
+        {snapshot.mode === 'current' && opts.retired && 'Retired — "Current" uses today\'s age and layoff.'}
+        {snapshot.mode === 'current' && !opts.retired && 'Today, full career.'}
+        {snapshot.mode === 'peak' && opts.peak && (opts.peak.confirmed
+          ? <>Highest rating ({opts.peak.rating}) after the {fmtDate(opts.peak.date)} bout.{opts.retired ? ' Retired' : ` Rating has since dropped to ${opts.peak.current_rating}`}, so the peak is confirmed and the age-decline penalty is neutralized.</>
+          : <>Rating ({opts.peak.rating}) is still at its high — treated as today's fighter with normal age effects.</>)}
+        {isTitle && `As of the ${fmtDate(snapshot.date)} title win; winning the belt confirms no decline, so the age-decline penalty is neutralized.`}
+        {isAsOf && `As they stood after the ${fmtDate(snapshot.date)} fight, with normal age effects.`}
+      </div>
+    </div>
+  );
+}
+
+// Banner for a fantasy result: both snapshots with dates, the era adjustment
+// (estimated, not learned), and the never-logged note.
+function FantasyBanner({ fantasy, f1, f2 }) {
+  const side = (f, s) => {
+    const neutral = s.age_neutralized ? ' · age penalty neutralized' : '';
+    const when = s.cutoff ? `as of ${s.date}` : 'today';
+    return <><span className="text-white/90 font-medium">{f?.first_name} {f?.last_name}</span> <span className="text-white/50">— {s.label}, {when}: age {s.age}, {s.ufc_fights} UFC fights, Glicko {s.glicko}{neutral}</span></>;
+  };
+  const era = fantasy.era_adjustment;
+  const sign = v => (v >= 0 ? '+' : '') + v;
+  return (
+    <div className="card p-5 border-purple-500/30">
+      <div className="text-[10px] tracking-[0.3em] text-purple-300 uppercase mb-3">Fantasy matchup · hypothetical</div>
+      <div className="space-y-1.5 text-sm">
+        <div>{side(f1, fantasy.fighter1)}</div>
+        <div>{side(f2, fantasy.fighter2)}</div>
+      </div>
+      {era && (
+        <div className="mt-4 pt-3 border-t border-white/[0.06] text-xs text-white/50 leading-relaxed">
+          <span className="text-white/80 font-medium">Era adjustment</span> <span className="text-[10px] uppercase tracking-wider text-white/30">estimated, not learned directly</span>
+          <div className="mt-1">
+            Snapshots {Math.abs(era.years_apart)} years apart. {f1?.last_name}'s ratings re-based onto {f2?.last_name}'s date: {sign(era.shift_glicko)} Glicko / {sign(era.shift_elo)} Elo
+            (rating-scale drift {sign(era.rebase_glicko)} / {sign(era.rebase_elo)}; estimated field improvement {era.field_improvement > 0 ? `${era.field_improvement} pts` : 'none'}).
+            Skill-only pick {era.skill_prob_before}% → {era.skill_prob_after}% for {f1?.last_name}.
+            {era.reliability === 'low' && <span className="text-orange-300"> Spans a pre-2005 era, where the estimate is unreliable.</span>}
+            {' '}Stats are not era-adjusted.
+          </div>
+        </div>
+      )}
+      <div className="mt-3 text-[10px] text-white/30">Never logged to the Track Record.</div>
     </div>
   );
 }
@@ -334,6 +455,12 @@ function PredictionResult({ prediction, f1Name, f2Name }) {
 
   return (
     <div className="space-y-5">
+      {p.fantasy?.is_fantasy && <FantasyBanner fantasy={p.fantasy} f1={f1} f2={f2} />}
+      {p.fantasy && !p.fantasy.is_fantasy && (p.fantasy.fighter1.mode === 'peak_so_far' || p.fantasy.fighter2.mode === 'peak_so_far') && (
+        <div className="text-[11px] text-white/40 text-center">
+          {[p.fantasy.fighter1.mode === 'peak_so_far' && f1, p.fantasy.fighter2.mode === 'peak_so_far' && f2].filter(Boolean).map(f => `${f.first_name} ${f.last_name}`).join(' and ')} — "Peak so far": rating still at its high, so this is the ordinary current prediction with normal age effects.
+        </div>
+      )}
       {p.weight_class_context && <WeightClassContext ctx={p.weight_class_context} f1={f1} f2={f2} />}
 
       <div className="card p-6">

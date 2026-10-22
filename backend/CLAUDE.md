@@ -618,3 +618,42 @@ same config: 0.6345 → **0.6319**, market gap +0.0307 → +0.0287, debutant gap
 folds (2019 +0.0013, 2025 +0.0008 worse); accepted by the user as a data fix outside the feature gate.
 `model-v7.json` deleted; cache rows keyed `v8`. Deferred cleanup (DOB corrections, two duplicate-row merges, the
 Junior/Justin Tafa fight split, Roberts/Argueta inflated UFC records, Gibson Sr.'s pro record, Romero) is a separate task.
+
+**Fantasy predictor (prime-vs-prime) — built 2026-10-16 (backend + PredictPage UI).** `generatePrediction(..., { snapshots: { f1: { mode, date? }, f2: { mode, date? } } })`,
+`POST /api/predict` body `snapshots`, `GET /api/predict/snapshots/:slug` (status, peak, UFC fight list for the selector).
+Modes: `current`; `peak` = the day after the fighter's highest-rated UFC bout (performance-based, no age cap — a title win at 42
+counts); `asof` with a fight date = the day after that fight; `title` with a title-win date = the same snapshot with the age penalty neutralized (the belt proves no decline; falls back to `asof` if no title win that day). A peak is **confirmed** when the
+fighter is retired or the rating has since dropped ≥ `PEAK_CONFIRM_DROP` (50) points: then the age features read `PRIME_AGE` (30,
+`age_elo` = 0) — the peak rating proves no decline had happened; factor rows still print the real age and say so. An active fighter
+still at their high gets **"Peak so far"** = the current snapshot with normal age effects (`is_fantasy` false, numbers identical to
+a current prediction). Snapshot layoff = the fighter's median gap between bouts (a normal camp). Stats, Elo, Glicko, age, natural
+division and the method/round inputs all follow the cutoff (`sideFeatures` with cutoff = exactly what training saw).
+- **Glicko history**: migration `2026-10-16-glicko-history.sql` adds `history` / `peak_rating` / `peak_date` to `glicko_ratings`,
+  written by `computeGlickoRatings.js`; `glickoEngine.ratingsFromTable` answers past dates from it (`hasHistory`). Until the
+  migration has run, `predictionEngine.getSnapshotGlicko` replays the unified Glicko in-process once per data cache (warns).
+  Current matchups never touch that path.
+- **Era adjustment** (`eraDrift.js`, table `data/era-drift.json` from `computeEraDrift.js`, run by hand and committed): fighter 1's
+  Glicko and Elo are moved onto fighter 2's date scale, split half/half (mirror-safe). Two parts: *rebase* = the UFC field-mean
+  rating shift between the dates (5-year smoothed series; mechanical, Glicko inflated ~1650 → ~2100 from 1995 to 2010, Elo flat)
+  and *field improvement* = the served drift. Identification caveat: results can only identify era-to-era DIFFERENCES in drift; the
+  LEVEL is anchored on "true strength flat at 27–31". After de-inflating, Glicko / Elo / bridge-fighter methods find no consistent
+  improvement after 2002 (sign flips, |x| ≤ 13 pts/yr); only 1996–2001 shows +30–55/yr in Glicko (Elo does not confirm). **Served
+  policy (user decision 2026-10-16)**: mean of Glicko and Elo where their signs agree, else 0, floored at 0 → 1999–2001 30.1/yr,
+  2008–10 5.4, 2014–16 1.1, everything else 0; pre-2005 flagged `low` reliability. Shown as an "Era adjustment — estimated, not
+  learned directly" factor with the skill-only pick before/after. Same-date → every term exactly 0 (`eraDrift.test.js`).
+- **Guarantees**: a non-current request bypasses `fight_predictions` both ways; `log-predictions.js` refuses any result carrying
+  `fantasy`; current matchups verified bit-identical before/after the change (7 pairs, key factors and rounds included); the
+  harness is untouched (features.js unchanged). Fantasy default rounds = 5 when either snapshot had won a title bout by its date.
+- Examples (2026-10-16, no narrative): peak Glover (2016, age 36) vs peak Jones (2024, 37) 10.8 / 89.2; peak GSP (2017) vs peak
+  Usman (2021) 62.2 / 37.8; peak Jones vs current Ulberg 93.8 / 6.2; Makhachev "Peak so far" vs Gaethje 82.9 / 17.1 (= current);
+  Glover as of the 2021 title win (age 42, normal age effects) vs peak Jones 4.6 / 95.4.
+- **UI** (`frontend/src/pages/PredictPage.jsx`): `SnapshotSelector` under each selected fighter (Current / Peak or "Peak so far" /
+  Title win · year per title win / As of fight… dropdown), fed by `GET /api/predict/snapshots/:slug`; a retired fighter defaults
+  to Peak with a note. Any non-current side shows the purple "Fantasy matchup" strip above the button and `FantasyBanner` on the
+  result (both snapshots with dates, era adjustment "estimated, not learned directly" with the skill-only pick before/after, a
+  pre-2005 reliability warning, "Never logged to the Track Record"). A "Peak so far" side on a non-fantasy result gets a one-line note.
+- **Latency (measured 2026-10-22)**: the fantasy math is ~0.3 s warm; the ~16 s a fantasy request takes is the AI narrative
+  (`claude-opus-4-8`), which every UNCACHED prediction pays — fantasy just never has a cache. `GET /predict/snapshots/*` is
+  exempt from the 10/min predict limiter. **Backlog**: two-step narrative loading (return the numbers at once, fetch the
+  breakdown in a second request — also speeds up uncached normal predictions) + a faster narrative model (measured on the same
+  prompt: Opus 5.5 ~12 s, Sonnet 5.5 ~10 s, Haiku 5.5 ~7 s but much thinner; Opus 4.8 kept for now, user decision).

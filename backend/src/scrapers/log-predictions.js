@@ -101,6 +101,9 @@ async function logEvent(ev) {
     } catch (e) {
       console.log(`  ERROR ${label}: ${e.message}`); out.errors++; continue;
     }
+    // Guard: a fantasy / snapshot prediction can never be logged (the call above never asks
+    // for one, but the log is write-once, so refuse rather than trust the caller).
+    if (p.fantasy) { console.log(`  skip ${label}: fantasy prediction`); out.skipped++; continue; }
     const f1Wins = p.fighter1_win_pct >= p.fighter2_win_pct; // exact 50/50 -> fighter1
     const pre = f1Wins ? 'fighter1' : 'fighter2';
     const methods = [['KO/TKO', p[`${pre}_ko_pct`]], ['SUB', p[`${pre}_sub_pct`]], ['DEC', p[`${pre}_dec_pct`]]];

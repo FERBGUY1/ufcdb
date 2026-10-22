@@ -228,21 +228,49 @@ function computeGlicko(fights, eventById, opts = {}) {
  * inflates it to a fight date, and an unknown fighter gets the fresh state
  * (1500 / initialRd), which is what training saw for a debutant.
  *
- * @param rows  glicko_ratings rows (fighter_id, rating, rd, volatility, fights, ufc_fights, last_fight_date)
+ * PAST dates (fantasy snapshots): when a row carries `history` (post-bout states
+ * in date order, written by computeGlickoRatings.js) a `date` on or before the
+ * last bout is answered from the last history entry strictly before it, RD
+ * inflated from that bout to `date` — the replay's stateAsOf rule. A date
+ * before the first bout gives the fresh state. Rows without history fall back
+ * to the current state, and `hasHistory` is false so the engine can refuse a
+ * snapshot instead of serving a wrong one.
+ *
+ * @param rows  glicko_ratings rows (fighter_id, rating, rd, volatility, fights, ufc_fights, last_fight_date[, history, peak_rating, peak_date])
  * @param opts  glickoOptions() shape (initialRd, initialVol, periodDays)
  */
 function ratingsFromTable(rows, opts = {}) {
   const { initialRd = 350, initialVol = 0.06, periodDays = 365 } = opts;
   const byId = new Map(rows.map(r => [r.fighter_id, r]));
+  const hasHistory = rows.some(r => Array.isArray(r.history));
+  const inflate = (rd, sigma, from, to) => {
+    const t = from ? (new Date(to) - new Date(from)) / 86400000 / periodDays : 1;
+    return SCALE * Math.sqrt((rd / SCALE) ** 2 + sigma * sigma * Math.max(0, t));
+  };
   function summaryAsOf(fighterId, date = null) {
     const asOf = date || new Date().toISOString().slice(0, 10);
     const r = byId.get(fighterId);
-    const rd = r ? r.rd : initialRd, sigma = r ? r.volatility : initialVol;
-    const t = r && r.last_fight_date ? (new Date(asOf) - new Date(r.last_fight_date)) / 86400000 / periodDays : 1;
-    const phi = Math.sqrt((rd / SCALE) ** 2 + sigma * sigma * Math.max(0, t));
-    return { glicko: r ? r.rating : 1500, glicko_rd: SCALE * phi, glicko_fights: r ? r.fights : 0, glicko_ufc_fights: r ? r.ufc_fights : 0 };
+    if (!r) return { glicko: 1500, glicko_rd: inflate(initialRd, initialVol, null, asOf), glicko_fights: 0, glicko_ufc_fights: 0 };
+    if (date && Array.isArray(r.history) && r.last_fight_date && date <= r.last_fight_date) {
+      let last = null;
+      for (const e of r.history) { if (e.d >= date) break; last = e; }
+      if (!last) return { glicko: 1500, glicko_rd: inflate(initialRd, initialVol, null, asOf), glicko_fights: 0, glicko_ufc_fights: 0 };
+      return { glicko: last.r, glicko_rd: inflate(last.rd, last.s, last.d, asOf), glicko_fights: last.n, glicko_ufc_fights: last.u };
+    }
+    return { glicko: r.rating, glicko_rd: inflate(r.rd, r.volatility, r.last_fight_date, asOf), glicko_fights: r.fights, glicko_ufc_fights: r.ufc_fights };
   }
-  return { summaryAsOf, size: byId.size, fromTable: true };
+  // Highest post-bout rating over the fighter's UFC bouts: { date, rating } or null.
+  function peakOf(fighterId) {
+    const r = byId.get(fighterId);
+    if (!r) return null;
+    if (r.peak_date && r.peak_rating != null) return { date: r.peak_date, rating: r.peak_rating };
+    if (!Array.isArray(r.history)) return null;
+    let best = null;
+    for (const e of r.history) if (e.ufc && (!best || e.r > best.r)) best = e;
+    return best ? { date: best.d, rating: best.r } : null;
+  }
+  const currentRating = fighterId => byId.get(fighterId)?.rating ?? 1500;
+  return { summaryAsOf, peakOf, currentRating, size: byId.size, fromTable: true, hasHistory };
 }
 
 module.exports = { computeGlicko, glickoOptions, ratingsFromTable, collectBouts, SCALE };

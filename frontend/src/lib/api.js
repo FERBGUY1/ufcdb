@@ -28,8 +28,12 @@ export const getSiteStats = () => api.get('/stats/overview').then(r=>r.data);
 
 // ── PREDICTIONS ──────────────────────────────────────────
 // rounds: 3 | 5 | null (null = server default: 5 if either fighter is a champion, else 3)
-export const getPrediction = (slug1, slug2, wcSlug, rounds = null) =>
-  api.post('/predict', { fighter1_slug: slug1, fighter2_slug: slug2, ...(wcSlug && { weight_class_slug: wcSlug }), ...(rounds && { rounds }) }).then(r=>r.data);
+// snapshots: { f1: { mode, date? }, f2: { mode, date? } } with mode 'current' | 'peak' | 'asof' | 'title'
+// (fantasy matchup when either side is not 'current'; never cached or logged server-side)
+export const getPrediction = (slug1, slug2, wcSlug, rounds = null, snapshots = null) =>
+  api.post('/predict', { fighter1_slug: slug1, fighter2_slug: slug2, ...(wcSlug && { weight_class_slug: wcSlug }), ...(rounds && { rounds }), ...(snapshots && { snapshots }) }).then(r=>r.data);
+// Snapshot options for one fighter: { status, retired, peak: { date, rating, confirmed, label } | null, fights: [...] }
+export const getSnapshots = (slug) => api.get(`/predict/snapshots/${slug}`).then(r=>r.data);
 
 // ── RANKINGS ─────────────────────────────────────────────
 export const getTrackRecord = () => api.get('/track-record').then(r=>r.data);
